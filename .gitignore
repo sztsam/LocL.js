@@ -1,0 +1,21 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+.npmrc
+
+# Dev env
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# Build / tooling
+
+# IDE / Editor
+.vscode/
+.idea/
+*.iml
+
+# Git
+.git

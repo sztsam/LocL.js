@@ -1,0 +1,50 @@
+{
+  "name": "locl-js",
+  "version": "1.0.0",
+  "description": "Modern TypeScript internationalization (i18n) library with type-safety, performance, and backend usability",
+  "license": "MIT",
+  "author": "Sztrida Sámuel <sztsam@gmail.com>",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sztsam/LocL.js.git"
+  },
+  "homepage": "https://github.com/sztsam/LocL.js",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.5.2",
+    "jest": "^30.1.3",
+    "ts-jest": "^29.4.4",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "i18n",
+    "internationalization",
+    "localization",
+    "translation",
+    "typescript",
+    "type-safe",
+    "language",
+    "plurals",
+    "formatting",
+    "modular"
+  ]
+}

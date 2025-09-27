@@ -1,0 +1,34 @@
+# Node
+node_modules
+npm-debug.log
+yarn-error.log
+
+# Dev env
+.DS_Store
+.env
+.env.local
+.env.*.local
+
+# Test
+test/
+jest.config.js
+
+# Build / tooling
+src/
+example/
+scripts/
+*.config.js
+*.config.cjs
+*.config.mjs
+tsconfig.json
+tsup.config.ts
+package-lock.json
+
+# IDE / Editor
+.vscode/
+.idea/
+*.iml
+
+# Git
+.git
+.gitignore
