@@ -17,7 +17,7 @@ import { ScopeType, Formatter, LangWithPlurals } from "./types";
  * };
  * ```
  */
-export { LangWithPlurals };
+export type { LangWithPlurals };
 /**
  * Initializes a new LocL instance.
  *
@@ -55,7 +55,7 @@ export { LangWithPlurals };
 export function initLocL<
     T extends Record<string, any>,
     Fallback extends keyof T & string,
-    S extends ScopeType<T, Fallback> | undefined = undefined,
+    S extends ScopeType<T, Fallback> = undefined,
     F extends Record<string, Formatter> = {},
     UseDefaultFormatter extends boolean = true
 >(config: LocLConfig<T, Fallback> & { scope?: S, formatters?: F, useDefaultFormatters?: UseDefaultFormatter }) {

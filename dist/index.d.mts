@@ -130,12 +130,12 @@ declare const defaultFormatters: {
 };
 
 type NestedKeyOf<ObjectType extends object> = {
-    [Key in keyof ObjectType & string]: ObjectType[Key] extends any[] ? `${Key}` : ObjectType[Key] extends object ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key]>}` : `${Key}`;
-}[keyof ObjectType & string];
+    [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[] ? `${Key}` : ObjectType[Key] extends object ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key]>}` : `${Key}`;
+}[keyof ObjectType & (string | number)];
 type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean = false> = {
     [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any> ? SkipArrays extends true ? never : `${Key}` | `${Key}.${number}` : ObjectType[Key] extends object ? `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays>}` : never;
 }[keyof ObjectType & string];
-type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}` ? Key extends keyof T ? Rest extends string ? PathValue<T[Key], Rest> : never : never : P extends keyof T ? T[P] : never;
+type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}` ? Key extends keyof T ? PathValue<T[Key], Rest> : Key extends `${infer N extends number}` ? N extends keyof T ? PathValue<T[N], Rest> : never : never : P extends keyof T ? T[P] : P extends `${infer N extends number}` ? N extends keyof T ? T[N] : never : never;
 type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends ((k: infer I) => void) ? I : never;
 type DeepPick<T, P extends string> = P extends `${infer K}.${infer Rest}` ? K extends keyof T ? {
     [Key in K]: DeepPick<T[K], Rest>;
@@ -249,6 +249,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
         fallbackLanguage: Fallback;
         formatters?: F;
         useDefaultFormatters?: UseDefaultFormatter;
+        scope?: S;
     });
     /**
      * Creates a new proxy translator instance with a different configuration.
@@ -284,7 +285,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * @returns The translated and formatted string, or the translation object.
      */
     t(): TranslationObjectFor<S, T, Fallback>;
-    t<K extends NestedKeyOf<TranslationObjectFor<S, T, Fallback>>>(key: K, values?: InterpolationOptions, format?: FormatOptions<F, UseDefaultFormatter>): PathValue<TranslationObjectFor<S, T, Fallback>, K> extends string ? string : PathValue<TranslationObjectFor<S, T, Fallback>, K>;
+    t<K extends NestedKeyOf<TranslationObjectFor<S, T, Fallback>>>(key: K, values?: InterpolationOptions, format?: FormatOptions<F, UseDefaultFormatter>): PathValue<TranslationObjectFor<S, T, Fallback>, K>;
     /**
      * Translates a key without strict type checking.
      * This is useful for compatibility with other i18n libraries or dynamic keys.
@@ -371,7 +372,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
  *
  * @returns A new `LocL` instance configured with the provided options.
  */
-declare function initLocL<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> | undefined = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true>(config: LocLConfig<T, Fallback> & {
+declare function initLocL<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true>(config: LocLConfig<T, Fallback> & {
     scope?: S;
     formatters?: F;
     useDefaultFormatters?: UseDefaultFormatter;

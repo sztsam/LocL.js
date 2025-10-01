@@ -9,7 +9,8 @@
     "declaration": true,
     "outDir": "dist",
     "noEmit": false,
-    "moduleResolution": "nodenext"
+    "moduleResolution": "nodenext",
+    "isolatedModules": true
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
