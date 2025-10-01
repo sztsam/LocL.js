@@ -3,12 +3,12 @@ type DeepPartial<T> = {
 }
 
 export type NestedKeyOf<ObjectType extends object> = {
-  [Key in keyof ObjectType & string]: ObjectType[Key] extends any[]
+  [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[]
     ? `${Key}`
     : ObjectType[Key] extends object
       ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key]>}`
       : `${Key}`;
-}[keyof ObjectType & string];
+}[keyof ObjectType & (string | number)];
 
 export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean = false> = {
   [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any>
@@ -21,14 +21,20 @@ export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean
 }[keyof ObjectType & string];
 
 export type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}`
-  ? Key extends keyof T
-    ? Rest extends string
-      ? PathValue<T[Key], Rest>
-      : never
-    : never
-  : P extends keyof T
-    ? T[P]
-    : never;
+    ? Key extends keyof T
+        ? PathValue<T[Key], Rest>
+        : Key extends `${infer N extends number}`
+            ? N extends keyof T
+                ? PathValue<T[N], Rest>
+                : never
+            : never
+    : P extends keyof T
+        ? T[P]
+        : P extends `${infer N extends number}`
+            ? N extends keyof T
+                ? T[N]
+                : never
+            : never;
 
 type UnionToIntersection<U> =
   (U extends any ? (k: U) => void : never) extends

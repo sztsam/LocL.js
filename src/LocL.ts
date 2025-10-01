@@ -58,7 +58,7 @@ export class LocL<
    * Creates a new LocL instance.
    * @param config - The configuration object.
    */
-  constructor(config: LocLConfig<T, Fallback> & { fallbackLanguage: Fallback, formatters?: F, useDefaultFormatters?: UseDefaultFormatter }) {
+  constructor(config: LocLConfig<T, Fallback> & { fallbackLanguage: Fallback, formatters?: F, useDefaultFormatters?: UseDefaultFormatter, scope?: S }) {
     if (!config.resources) {
       throw new Error("[LocL] `resources` is required");
     }
@@ -70,7 +70,7 @@ export class LocL<
       devMode: false,
       useCache: true,
       ...config
-    };
+    } as any;
     config.resources = this.makeReadOnly(config.resources);
     this.config = config;
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
@@ -144,7 +144,7 @@ export class LocL<
    * @returns The translated and formatted string, or the translation object.
    */
   public t(): TranslationObjectFor<S, T, Fallback>;
-  public t<K extends NestedKeyOf<TranslationObjectFor<S, T, Fallback>>>(key: K, values?: InterpolationOptions, format?: FormatOptions<F, UseDefaultFormatter>): PathValue<TranslationObjectFor<S, T, Fallback>, K> extends string ? string : PathValue<TranslationObjectFor<S, T, Fallback>, K>;
+  public t<K extends NestedKeyOf<TranslationObjectFor<S, T, Fallback>>>(key: K, values?: InterpolationOptions, format?: FormatOptions<F, UseDefaultFormatter>): PathValue<TranslationObjectFor<S, T, Fallback>, K>;
   public t(key?: string, values?: InterpolationOptions, format?: FormatOptions<F, UseDefaultFormatter>): any {
     if (!key) { return this.get(); }
     const pluralCheckResult = this.checkPlural(key, values);

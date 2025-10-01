@@ -231,7 +231,7 @@ translator.t("price", { price: 123 }); // "The price is $123.00"
 You can also define your own custom formatters:
 
 ```typescript
-const translator = initTranslator({
+const translator = initLocL({
     resources,
     fallbackLanguage: "en",
     formatters: {
