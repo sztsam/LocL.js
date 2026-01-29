@@ -29,19 +29,48 @@ describe('defaultFormatters', () => {
     it('should use a custom suffix', () => {
       expect(defaultFormatters.truncate('hello world', ['5', '!'])).toBe('hello!');
     });
+
+    it('should use default values when args are missing', () => {
+      expect(defaultFormatters.truncate('this is a very long string')).toBe('this is a ...');
+      expect(defaultFormatters.truncate('short')).toBe('short');
+    });
   });
 
-  it('should format a number', () => {
-    expect(defaultFormatters.number(123456.789, ['en-US', 'decimal'])).toBe('123,456.789');
+  describe('number', () => {
+    it('should format a number with locale and style', () => {
+      expect(defaultFormatters.number(123456.789, ['en-US', 'decimal'])).toBe('123,456.789');
+    });
+
+    it('should format a number with default args', () => {
+      expect(defaultFormatters.number(123456.789)).toContain('123');
+    });
   });
 
-  it('should format a currency', () => {
-    expect(defaultFormatters.currency(123456.789, ['USD', 'en-US'])).toBe('$123,456.79');
+  describe('currency', () => {
+    it('should format a currency with currency code and locale', () => {
+      expect(defaultFormatters.currency(123456.789, ['USD', 'en-US'])).toBe('$123,456.79');
+    });
+
+    it('should format a currency with default args', () => {
+      expect(defaultFormatters.currency(123456.789)).toContain('123');
+      expect(defaultFormatters.currency(123456.789)).toMatch(/USD|\$/);
+    });
+
+    it('should format with custom currency and default locale', () => {
+      expect(defaultFormatters.currency(100, ['GBP'])).toMatch(/£100|100.*GBP/);
+    });
   });
 
-  it('should format a date', () => {
+  describe('date', () => {
     const date = new Date('2025-01-01T00:00:00.000Z');
-    expect(defaultFormatters.date(date, ['en-US', 'short'])).toBe('1/1/25');
+
+    it('should format a date with locale and style', () => {
+      expect(defaultFormatters.date(date, ['en-US', 'short'])).toBe('1/1/25');
+    });
+
+    it('should format a date with default args', () => {
+      expect(defaultFormatters.date(date)).toBeDefined();
+    });
   });
 
   describe('relativeDate', () => {
@@ -54,14 +83,34 @@ describe('defaultFormatters', () => {
       jest.useRealTimers();
     });
 
-    it('should format a relative date in the past', () => {
+    it('should format seconds', () => {
+      const date = new Date(Date.now() - 10 * 1000);
+      expect(defaultFormatters.relativeDate(date, ['en-US'])).toBe('10 seconds ago');
+    });
+
+    it('should format minutes', () => {
+      const date = new Date(Date.now() - 120 * 1000);
+      expect(defaultFormatters.relativeDate(date, ['en-US'])).toBe('2 minutes ago');
+    });
+
+    it('should format hours', () => {
       const date = new Date(Date.now() - 3600 * 1000);
       expect(defaultFormatters.relativeDate(date, ['en-US'])).toBe('1 hour ago');
+    });
+
+    it('should format days', () => {
+      const date = new Date(Date.now() - 86400 * 2 * 1000);
+      expect(defaultFormatters.relativeDate(date, ['en-US'])).toBe('2 days ago');
     });
 
     it('should format a relative date in the future', () => {
       const date = new Date(Date.now() + 3600 * 1000);
       expect(defaultFormatters.relativeDate(date, ['en-US'])).toBe('in 1 hour');
+    });
+
+    it('should work with default args', () => {
+      const date = new Date(Date.now() - 10 * 1000);
+      expect(defaultFormatters.relativeDate(date)).toBeDefined();
     });
   });
 
@@ -71,21 +120,47 @@ describe('defaultFormatters', () => {
 }`);
   });
 
-  it('should convert a boolean to a "Yes" or "No" string', () => {
-    expect(defaultFormatters.yesNo(true)).toBe('Yes');
-    expect(defaultFormatters.yesNo(false)).toBe('No');
+  describe('yesNo', () => {
+    it('should convert a boolean to a "Yes" or "No" string', () => {
+      expect(defaultFormatters.yesNo(true)).toBe('Yes');
+      expect(defaultFormatters.yesNo(false)).toBe('No');
+    });
+
+    it('should use custom labels', () => {
+      expect(defaultFormatters.yesNo(true, ['Y', 'N'])).toBe('Y');
+      expect(defaultFormatters.yesNo(false, ['Y', 'N'])).toBe('N');
+    });
   });
 
-  it('should convert a boolean to a "true" or "false" string', () => {
-    expect(defaultFormatters.boolean(true)).toBe('true');
-    expect(defaultFormatters.boolean(false)).toBe('false');
+  describe('boolean', () => {
+    it('should convert a boolean to a "true" or "false" string', () => {
+      expect(defaultFormatters.boolean(true)).toBe('true');
+      expect(defaultFormatters.boolean(false)).toBe('false');
+    });
+
+    it('should use custom labels', () => {
+      expect(defaultFormatters.boolean(true, ['1', '0'])).toBe('1');
+      expect(defaultFormatters.boolean(false, ['1', '0'])).toBe('0');
+    });
   });
 
-  it('should pad the start of a string', () => {
-    expect(defaultFormatters.padStart('hello', ['10', '*'])).toBe('*****hello');
+  describe('padStart', () => {
+    it('should pad the start of a string', () => {
+      expect(defaultFormatters.padStart('hello', ['10', '*'])).toBe('*****hello');
+    });
+
+    it('should work with default args', () => {
+      expect(defaultFormatters.padStart('1')).toBe('1');
+    });
   });
 
-  it('should pad the end of a string', () => {
-    expect(defaultFormatters.padEnd('hello', ['10', '*'])).toBe('hello*****');
+  describe('padEnd', () => {
+    it('should pad the end of a string', () => {
+      expect(defaultFormatters.padEnd('hello', ['10', '*'])).toBe('hello*****');
+    });
+
+    it('should work with default args', () => {
+      expect(defaultFormatters.padEnd('1')).toBe('1');
+    });
   });
 });
