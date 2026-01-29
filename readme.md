@@ -1,5 +1,7 @@
 # LocL.js 🌐
 
+![Coverage](https://img.shields.io/badge/coverage-98%25-brightgreen)
+
 **LocL** is a powerful, lightweight, and fully-featured TypeScript internationalization (i18n) library. It is designed to be flexible, easy to use, and highly extensible, providing a seamless experience for adding multiple languages to your projects. With built-in support for plurals, formatting, and modularization, `LocL` is the perfect tool for developers looking for a modern and robust i18n solution.
 
 It is inspired by libraries like `i18next` and `react-i18next`, but with a focus on type-safety, simplicity, performance and backend usability like discord bot and other apps.

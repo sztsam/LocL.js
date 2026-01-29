@@ -32,7 +32,7 @@ var defaultFormatters = {
    * @param {string} [args[1]="..."] - The suffix to append if the string is truncated.
    * @returns The truncated string.
    */
-  truncate: (val, args) => {
+  truncate: (val, args = []) => {
     const length = parseInt(args[0]) || 10;
     const suffix = args[1] || "...";
     const str = String(val);
@@ -46,7 +46,7 @@ var defaultFormatters = {
    * @param {string} [args[1]] - The style of formatting to use (e.g., "decimal", "percent").
    * @returns The formatted number.
    */
-  number: (val, args) => {
+  number: (val, args = []) => {
     const locales = args[0] || void 0;
     const options = {};
     if (args[1]) options.style = args[1];
@@ -60,7 +60,7 @@ var defaultFormatters = {
    * @param {string} [args[1]] - The locale to use.
    * @returns The formatted currency string.
    */
-  currency: (val, args) => {
+  currency: (val, args = []) => {
     const currency = args[0] || "USD";
     const locales = args[1] || void 0;
     return new Intl.NumberFormat(locales, {
@@ -76,7 +76,7 @@ var defaultFormatters = {
    * @param {string} [args[1]] - The date style to use (e.g., "short", "long").
    * @returns The formatted date string.
    */
-  date: (val, args) => {
+  date: (val, args = []) => {
     const locales = args[0] || void 0;
     const options = {};
     if (args[1]) options.dateStyle = args[1];
@@ -89,7 +89,7 @@ var defaultFormatters = {
    * @param {string} [args[0]] - The locale to use.
    * @returns The relative time string.
    */
-  relativeDate: (val, args) => {
+  relativeDate: (val, args = []) => {
     const locales = args[0] || void 0;
     const options = { numeric: "auto" };
     const rtf = new Intl.RelativeTimeFormat(locales, options);
@@ -113,7 +113,7 @@ var defaultFormatters = {
    * @param {string} [args[1]="No"] - The string to return for a falsy value.
    * @returns "Yes" or "No".
    */
-  yesNo: (val, args) => {
+  yesNo: (val, args = []) => {
     const [yesVal, noVal] = args || [];
     return val ? yesVal || "Yes" : noVal || "No";
   },
@@ -125,7 +125,7 @@ var defaultFormatters = {
    * @param {string} [args[1]="false"] - The string to return for a falsy value.
    * @returns "true" or "false".
    */
-  boolean: (val, args) => {
+  boolean: (val, args = []) => {
     const [trueVal, falseVal] = args || [];
     return val ? trueVal || "true" : falseVal || "false";
   },
@@ -137,7 +137,7 @@ var defaultFormatters = {
    * @param {string} [args[1]=" "] - The string to pad with.
    * @returns The padded string.
    */
-  padStart: (val, args) => {
+  padStart: (val, args = []) => {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padStart(length, fill);
@@ -150,7 +150,7 @@ var defaultFormatters = {
    * @param {string} [args[1]=" "] - The string to pad with.
    * @returns The padded string.
    */
-  padEnd: (val, args) => {
+  padEnd: (val, args = []) => {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padEnd(length, fill);
@@ -200,7 +200,7 @@ var LocL = class _LocL {
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
     }
-    return new Proxy(this, {
+    const result = new Proxy(this, {
       get(target, prop) {
         if (prop === "language") {
           return config.language ?? target.language;
@@ -211,6 +211,8 @@ var LocL = class _LocL {
         return target[prop];
       }
     });
+    this.cache.set(cacheKey, result);
+    return result;
   }
   /**
    * Creates a new `LocL` instance with a different language or scope.

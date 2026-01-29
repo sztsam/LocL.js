@@ -97,7 +97,7 @@ export class LocL<
       return this.cache.get(cacheKey) as LocL<T, Fallback, N>;
     }
 
-    return new Proxy(this, {
+    const result = new Proxy(this, {
       get(target, prop) {
         if (prop === 'language') {
           return config.language ?? target.language;
@@ -108,6 +108,9 @@ export class LocL<
         return target[prop as keyof typeof target];
       }
     }) as unknown as LocL<T, Fallback, N>;
+
+    this.cache.set(cacheKey, result);
+    return result;
   }
 
   /**

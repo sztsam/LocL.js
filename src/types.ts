@@ -2,23 +2,29 @@ type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 }
 
-export type NestedKeyOf<ObjectType extends object> = {
-  [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[]
-    ? `${Key}`
-    : ObjectType[Key] extends object
-      ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key]>}`
-      : `${Key}`;
-}[keyof ObjectType & (string | number)];
+export type NestedKeyOf<ObjectType extends object, Depth extends number = 8, UsedDepth extends any[] = []> =
+  UsedDepth['length'] extends Depth
+    ? never
+    : {
+      [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[]
+        ? `${Key}`
+        : ObjectType[Key] extends object
+          ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key], Depth, [...UsedDepth, any]>}`
+          : `${Key}`;
+    }[keyof ObjectType & (string | number)];
 
-export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean = false> = {
-  [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any>
-    ? SkipArrays extends true
-      ? never
-      : `${Key}` | `${Key}.${number}`
-    : ObjectType[Key] extends object
-      ? `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays>}`
-      : never
-}[keyof ObjectType & string];
+export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean = false, Depth extends number = 8, UsedDepth extends any[] = []> =
+  UsedDepth['length'] extends Depth
+    ? never
+    : {
+      [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any>
+        ? SkipArrays extends true
+          ? never
+          : `${Key}` | `${Key}.${number}`
+        : ObjectType[Key] extends object
+          ? `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays, Depth, [...UsedDepth, any]>}`
+          : never
+    }[keyof ObjectType & string];
 
 export type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}`
     ? Key extends keyof T
@@ -85,8 +91,7 @@ type Translations<S extends ScopeType<T, F>, T extends Record<string, any>, F ex
 type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
 export type PluralKeys<S extends ScopeType<T, F>, T extends Record<string, any>, F extends keyof T & string> = ExtractPluralKeys<Translations<S, T, F>>;
 type ExtractPluralKeys<T, Path extends string = "", Depth extends any[] = []> =
-// If the depth has reached a certain limit, stop recursing at the max value 32.
-  Depth['length'] extends 32 ? never :
+  Depth['length'] extends 16 ? never :
   T extends object ? {
     [K in keyof T & string]:
       T[K] extends Partial<Record<PluralForms, string>>
@@ -129,7 +134,7 @@ type ObjectPlural = {
   [K in RequiredPlural]: string;
 } & Partial<Record<OptionalPlural, string>>;
 type Primitive = string | number | boolean | null | undefined;
-type StrKey<T> = Extract<keyof T, string>;
+type StrKey<T> = Extract<keyof T, string | number>;
 type PluralObjectKeys<T> = {
   [K in StrKey<T>]: T[K] extends object
     ? Extract<keyof T[K], PluralForms> extends never ? never : K

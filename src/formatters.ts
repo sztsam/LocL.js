@@ -55,7 +55,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]="..."] - The suffix to append if the string is truncated.
    * @returns The truncated string.
    */
-  truncate: (val: any, args: string[]) => {
+  truncate: (val: any, args: string[] = []) => {
     const length = parseInt(args[0]) || 10;
     const suffix = args[1] || "...";
     const str = String(val);
@@ -70,7 +70,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]] - The style of formatting to use (e.g., "decimal", "percent").
    * @returns The formatted number.
    */
-  number: (val: any, args: string[]) => {
+  number: (val: any, args: string[] = []) => {
     const locales = args[0] || undefined;
     const options: Intl.NumberFormatOptions = {};
     if (args[1]) options.style = args[1] as Intl.NumberFormatOptions["style"];
@@ -85,7 +85,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]] - The locale to use.
    * @returns The formatted currency string.
    */
-  currency: (val: any, args: string[]) => {
+  currency: (val: any, args: string[] = []) => {
     const currency = args[0] || "USD";
     const locales = args[1] || undefined;
     return new Intl.NumberFormat(locales, {
@@ -102,7 +102,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]] - The date style to use (e.g., "short", "long").
    * @returns The formatted date string.
    */
-  date: (val: any, args: string[]) => {
+  date: (val: any, args: string[] = []) => {
     const locales = args[0] || undefined;
     const options: Intl.DateTimeFormatOptions = {};
     if (args[1]) options.dateStyle = args[1] as Intl.DateTimeFormatOptions["dateStyle"];
@@ -116,7 +116,7 @@ export const defaultFormatters = {
    * @param {string} [args[0]] - The locale to use.
    * @returns The relative time string.
    */
-  relativeDate: (val: any, args: string[]) => {
+  relativeDate: (val: any, args: string[] = []) => {
     const locales = args[0] || undefined;
     const options: Intl.RelativeTimeFormatOptions = { numeric: "auto" };
     const rtf = new Intl.RelativeTimeFormat(locales, options);
@@ -142,7 +142,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]="No"] - The string to return for a falsy value.
    * @returns "Yes" or "No".
    */
-  yesNo: (val: any, args?: [string, string]) => {
+  yesNo: (val: any, args: string[] = []) => {
     const [yesVal, noVal] = args || [];
     return val ? yesVal || "Yes" : noVal || "No";
   },
@@ -155,7 +155,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]="false"] - The string to return for a falsy value.
    * @returns "true" or "false".
    */
-  boolean: (val: any, args?: [string, string]) => {
+  boolean: (val: any, args: string[] = []) => {
     const [trueVal, falseVal] = args || [];
     return val ? trueVal || "true" : falseVal || "false";
   },
@@ -168,7 +168,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]=" "] - The string to pad with.
    * @returns The padded string.
    */
-  padStart: (val: any, args: string[]) => {
+  padStart: (val: any, args: string[] = []) => {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padStart(length, fill);
@@ -182,7 +182,7 @@ export const defaultFormatters = {
    * @param {string} [args[1]=" "] - The string to pad with.
    * @returns The padded string.
    */
-  padEnd: (val: any, args: string[]) => {
+  padEnd: (val: any, args: string[] = []) => {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padEnd(length, fill);
