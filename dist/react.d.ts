@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, I as InterpolationOptions, a as LocL, c as Language } from './LocL-fN9Yari8.js';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, I as InterpolationOptions, a as LocL, c as Language } from './LocL-ahF6uv53.js';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 interface TransProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined, K extends string = TransKey<T, Fallback, S>> {

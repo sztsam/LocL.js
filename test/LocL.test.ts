@@ -428,6 +428,10 @@ describe('initLocL', () => {
     translator.addResource("en", "prototype.polluted", "bad");
     translator.addResource("en", "safe.__proto__", "bad");
     expect(({} as any).polluted).toBeUndefined();
+
+    // Prototype pollution guards on lang
+    translator.addResource("__proto__", "key", "bad");
+    expect(({} as any).key).toBeUndefined();
   });
 
   it("should cover addResources deep merging, new languages, and proto guards", () => {
@@ -451,6 +455,10 @@ describe('initLocL', () => {
     });
     expect(translator.tt("nested.extra")).toBe("Extra");
     expect(({} as any).polluted).toBeUndefined();
+
+    // Prototype pollution guards on lang
+    translator.addResources("__proto__", { key: "bad" });
+    expect(({} as any).key).toBeUndefined();
   });
 
   it("should invalidate cache only for affected language with multi-language cache", () => {

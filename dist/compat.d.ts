@@ -1,4 +1,4 @@
-import { N as NestedKeyOf, I as InterpolationOptions, a as LocL } from './LocL-fN9Yari8.js';
+import { N as NestedKeyOf, I as InterpolationOptions, a as LocL } from './LocL-ahF6uv53.js';
 import { DefaultResources, DefaultFallback } from './react.js';
 import 'react';
 
