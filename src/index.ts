@@ -1,5 +1,5 @@
-import { LocL, LocLConfig } from "./LocL";
-import { ScopeType, Formatter, LangWithPlurals } from "./types";
+import { LocL, LocLConfig } from "./LocL.js";
+import { ScopeType, Formatter, LangWithPlurals } from "./types.js";
 
 /**
  * A helper type that provides strong typing for your language resources,
@@ -17,7 +17,8 @@ import { ScopeType, Formatter, LangWithPlurals } from "./types";
  * };
  * ```
  */
-export type { LangWithPlurals };
+export { LocL, type LocLConfig, type LangWithPlurals };
+
 /**
  * Initializes a new LocL instance.
  *
@@ -53,11 +54,30 @@ export type { LangWithPlurals };
  * @returns A new `LocL` instance configured with the provided options.
  */
 export function initLocL<
-    T extends Record<string, any>,
-    Fallback extends keyof T & string,
-    S extends ScopeType<T, Fallback> = undefined,
-    F extends Record<string, Formatter> = {},
-    UseDefaultFormatter extends boolean = true
+  const T extends Record<string, any>,
+  Fallback extends keyof T & string,
+  S extends ScopeType<T, Fallback> = undefined,
+  F extends Record<string, Formatter> = {},
+  UseDefaultFormatter extends boolean = true
 >(config: LocLConfig<T, Fallback> & { scope?: S, formatters?: F, useDefaultFormatters?: UseDefaultFormatter }) {
-    return new LocL<T, Fallback, S, F, UseDefaultFormatter>(config);
+  return new LocL<T, Fallback, S, F, UseDefaultFormatter>(config);
+}
+
+/**
+ * Declares translation resources while keeping their literal types, so that
+ * `t()` knows which keys and `{params}` exist. Same effect as `as const`, without writing it.
+ *
+ * @example
+ * ```ts
+ * const resources = defineResources({
+ *   en: { greeting: "Hello, {name}!" },
+ *   de: { greeting: "Hallo, {name}!" }
+ * });
+ *
+ * const translator = initLocL({ resources, fallbackLanguage: "en" });
+ * translator.t("greeting", { name: "World" }); // `name` is required and suggested
+ * ```
+ */
+export function defineResources<const T extends Record<string, any>>(resources: T): T {
+  return resources;
 }

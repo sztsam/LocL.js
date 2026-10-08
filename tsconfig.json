@@ -7,10 +7,12 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
-    "outDir": "dist",
+    "rootDir": "./src",
+    "outDir": "./dist",
     "noEmit": false,
     "moduleResolution": "nodenext",
-    "isolatedModules": true
+    "isolatedModules": true,
+    "jsx": "react-jsx"
   },
   "include": ["src"],
   "exclude": ["node_modules", "dist"]
