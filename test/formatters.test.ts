@@ -130,6 +130,13 @@ describe('defaultFormatters', () => {
       expect(defaultFormatters.yesNo(true, ['Y', 'N'])).toBe('Y');
       expect(defaultFormatters.yesNo(false, ['Y', 'N'])).toBe('N');
     });
+
+    it('should handle fallback branches and partial/null args', () => {
+      expect(defaultFormatters.yesNo(false, ["Y"])).toBe("No");
+      expect(defaultFormatters.yesNo(true, ["", "N"])).toBe("Yes");
+      expect(defaultFormatters.yesNo(true, null as any)).toBe("Yes");
+      expect(defaultFormatters.yesNo(false, null as any)).toBe("No");
+    });
   });
 
   describe('boolean', () => {
@@ -141,6 +148,13 @@ describe('defaultFormatters', () => {
     it('should use custom labels', () => {
       expect(defaultFormatters.boolean(true, ['1', '0'])).toBe('1');
       expect(defaultFormatters.boolean(false, ['1', '0'])).toBe('0');
+    });
+
+    it('should handle fallback branches and partial/null args', () => {
+      expect(defaultFormatters.boolean(false, ["trueVal"])).toBe("false");
+      expect(defaultFormatters.boolean(true, ["", "falseVal"])).toBe("true");
+      expect(defaultFormatters.boolean(true, null as any)).toBe("true");
+      expect(defaultFormatters.boolean(false, null as any)).toBe("false");
     });
   });
 

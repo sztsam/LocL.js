@@ -18,11 +18,13 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.ts
-var index_exports = {};
-__export(index_exports, {
+var src_exports = {};
+__export(src_exports, {
+  LocL: () => LocL,
+  defineResources: () => defineResources,
   initLocL: () => initLocL
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(src_exports);
 
 // src/formatters.ts
 var defaultFormatters = {
@@ -192,25 +194,26 @@ var LocL = class _LocL {
   constructor(config) {
     this.cache = /* @__PURE__ */ new Map();
     this.proxyCache = /* @__PURE__ */ new WeakMap();
+    this.pluralRulesCache = /* @__PURE__ */ new Map();
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.rootInstance = this;
     if (!config.resources) {
       throw new Error("[LocL] `resources` is required");
     }
     if (!config.fallbackLanguage) {
       throw new Error("[LocL] `fallbackLanguage` is required");
     }
-    config = {
+    this.config = {
       useDefaultFormatters: true,
       devMode: false,
       useCache: true,
       ...config
     };
-    config.resources = this.makeReadOnly(config.resources);
-    this.config = config;
+    this.resources = { ...config.resources };
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope;
-    this.pluralRules = new Intl.PluralRules(this.language);
-    this.formatters = config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
+    this.formatters = this.config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
   }
   /**
    * Creates a new proxy translator instance with a different configuration.
@@ -222,22 +225,39 @@ var LocL = class _LocL {
    * @returns A new proxy `LocL` instance.
    */
   withConfig(config) {
+    const root = this.rootInstance;
     const cacheKey = `proxy::${config.language ?? this.language}::${Array.isArray(config.scope) ? config.scope.join("|") : config.scope ?? "*"}`;
-    if (this.cache.has(cacheKey)) {
-      return this.cache.get(cacheKey);
+    if (root.cache.has(cacheKey)) {
+      return root.cache.get(cacheKey);
     }
-    const result = new Proxy(this, {
-      get(target, prop) {
+    const result = new Proxy(root, {
+      get(target, prop, receiver) {
         if (prop === "language") {
           return config.language ?? target.language;
         }
         if (prop === "scope") {
-          return config.scope;
+          return config.scope !== void 0 ? config.scope : target.scope;
         }
-        return target[prop];
+        if (prop === "rootInstance") {
+          return target;
+        }
+        if (prop === "subscribe" && config.language !== void 0) {
+          return (listener) => {
+            try {
+              listener(config.language, config.language);
+            } catch (err) {
+              console.error("[LocL] Error in subscriber:", err);
+            }
+            return () => {
+            };
+          };
+        }
+        return Reflect.get(target, prop, receiver);
       }
     });
-    this.cache.set(cacheKey, result);
+    if (root.config.useCache) {
+      root.cache.set(cacheKey, result);
+    }
     return result;
   }
   /**
@@ -249,18 +269,106 @@ var LocL = class _LocL {
   clone(language = this.language, scope) {
     return new _LocL({
       ...this.config,
+      resources: this.resources,
       language,
       scope
     });
+  }
+  /**
+   * Subscribes a listener to language changes.
+   * Conforms to the standard reactive store contract (e.g. Svelte stores).
+   * Calls the listener immediately with the current language and returns an unsubscribe function.
+   * @param listener - The subscriber callback function.
+   * @returns An unsubscribe function.
+   */
+  subscribe(listener) {
+    this.subscribers.add(listener);
+    try {
+      listener(this.language, this.language);
+    } catch (err) {
+      console.error("[LocL] Error in initial subscriber call:", err);
+    }
+    return () => {
+      this.subscribers.delete(listener);
+    };
+  }
+  /**
+   * Gets the current active language.
+   */
+  getLanguage() {
+    return this.language;
+  }
+  /**
+   * Adds or overrides a single translation key at runtime.
+   * @param lang - Target language code.
+   * @param key - Dotted path key.
+   * @param value - The translation value.
+   */
+  addResource(lang, key, value) {
+    if (!this.resources[lang]) {
+      this.resources[lang] = {};
+    }
+    const keys = key.split(".");
+    let current = this.resources[lang];
+    for (let i = 0; i < keys.length - 1; i++) {
+      const k = keys[i];
+      if (k === "__proto__" || k === "constructor" || k === "prototype") {
+        return;
+      }
+      if (!current[k] || typeof current[k] !== "object") {
+        current[k] = {};
+      }
+      current = current[k];
+    }
+    const lastKey = keys[keys.length - 1];
+    if (lastKey !== "__proto__" && lastKey !== "constructor" && lastKey !== "prototype") {
+      current[lastKey] = value;
+    }
+    this.invalidateCacheForLang(lang);
+  }
+  /**
+   * Deeply merges a resource bundle into the specified language at runtime.
+   * @param lang - Target language code.
+   * @param bundle - Object of translations to merge.
+   */
+  addResources(lang, bundle) {
+    if (!this.resources[lang]) {
+      this.resources[lang] = {};
+    }
+    const deepMerge = (target, source) => {
+      for (const k of Object.keys(source)) {
+        if (k === "__proto__" || k === "constructor" || k === "prototype") {
+          continue;
+        }
+        if (source[k] && typeof source[k] === "object" && !Array.isArray(source[k])) {
+          if (!target[k] || typeof target[k] !== "object") {
+            target[k] = {};
+          }
+          deepMerge(target[k], source[k]);
+        } else {
+          target[k] = source[k];
+        }
+      }
+    };
+    deepMerge(this.resources[lang], bundle);
+    this.invalidateCacheForLang(lang);
   }
   /**
    * Changes the current language of the translator.
    * @param lang - The new language to set.
    */
   changeLanguage(lang) {
-    if (Object.keys(this.config.resources).includes(lang)) {
-      this.language = lang;
-      this.pluralRules = new Intl.PluralRules(this.language);
+    const validated = this.isLanguage(lang);
+    if (validated && validated !== this.language) {
+      const prev = this.language;
+      this.language = validated;
+      for (const sub of this.subscribers) {
+        try {
+          sub(this.language, prev);
+        } catch (err) {
+          console.error("[LocL] Error in subscriber:", err);
+        }
+      }
     }
   }
   t(key, values, format) {
@@ -269,6 +377,9 @@ var LocL = class _LocL {
     }
     const pluralCheckResult = this.checkPlural(key, values);
     if (pluralCheckResult !== void 0) {
+      if (format && format.formatter) {
+        return this.applyFormat(pluralCheckResult, format.formatter, format.args);
+      }
       return pluralCheckResult;
     }
     const result = this.lookupWithFallback(key);
@@ -299,45 +410,54 @@ var LocL = class _LocL {
   format(value, formatter, args) {
     return this.applyFormat(value, formatter, args);
   }
-  /**
-   * Translates a key with pluralization.
-   * It automatically selects the correct plural form based on the `count` value.
-   * @param key - The base key for the pluralization.
-   * @param values - An object with a `count` property and other values to interpolate.
-   * @param format - An object with formatting options.
-   * @returns The translated, pluralized, and formatted string.
-   */
   plural(key, values, format) {
-    const category = this.pluralRules.select(values.count);
-    const baseKey = key;
-    const baseValue = this.lookupWithFallback(baseKey);
-    let interpolated;
-    if (baseValue && typeof baseValue === "object") {
-      if (category in baseValue) {
-        interpolated = this.interpolate(baseValue[category], values) ?? baseKey;
-      } else if ("other" in baseValue) {
-        this.config.devMode && console.warn(`[LocL] Missing plural: "${baseKey}" in "${this.language}"`);
-        interpolated = this.interpolate(baseValue.other, values) ?? baseKey;
-      } else {
-        this.config.devMode && console.warn(`[LocL] Missing plural: "${baseKey}" in "${this.language}"`);
-        interpolated = baseKey;
+    return this.t(key, values, format);
+  }
+  /**
+   * Translates a key and interpolates rich elements using tag functions.
+   * Matches `<tag>content</tag>` in translation templates.
+   * @param key - The key to translate.
+   * @param tags - An object mapping tag names to functions that transform their inner content.
+   * @param values - Values to interpolate into variable placeholders ({name}, {{name}}).
+   * @returns An array of chunks (strings and custom rendered tag values).
+   * @example
+   * ```ts
+   * translator.rich("terms", {
+   *   link: (content) => `<a href="/terms">${content}</a>`
+   * }, { name: "Alice" });
+   * ```
+   */
+  rich(key, tags, values) {
+    const rawStr = this.t(key, values);
+    if (typeof rawStr !== "string") {
+      return [rawStr];
+    }
+    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
+    const result = [];
+    let lastIndex = 0;
+    let match;
+    while ((match = tagRegex.exec(rawStr)) !== null) {
+      if (match.index > lastIndex) {
+        result.push(rawStr.slice(lastIndex, match.index));
       }
-    } else {
-      const pluralKey = `${baseKey}_${category}`;
-      const result = this.lookupWithFallback(pluralKey) ?? this.lookupWithFallback(`${baseKey}_other`) ?? this.lookupWithFallback(baseKey);
-      interpolated = this.interpolate(result, values) ?? baseKey;
+      const tagName = match[1];
+      const content = match[2];
+      const renderer = tags[tagName];
+      typeof renderer === "function" ? result.push(renderer(content)) : result.push(match[0]);
+      lastIndex = match.index + match[0].length;
     }
-    if (format && format.formatter) {
-      return this.applyFormat(interpolated, format.formatter, format.args);
+    if (lastIndex < rawStr.length) {
+      result.push(rawStr.slice(lastIndex));
     }
-    return interpolated;
+    return result;
   }
   get(key) {
     const base = this.buildTranslationObject(this.language);
     if (!key) {
-      return base;
+      return base ? this.makeReadOnly(base) : void 0;
     }
-    return this.lookupWithFallback(key, base);
+    const val = this.lookupWithFallback(key, base);
+    return val && typeof val === "object" ? this.makeReadOnly(val) : val;
   }
   /**
    * Gets a nested object from the translations.
@@ -352,12 +472,27 @@ var LocL = class _LocL {
     if (!value) {
       return null;
     }
-    const language = value.substring(0, 2);
-    return Object.keys(this.config.resources).includes(language) ? language : null;
+    const available = Object.keys(this.resources);
+    if (available.includes(value)) {
+      return value;
+    }
+    const prefix = value.substring(0, 2);
+    if (available.includes(prefix)) {
+      return prefix;
+    }
+    return null;
   }
   getCacheKey(language) {
-    const scopeKey = Array.isArray(this.scope) ? this.scope.join("|") : this.scope ?? "*";
-    return `${language ?? this.language}::${scopeKey}`;
+    const scopeKey = Array.isArray(this.scope) ? this.scope.join("|") : this.scope;
+    return `${language}::${scopeKey}`;
+  }
+  invalidateCacheForLang(lang) {
+    const prefix = `${lang}::`;
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.cache.delete(key);
+      }
+    }
   }
   lookupWithFallback(key, base) {
     const keys = key.split(".");
@@ -375,7 +510,7 @@ var LocL = class _LocL {
     return result;
   }
   buildTranslationObject(language) {
-    const langObject = this.config.resources[language];
+    const langObject = this.resources[language];
     if (!this.scope) {
       return langObject;
     }
@@ -406,11 +541,10 @@ var LocL = class _LocL {
           }, combined);
         }
       }
-      const roCombined = this.makeReadOnly(combined);
       if (this.config.useCache) {
-        this.cache.set(cacheKey, roCombined);
+        this.cache.set(cacheKey, combined);
       }
-      return roCombined;
+      return combined;
     }
     if (this.config.useCache) {
       this.cache.set(cacheKey, void 0);
@@ -440,13 +574,54 @@ var LocL = class _LocL {
     }
     return current;
   }
-  checkPlural(key, values) {
-    if (values?.count !== void 0 && !key.match(/_(one|few|many|other)$/)) {
-      const category = this.pluralRules.select(values.count);
-      const pluralKey = `${key}_${category}`;
-      const pluralResult = this.lookupWithFallback(pluralKey);
-      return this.interpolate(pluralResult, values);
+  getPluralRules(lang) {
+    let rules = this.pluralRulesCache.get(lang);
+    if (!rules) {
+      rules = new Intl.PluralRules(lang);
+      this.pluralRulesCache.set(lang, rules);
     }
+    return rules;
+  }
+  checkPlural(key, values) {
+    if (values?.count !== void 0 && !key.match(/_(zero|one|two|few|many|other)$/)) {
+      const category = this.getPluralRules(this.language).select(values.count);
+      const baseValue = this.lookupWithFallback(key, void 0);
+      if (baseValue && typeof baseValue === "object") {
+        if (values.count === 0 && "zero" in baseValue) {
+          return this.interpolate(baseValue.zero, values);
+        }
+        if (category in baseValue) {
+          return this.interpolate(baseValue[category], values);
+        } else if ("other" in baseValue) {
+          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+          return this.interpolate(baseValue.other, values);
+        } else {
+          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+          return key;
+        }
+      }
+      if (values.count === 0) {
+        const zeroResult = this.lookupWithFallback(`${key}_zero`, void 0);
+        if (zeroResult !== void 0) {
+          return this.interpolate(zeroResult, values);
+        }
+      }
+      const categoryResult = this.lookupWithFallback(`${key}_${category}`, void 0);
+      if (categoryResult !== void 0) {
+        return this.interpolate(categoryResult, values);
+      }
+      const otherResult = this.lookupWithFallback(`${key}_other`, void 0);
+      if (otherResult !== void 0) {
+        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+        return this.interpolate(otherResult, values);
+      }
+      const anySuffixExists = ["zero", "one", "two", "few", "many"].some((cat) => this.lookupWithFallback(`${key}_${cat}`, void 0) !== void 0);
+      if (anySuffixExists) {
+        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+        return key;
+      }
+    }
+    return void 0;
   }
   interpolate(result, values) {
     if (!values || typeof result !== "string") {
@@ -464,34 +639,66 @@ var LocL = class _LocL {
         depth--;
         if (depth === 0 && start >= 0) {
           const raw = result.slice(start, i + 1);
-          tokens.push({ raw, inner: raw.slice(1, -1).trim() });
+          let inner = raw.slice(1, -1);
+          if (inner.startsWith("{") && inner.endsWith("}")) {
+            inner = inner.slice(1, -1);
+          }
+          tokens.push({ raw, inner });
           start = -1;
         }
       }
     }
     let output = result;
+    const processed = /* @__PURE__ */ new Set();
     for (const token of tokens) {
+      if (processed.has(token.raw)) {
+        continue;
+      }
+      processed.add(token.raw);
       let replacement = "";
-      if (token.inner.includes("select")) {
-        const [field, type, ...rest] = token.inner.split(",").map((x) => x.trim());
-        if (type === "select") {
-          const value = String(values[field] ?? "other");
-          const caseRegex = /(\w+)\s*\{([^}]*)\}/g;
-          const caseMap = {};
-          let match;
-          while ((match = caseRegex.exec(rest.join(" "))) !== null) {
-            const [, key, text] = match;
-            caseMap[key] = text.trim();
+      const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+      if (selectMatch) {
+        const field = selectMatch[1].trim();
+        const casesBody = selectMatch[2];
+        const value = String(values[field] ?? "other");
+        const caseMap = {};
+        let i = 0;
+        while (i < casesBody.length) {
+          while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
+          if (i >= casesBody.length) break;
+          let keyStart = i;
+          while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
+          const caseKey = casesBody.slice(keyStart, i).trim();
+          while (i < casesBody.length && casesBody[i] !== "{") i++;
+          if (casesBody[i] === "{") {
+            let bodyDepth = 1;
+            let bodyStart = i + 1;
+            i++;
+            while (i < casesBody.length && bodyDepth > 0) {
+              if (casesBody[i] === "{") bodyDepth++;
+              else if (casesBody[i] === "}") bodyDepth--;
+              i++;
+            }
+            const caseText = casesBody.slice(bodyStart, i - 1).trim();
+            if (caseKey) {
+              caseMap[caseKey] = caseText;
+            }
           }
-          replacement = caseMap[value] ?? caseMap.other ?? "";
         }
+        const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
+        replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
       } else {
         const [fieldName, formatterAndArgs] = token.inner.split("|").map((x) => x.trim());
         const [formatterName, argsStr] = formatterAndArgs ? formatterAndArgs.split(":") : [];
-        const args = argsStr ? argsStr.split(",") : [];
+        const args = argsStr ? argsStr.split(",").map((a) => a.trim()) : [];
         const val = values[fieldName];
-        if (formatterName && this.formatters?.[formatterName]) {
-          replacement = this.formatters[formatterName](val, args);
+        if (formatterName) {
+          if (this.formatters?.[formatterName]) {
+            replacement = this.formatters[formatterName](val, args);
+          } else {
+            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
+            replacement = val !== void 0 ? String(val) : token.raw;
+          }
         } else if (val instanceof Date) {
           replacement = new Intl.DateTimeFormat(this.language).format(val);
         } else if (typeof val === "number") {
@@ -500,7 +707,7 @@ var LocL = class _LocL {
           replacement = val !== void 0 ? String(val) : token.raw;
         }
       }
-      output = output.replace(token.raw, replacement);
+      output = output.split(token.raw).join(replacement);
     }
     return output;
   }
@@ -536,7 +743,12 @@ var LocL = class _LocL {
 function initLocL(config) {
   return new LocL(config);
 }
+function defineResources(resources) {
+  return resources;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  LocL,
+  defineResources,
   initLocL
 });

@@ -113,8 +113,10 @@ describe('LangWithPlurals Type', () => {
   const invalidSuffixPlural: LangWithPlurals<RawLang> = {
     ...validLang,
     suffix_plurals: {
-      ...validLang.suffix_plurals,
       car_one: '1 car', // ERROR: 'car_other' is missing
+      boat_one: '1 boat',
+      boat_other: 'some boats',
+      boat_many: 'many boats'
     },
   };
 
