@@ -258,6 +258,27 @@ export type TResult<K extends string, Tr, PK extends string> =
     ? PathValue<Tr, K>
     : K extends PK ? string : PathValue<Tr, K>;
 
+type DeepMerge<T, U> = T extends object
+  ? U extends object
+    ? {
+        [K in keyof T | keyof U]: K extends keyof U
+          ? K extends keyof T
+            ? DeepMerge<T[K], U[K]>
+            : U[K]
+          : K extends keyof T
+            ? T[K]
+            : never;
+      }
+    : U
+  : U;
+export type DeepMergeResources<
+  T extends Record<string, any>,
+  L extends string,
+  B extends Record<string, any>
+> = L extends keyof T
+  ? { [K in keyof T]: K extends L ? DeepMerge<T[K], B> : T[K] }
+  : T & { [K in L]: B };
+
 
 // - Language file typings
 //type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";

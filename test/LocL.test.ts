@@ -40,7 +40,7 @@ describe('initLocL', () => {
     hu: {
       simple: "Egyszerű",
     }
-  };
+  } as const;
 
   type Resources = typeof resources;
   const getResources = () => JSON.parse(JSON.stringify(resources));
@@ -65,6 +65,7 @@ describe('initLocL', () => {
     });
     expect(translator.t('greeting', { name: 'World' })).toBe('Hello, World!');
     // Placeholder if value missing
+    // @ts-expect-error
     expect(translator.t('greeting')).toBe('Hello, {name}!');
     // Date interpolation
     expect(translator.t('date_fmt', { d: new Date() })).toContain('/');

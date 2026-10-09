@@ -1,6 +1,6 @@
 import {
   ScopeType, Formatter, Language, EffectiveFormatters, FormatOptions, InterpolationOptions,
-  NestedKeyOf, NestedKeyOfObj, PathValue, TranslationObjectFor, PluralKeys,
+  NestedKeyOf, NestedKeyOfObj, PathValue, TranslationObjectFor, PluralKeys, DeepMergeResources, 
   TagInterpolationOptions, PluralParamsFor, TArgs, TResult, Subscriber, Unsubscribe
 } from "./types";
 import { type DefaultFormatters, defaultFormatters } from "./formatters";
@@ -206,8 +206,8 @@ export class LocL<
    * @param lang - Target language code.
    * @param bundle - Object of translations to merge.
    */
-  public addResources(lang: Language<T> | string, bundle: Record<string, any>) {
-    if (this.isUnsafeObjectKey(lang)) { return; }
+  public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter> {
+    if (this.isUnsafeObjectKey(lang)) { return this as any; }
     if (!this.resources[lang]) {
       this.resources[lang] = Object.create(null);
     }
@@ -227,6 +227,7 @@ export class LocL<
     };
     deepMerge(this.resources[lang], bundle);
     this.invalidateCacheForLang(lang);
+    return this as any;
   }
 
   /**
