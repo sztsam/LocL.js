@@ -2,6 +2,18 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.0.1] — 2026-10-09
+
+### Fixed
+
+- Enforced strict parameter checking in `toI18next()` so templates with variables (`{name}`) and plural counts (`{count}`) are strictly validated at compile time, including colon-syntax keys (`common:hello`).
+- Fixed generic dictionary inference on `<Trans translator={translator} />` so `i18nKey` provides full IDE autocomplete when passing an explicit translator instance.
+- Restored strict compile-time key validation in `<Trans />`, strictly checking known keys and permitting arbitrary strings only when an explicit `fallback` prop is provided.
+
+### Security
+
+- Hardened `addResource` and `addResources` against prototype pollution by rejecting any path segments containing `__proto__`, `constructor`, or `prototype` before object traversal.
+
 ## [2.0.0] — 2026-10-08
 
 ### Added

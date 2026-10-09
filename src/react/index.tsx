@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useSyncExternalStore, ReactNode, ReactElement, useMemo } from "react";
 import { LocL } from "../LocL.js";
-import { ScopeType, Language } from "../types.js";
-import { Trans, TransProps, TransKey } from "./Trans.js";
+import { ScopeType, Language, Scope } from "../types.js";
+import { Trans, TransProps, TransKey, TransValues } from "./Trans.js";
 
-export { Trans, type TransProps, type TransKey };
+export { Trans, type TransProps, type TransKey, type TransValues };
 
 /* =========================================================================
- * 1. Global Type Registry (Optional Ambient Mode)
+ * 1. Global Type Registry
  * ========================================================================= */
 /**
  * Global type registry for LocL React.
@@ -22,11 +22,7 @@ export { Trans, type TransProps, type TransKey };
  * }
  * ```
  */
-export interface LocLRegister {
-  // translator?: LocL<any, any, any, any, any>;
-  // resources?: Record<string, any>;
-  // fallbackLanguage?: string;
-}
+export interface LocLRegister {}
 
 export type DefaultResources = LocLRegister extends { translator: LocL<infer Res, any, any, any, any> }
   ? Res
@@ -92,7 +88,7 @@ export function useLocL<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   S extends ScopeType<T, Fallback> = undefined
->(customTranslator?: LocL<any, any, any, any, any>): UseLocLResult<T, Fallback, S> {
+>(customTranslator?: LocL<T, Fallback, S, any, any> | LocL<any, any, any, any, any>): UseLocLResult<T, Fallback, S> {
   const contextTranslator = useContext(LocLContext);
   const translator = (customTranslator ?? contextTranslator) as LocL<T, Fallback, S, any, any> | null;
 
@@ -125,7 +121,7 @@ export function useTranslation<
   Fallback extends keyof T & string = DefaultFallback<T>
 >(
   scope?: undefined,
-  customTranslator?: LocL<any, any, any, any, any>
+  customTranslator?: LocL<T, Fallback, any, any, any> | LocL<any, any, any, any, any>
 ): UseTranslationResult<T, Fallback, undefined>;
 
 export function useTranslation<
@@ -134,7 +130,7 @@ export function useTranslation<
   S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
 >(
   scope: S,
-  customTranslator?: LocL<any, any, any, any, any>
+  customTranslator?: LocL<T, Fallback, any, any, any> | LocL<any, any, any, any, any>
 ): UseTranslationResult<T, Fallback, S>;
 
 export function useTranslation<
@@ -171,7 +167,6 @@ export interface BoundLocLProviderProps<
   T extends Record<string, any>,
   Fallback extends keyof T & string
 > {
-  /** Optional override translator; defaults to the instance passed to `createLocLReact` */
   translator?: LocL<any, any, any, any, any>;
   children: ReactNode;
 }
@@ -186,13 +181,15 @@ export interface LocLReactSuite<
     customTranslator?: LocL<any, any, any, any, any>
   ) => UseLocLResult<T, Fallback, S>;
   useTranslation: {
+    (): UseTranslationResult<T, Fallback, undefined>;
+    <S extends Scope<T, Fallback>>(scope: S): UseTranslationResult<T, Fallback, S>;
+    <S extends Scope<T, Fallback>[]>(scope: S): UseTranslationResult<T, Fallback, S>;
     (scope?: undefined, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, undefined>;
     <S extends ScopeType<T, Fallback>>(scope: S, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
-    <S extends ScopeType<T, Fallback> = any>(scope?: S, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
   };
   Trans: <
     S extends ScopeType<T, Fallback> = undefined,
-    K extends string = TransKey<T, Fallback, S>
+    K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>
   >(
     props: TransProps<T, Fallback, S, K>
   ) => ReactElement;
@@ -216,7 +213,7 @@ export function createLocLReact<
   Fallback extends keyof T & string
 >(defaultTranslator: LocL<T, Fallback, any, any, any>): LocLReactSuite<T, Fallback> {
   const BoundContext = createContext<LocL<any, any, any, any, any> | null>(null);
-  
+
   function BoundLocLProvider({
     translator = defaultTranslator,
     children
@@ -280,7 +277,7 @@ export function createLocLReact<
 
   function BoundTrans<
     S extends ScopeType<T, Fallback> = undefined,
-    K extends string = TransKey<T, Fallback, S>
+    K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>
   >(props: TransProps<T, Fallback, S, K>): ReactElement {
     const contextTranslator = useContext(BoundContext);
     const activeTranslator = props.translator ?? contextTranslator ?? defaultTranslator;

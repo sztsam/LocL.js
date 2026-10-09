@@ -1,38 +1,91 @@
 import { LocL } from "../LocL.js";
-import { NestedKeyOf, InterpolationOptions } from "../types.js";
+import { NestedKeyOf, InterpolationOptions, PathValue, ParamsFor, IsEmptyParams, PluralParamsFor, PluralKeys, TranslationObjectFor } from "../types.js";
 import { DefaultResources, DefaultFallback } from "../react/index.js";
 
-/**
- * Key type that supports both colon syntax (`auth:login`) and dotted syntax (`auth.login`).
- */
-export type I18nextKey<T> = T extends object
-  ? {
-      [K in keyof T & string]: T[K] extends object
-        ? `${K}:${NestedKeyOf<T[K]>}` | `${K}.${NestedKeyOf<T[K]>}` | `${K}`
-        : `${K}`;
-    }[keyof T & string] | NestedKeyOf<T>
-  : string;
+export type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
+  ? `${NS}.${Rest}`
+  : K;
+
+export type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}`
+  ? `${NS}:${Rest}` | `${NS}.${Rest}`
+  : K;
+
+export type BaseKeys<Tr, PK extends string> = ((Tr extends object ? NestedKeyOf<Tr> : never) | PK) & string;
+export type I18nextKey<Tr, PK extends string> = ColonKeys<BaseKeys<Tr, PK>>;
 
 export interface I18nextOptions extends InterpolationOptions {
   ns?: string;
   defaultValue?: string;
   count?: number;
-  [key: string]: any;
+}
+
+export type I18nextParamsFor<K extends string, Tr, PK extends string> =
+  NormalizeKey<K> extends PK
+    ? PluralParamsFor<NormalizeKey<K>, Tr>
+    : ParamsFor<PathValue<Tr, NormalizeKey<K>>>;
+
+export type I18nextHasParams<K extends string, Tr, PK extends string> =
+  NormalizeKey<K> extends PK
+    ? true
+    : IsEmptyParams<ParamsFor<PathValue<Tr, NormalizeKey<K>>>> extends true
+      ? false
+      : true;
+
+export type I18nextOptionsFor<K extends string, Tr, PK extends string> =
+  I18nextParamsFor<K, Tr, PK> & I18nextOptions;
+
+
+export interface I18nextTranslation<
+  T extends Record<string, any> = DefaultResources,
+  Fallback extends keyof T & string = DefaultFallback<T>,
+  Tr = TranslationObjectFor<undefined, T, Fallback>,
+  PK extends string = PluralKeys<undefined, T, Fallback>
+> {
+  // 1. Known key: options is REQUIRED if template has variables or is plural, OPTIONAL if static
+  <K extends I18nextKey<Tr, PK>>(
+    key: K,
+    ...args: I18nextHasParams<K, Tr, PK> extends true
+      ? [options: I18nextOptionsFor<K, Tr, PK>]
+      : [options?: I18nextOptions]
+  ): string;
+
+  // 2. Known key with defaultValue string argument
+  <K extends I18nextKey<Tr, PK>>(
+    key: K,
+    defaultValue: string,
+    ...args: I18nextHasParams<K, Tr, PK> extends true
+      ? [options: I18nextOptionsFor<K, Tr, PK>]
+      : [options?: I18nextOptions]
+  ): string;
+
+  // 3. Fallback signature for dynamic keys ONLY when defaultValue string is provided
+  (
+    key: string,
+    defaultValue: string,
+    options?: I18nextOptions
+  ): string;
+
+  // 4. Fallback signature for dynamic keys ONLY when defaultValue is in options
+  (
+    key: string,
+    options: { defaultValue: string } & I18nextOptions
+  ): string;
+
+  // 5. Dynamic key with explicit ns option
+  (
+    key: string,
+    options: { ns: string } & I18nextOptions
+  ): string;
 }
 
 export interface I18nextCompat<
   T extends Record<string, any> = DefaultResources,
-  Fallback extends keyof T & string = DefaultFallback<T>
+  Fallback extends keyof T & string = DefaultFallback<T>,
+  Tr = TranslationObjectFor<undefined, T, Fallback>,
+  PK extends string = PluralKeys<undefined, T, Fallback>
 > {
-  t<K extends (I18nextKey<T[Fallback]> | (string & {}))>(
-    key: K,
-    options?: I18nextOptions
-  ): string;
-  t<K extends (I18nextKey<T[Fallback]> | (string & {}))>(
-    key: K,
-    defaultValue?: string,
-    options?: I18nextOptions
-  ): string;
+  t: I18nextTranslation<T, Fallback>;
+  exists<K extends I18nextKey<Tr, PK>>(key: K, options?: { ns?: string; [key: string]: any }): boolean;
   exists(key: string, options?: { ns?: string; [key: string]: any }): boolean;
   get language(): string;
   get languages(): string[];
@@ -48,10 +101,6 @@ export interface I18nextCompat<
   translator: LocL<T, Fallback, any, any, any>;
 }
 
-/**
- * Wraps a LocL instance in an i18next-compatible interface.
- * Supports both colon (`common:login`) and dotted namespaces with full IDE autocomplete.
- */
 export function toI18next<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>
@@ -72,52 +121,51 @@ export function toI18next<
     emit("languageChanged", newLang, prevLang);
   });
 
+  const tFunction = (key: string, arg1?: any, arg2?: any): string => {
+    let defaultValue: string | undefined;
+    let options: I18nextOptions = {};
+
+    if (typeof arg1 === "string") {
+      defaultValue = arg1;
+      options = typeof arg2 === "object" && arg2 !== null ? arg2 : {};
+    } else if (typeof arg1 === "object" && arg1 !== null) {
+      options = arg1;
+      defaultValue = options.defaultValue;
+    }
+
+    let lookupKey = key;
+    let ns = options.ns;
+
+    if (key.includes(":")) {
+      const colonIdx = key.indexOf(":");
+      ns = key.slice(0, colonIdx);
+      lookupKey = key.slice(colonIdx + 1);
+    }
+
+    let activeTranslator: LocL<any, any, any> = translator;
+    if (ns) {
+      activeTranslator = translator.withConfig({ scope: ns } as any) as LocL<any, any, any>;
+    }
+
+    let result: string | undefined;
+    if (typeof options.count === "number") {
+      result = activeTranslator.plural(lookupKey as any, options as any) as string;
+    } else {
+      result = activeTranslator.t(lookupKey as any, options as any) as string;
+    }
+
+    const keyExists = (activeTranslator as any).get(lookupKey) !== undefined || result !== lookupKey;
+
+    if (!keyExists && defaultValue !== undefined) {
+      return defaultValue;
+    }
+
+    return result ?? defaultValue ?? key;
+  };
+
   const compat: I18nextCompat<T, Fallback> = {
     translator,
-
-    t(key: string, arg1?: any, arg2?: any): string {
-      let defaultValue: string | undefined;
-      let options: I18nextOptions = {};
-
-      if (typeof arg1 === "string") {
-        defaultValue = arg1;
-        options = typeof arg2 === "object" && arg2 !== null ? arg2 : {};
-      } else if (typeof arg1 === "object" && arg1 !== null) {
-        options = arg1;
-        defaultValue = options.defaultValue;
-      }
-
-      // Handle colon namespace syntax, e.g. "common:login"
-      let lookupKey = key;
-      let ns = options.ns;
-
-      if (key.includes(":")) {
-        const colonIdx = key.indexOf(":");
-        ns = key.slice(0, colonIdx);
-        lookupKey = key.slice(colonIdx + 1);
-      }
-
-      // Type as LocL<any, any, any> to avoid generic union call issues
-      let activeTranslator: LocL<any, any, any> = translator;
-      if (ns) {
-        activeTranslator = translator.withConfig({ scope: ns } as any) as LocL<any, any, any>;
-      }
-
-      let result: string | undefined;
-      if (typeof options.count === "number") {
-        result = activeTranslator.plural(lookupKey as any, options as any) as string;
-      } else {
-        result = activeTranslator.t(lookupKey as any, options as any) as string;
-      }
-
-      const keyExists = (activeTranslator as any).get(lookupKey) !== undefined || result !== lookupKey;
-
-      if (!keyExists && defaultValue !== undefined) {
-        return defaultValue;
-      }
-
-      return result ?? defaultValue ?? key;
-    },
+    t: tFunction as I18nextTranslation<T, Fallback>,
 
     exists(key: string, options?: { ns?: string }): boolean {
       let lookupKey = key;
@@ -171,7 +219,7 @@ export function toI18next<
       translator.addResources(lng, { [ns]: resources });
     },
 
-    addResourceBundle(lng: string, ns: string, resources: any, deep?: boolean, overwrite?: boolean): void {
+    addResourceBundle(lng: string, ns: string, resources: any): void {
       translator.addResources(lng, { [ns]: resources });
     },
 

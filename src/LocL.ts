@@ -178,23 +178,26 @@ export class LocL<
    * @param value - The translation value.
    */
   public addResource(lang: Language<T> | string, key: string, value: any) {
-    if (!this.resources[lang]) {
-      this.resources[lang] = {};
-    }
+    if (this.isUnsafeObjectKey(lang)) { return; }
+
     const keys = key.split(".");
+    if (keys.some((k) => this.isUnsafeObjectKey(k))) {
+      return;
+    }
+    if (!this.resources[lang]) {
+      this.resources[lang] = Object.create(null);
+    }
+    
     let current = this.resources[lang];
     for (let i = 0; i < keys.length - 1; i++) {
       const k = keys[i];
-      if (k === "__proto__" || k === "constructor" || k === "prototype") { return; }
       if (!current[k] || typeof current[k] !== "object") {
-        current[k] = {};
+        current[k] = Object.create(null);
       }
       current = current[k];
     }
     const lastKey = keys[keys.length - 1];
-    if (lastKey !== "__proto__" && lastKey !== "constructor" && lastKey !== "prototype") {
-      current[lastKey] = value;
-    }
+    current[lastKey] = value;
     this.invalidateCacheForLang(lang);
   }
 
@@ -204,14 +207,17 @@ export class LocL<
    * @param bundle - Object of translations to merge.
    */
   public addResources(lang: Language<T> | string, bundle: Record<string, any>) {
+    if (this.isUnsafeObjectKey(lang)) { return; }
     if (!this.resources[lang]) {
-      this.resources[lang] = {};
+      this.resources[lang] = Object.create(null);
     }
     const deepMerge = (target: any, source: any) => {
       for (const k of Object.keys(source)) {
-        if (k === "__proto__" || k === "constructor" || k === "prototype") { continue; }
+        if (this.isUnsafeObjectKey(k)) { continue; }
         if (source[k] && typeof source[k] === "object" && !Array.isArray(source[k])) {
-          if (!target[k] || typeof target[k] !== "object") { target[k] = {}; }
+          if (!target[k] || typeof target[k] !== "object") {
+            target[k] = Object.create(null);
+          }
           deepMerge(target[k], source[k]);
         }
         else {
@@ -472,7 +478,7 @@ export class LocL<
     for (const key of keys) {
       if (current === null || typeof current !== "object") { return undefined; }
       const keyTest = keysCopy.join(".");
-      if (current.hasOwnProperty(keyTest)) { return current[keyTest]; }
+      if (Object.prototype.hasOwnProperty.call(current, keyTest)) { return current[keyTest]; }
       if (!(key in current)) { return undefined; }
       current = current[key];
       keysCopy.shift();
@@ -662,5 +668,9 @@ export class LocL<
     });
     this.proxyCache.set(obj, proxy);
     return proxy;
+  }
+
+  private isUnsafeObjectKey(key: string): boolean {
+    return key === "__proto__" || key === "constructor" || key === "prototype";
   }
 }

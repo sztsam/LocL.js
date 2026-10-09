@@ -43,14 +43,15 @@ var import_react2 = require("react");
 // src/react/Trans.tsx
 var import_react = __toESM(require("react"));
 var import_jsx_runtime = require("react/jsx-runtime");
-function Trans({
-  i18nKey,
-  values,
-  components = {},
-  translator: customTranslator,
-  scope,
-  fallback
-}) {
+function Trans(props) {
+  const {
+    i18nKey,
+    values,
+    components = {},
+    translator: customTranslator,
+    scope,
+    fallback
+  } = props;
   const contextTranslator = (0, import_react.useContext)(LocLContext);
   const activeTranslator = customTranslator ?? contextTranslator;
   const getSnapshot = () => activeTranslator ? activeTranslator.getLanguage() : "";

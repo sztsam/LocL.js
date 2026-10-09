@@ -23,7 +23,7 @@ describe("i18next Compatibility Adapter", () => {
         other: "{count} mensajes"
       }
     }
-  };
+  } as const;
 
   it("should support colon namespace syntax (common:hello)", () => {
     const locl = initLocL({ resources, fallbackLanguage: "en" });
@@ -80,6 +80,7 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.exists("unknown:key")).toBe(false);
 
     i18n.addResourceBundle("en", "dynamic", { title: "Title" });
+    // @ts-expect-error
     expect(i18n.t("dynamic:title")).toBe("Title");
   });
 
@@ -161,6 +162,7 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.t("missingKey", { defaultValue: "Options Fallback" })).toBe("Options Fallback");
 
     // missing key without default returns key
+    // @ts-expect-error
     expect(i18n.t("missingKey")).toBe("missingKey");
 
     // exists with colon and ns
@@ -182,12 +184,15 @@ describe("i18next Compatibility Adapter", () => {
 
     // addResource & addResources
     i18n.addResource("en", "common", "extra", "Extra Value");
+    // @ts-expect-error
     expect(i18n.t("common:extra")).toBe("Extra Value");
 
     i18n.addResources("en", "common", { another: "Another Value" });
+    // @ts-expect-error
     expect(i18n.t("common:another")).toBe("Another Value");
 
     i18n.addResourceBundle("en", "newNs", { item: "Item Value" });
+    // @ts-expect-error
     expect(i18n.t("newNs:item")).toBe("Item Value");
 
     // loadNamespaces with and without callback
@@ -234,6 +239,7 @@ describe("i18next Compatibility Adapter", () => {
       subscribe: () => () => {}
     };
     const i18nUndefined = toI18next(mockUndefinedT as any);
+    // @ts-expect-error
     expect(i18nUndefined.t("someKey")).toBe("someKey");
     expect(i18nUndefined.t("someKey", "Custom Default")).toBe("Custom Default");
   });

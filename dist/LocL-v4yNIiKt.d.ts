@@ -432,6 +432,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private interpolate;
     private applyFormat;
     private makeReadOnly;
+    private isUnsafeObjectKey;
 }
 
-export { type Formatter as F, type InterpolationOptions as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type Language as c };
+export { type Formatter as F, type InterpolationOptions as I, type LocLConfig as L, type NestedKeyOf as N, type PluralParamsFor as P, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type ParamsFor as c, type PathValue as d, type IsEmptyParams as e, type PluralKeys as f, type Language as g, type Scope as h };

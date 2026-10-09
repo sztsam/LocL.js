@@ -1,33 +1,59 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { initLocL } from "../src/index.js";
+import { initLocL, defineResources } from "../src/index.js";
 import { LocLProvider, useTranslation, useLocL, Trans, createLocLReact } from "../src/react/index.js";
 
-describe("React Integration", () => {
-  const resources = {
-    en: {
-      title: "Hello World",
-      welcome: "Welcome, {name}!",
-      notice: "Please <bold>read</bold> our <link>terms</link>.",
-      user: {
-        greeting: "Greetings from user namespace!"
-      }
+// 1. Declare resources using defineResources for compile-time literal types
+const resources = defineResources({
+  en: {
+    title: "Hello World",
+    welcome: "Welcome, {name}!",
+    notice: "Please <bold>read</bold> our <link>terms</link>.",
+    messages: {
+      one: "1 message",
+      other: "{count} messages"
     },
-    de: {
-      title: "Hallo Welt",
-      welcome: "Willkommen, {name}!",
-      notice: "Bitte <bold>lesen</bold> Sie unsere <link>Bedingungen</link>.",
-      user: {
-        greeting: "Grüße aus dem Benutzer-Namespace!"
-      }
+    user: {
+      greeting: "Greetings from user namespace!"
     }
-  };
+  },
+  de: {
+    title: "Hallo Welt",
+    welcome: "Willkommen, {name}!",
+    notice: "Bitte <bold>lesen</bold> Sie unsere <link>Bedingungen</link>.",
+    messages: {
+      one: "1 Nachricht",
+      other: "{count} Nachrichten"
+    },
+    user: {
+      greeting: "Grüße aus dem Benutzer-Namespace!"
+    }
+  }
+});
 
-  it("should render translations with useTranslation and LocLProvider", () => {
+// 2. Ambient type registration: connects `resources` to standalone `useTranslation()`
+declare module "../src/react/index.js" {
+  interface LocLRegister {
+    resources: typeof resources;
+    fallbackLanguage: "en";
+  }
+}
+
+describe("React Integration", () => {
+  it("should render translations with useTranslation and LocLProvider with strict typing", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
 
     function Component() {
       const { t } = useTranslation();
+
+      const welcomeMsg = t("welcome", { name: "Alice" });
+      expect(welcomeMsg).toBe("Welcome, Alice!");
+
+      // @ts-expect-error Missing required parameter 'name'
+      t("welcome");
+      // @ts-expect-error Key does not exist
+      t("invalidKey");
+
       return <h1>{t("title")}</h1>;
     }
 
@@ -45,11 +71,19 @@ describe("React Integration", () => {
 
     function UserComponent() {
       const { t } = useTranslation("user");
-      const { t: arrT } = useTranslation(["user"] as any);
+
+      // @ts-expect-error "title" is not in the "user" scope
+      t("title");
+      // @ts-expect-error Invalid scope
+      useTranslation("nonExistentScope");
+
+      // Array scope strictly typed to "user.greeting"
+      const { t: arrT } = useTranslation(["user"]);
+
       return (
         <div>
           <p>{t("greeting")}</p>
-          <p>{arrT("user.greeting" as any)}</p>
+          <p>{arrT("user.greeting")}</p>
         </div>
       );
     }
@@ -63,7 +97,7 @@ describe("React Integration", () => {
     expect(html).toContain("Greetings from user namespace!");
   });
 
-  it("should render rich component tags using Trans", () => {
+  it("should render rich component tags using Trans with strict type-checking", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
 
     function NoticeComponent() {
@@ -78,7 +112,6 @@ describe("React Integration", () => {
         />
       );
     }
-
     const html = renderToStaticMarkup(<NoticeComponent />);
 
     expect(html).toContain('<strong class="bold-text">read</strong>');
@@ -127,7 +160,9 @@ describe("React Integration", () => {
         expect(activeT).toBe(translator);
         expect(language).toBe("en");
         expect(t("title")).toBe("Hello World");
-        expect(plural("title" as any, { count: 1 })).toBe("Hello World");
+        // Strictly typed plural without any casts
+        expect(plural("messages", { count: 1 })).toBe("1 message");
+        expect(plural("messages", { count: 5 })).toBe("5 messages");
         expect(rich("title", {})).toEqual(["Hello World"]);
         expect(format("123", "number")).toBe("123");
         changeLanguage("de");
@@ -173,6 +208,7 @@ describe("React Integration", () => {
 
       // Trans without translator, without fallback (uses key)
       const html2 = renderToStaticMarkup(
+        // @ts-expect-error
         <Trans i18nKey="KeyAsText" />
       );
       expect(html2).toBe("KeyAsText");
@@ -218,18 +254,18 @@ describe("React Integration", () => {
       expect(suite.translator).toBe(translator);
       expect(suite.LocLContext).toBeDefined();
 
-      // 1. Root useTranslation via suite
+      // 1. Root useTranslation via suite (100% pre-bound strict types)
       function RootComp() {
         const { t, language, changeLanguage, plural, rich, format } = suite.useTranslation();
         expect(language).toBe("en");
-        expect((plural as any)("title", { count: 1 })).toBe("Hello World");
+        expect(t("title")).toBe("Hello World");
+        expect(plural("messages", { count: 1 })).toBe("1 message");
         expect(rich("title", {})).toEqual(["Hello World"]);
         expect(format("123", "number")).toBe("123");
         changeLanguage("de");
         return <h1>{t("title")}</h1>;
       }
 
-      // Component for testing override translator in Provider (language is "de")
       function ProviderOverrideComp() {
         const { t, language } = suite.useTranslation();
         expect(language).toBe("de");
@@ -240,18 +276,18 @@ describe("React Integration", () => {
       const otherTranslator = initLocL({ resources, fallbackLanguage: "de" });
       function ScopedComp() {
         const { t: userT } = suite.useTranslation("user");
-        const { t: arrayT } = suite.useTranslation(["user"] as any);
+        const { t: arrayT } = suite.useTranslation(["user"]);
         const { t: customT } = suite.useTranslation("user", otherTranslator);
         return (
           <div>
             <p>{userT("greeting")}</p>
-            <p>{arrayT("user.greeting" as any)}</p>
+            <p>{arrayT("user.greeting")}</p>
             <p>{customT("greeting")}</p>
           </div>
         );
       }
 
-      // 3. suite.useLocL (with default fallback and custom translator)
+      // 3. suite.useLocL
       function LocLComp() {
         const { t, language } = suite.useLocL();
         const { t: customT } = suite.useLocL(otherTranslator);
@@ -259,7 +295,7 @@ describe("React Integration", () => {
         return <span>{t("title")}-{customT("title")}</span>;
       }
 
-      // 4. suite.Trans (default, scoped, and custom translator)
+      // 4. suite.Trans
       function TransComp() {
         return (
           <div>
@@ -270,7 +306,6 @@ describe("React Integration", () => {
         );
       }
 
-      // Render with default BoundLocLProvider
       const html1 = renderToStaticMarkup(
         <suite.LocLProvider>
           <RootComp />
@@ -281,7 +316,6 @@ describe("React Integration", () => {
       );
       expect(html1).toContain("Hallo Welt");
 
-      // Render with explicit translator prop in BoundLocLProvider (using ProviderOverrideComp)
       const html2 = renderToStaticMarkup(
         <suite.LocLProvider translator={otherTranslator}>
           <ProviderOverrideComp />
@@ -324,7 +358,7 @@ describe("React Integration", () => {
       );
       expect(htmlArrScope).toBe("Greetings from user namespace!");
 
-      // Trans with values interpolation
+      // Trans with strictly typed values interpolation
       const htmlValues = renderToStaticMarkup(
         <Trans translator={translator} i18nKey="welcome" values={{ name: "Alice" }} />
       );
@@ -354,33 +388,29 @@ describe("React Integration", () => {
       (React.useSyncExternalStore as any).mockRestore();
     });
 
-    it("should cover useSyncExternalStore in createLocLReact suite and Trans (covers index.tsx 250-253 and Trans.tsx funcs)", () => {
+    it("should cover useSyncExternalStore in createLocLReact suite and Trans", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
       const suite = createLocLReact(translator);
 
       let subscribeInvocations = 0;
 
-      // Mock useSyncExternalStore so that every subscribe callback and returned cleanup runs
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
         const unsub = subscribe(() => {});
         subscribeInvocations++;
         if (typeof unsub === "function") {
           unsub();
         }
+        getSnapshot();
         return getServerSnapshot ? getServerSnapshot() : getSnapshot();
       });
 
-      // 1. Covers index.tsx lines 250-253 in useBoundLocL
       function BoundComp() {
         suite.useLocL();
         return <span>bound</span>;
       }
       renderToStaticMarkup(<BoundComp />);
 
-      // 2. Covers Trans subscribe with activeTranslator
       renderToStaticMarkup(<Trans translator={translator} i18nKey="title" />);
-
-      // 3. Covers Trans subscribe without translator (exercises the `return () => {}` cleanup)
       renderToStaticMarkup(<Trans i18nKey="title" fallback="Fallback" />);
 
       expect(subscribeInvocations).toBeGreaterThanOrEqual(3);
@@ -390,13 +420,14 @@ describe("React Integration", () => {
     it("should cover Trans remaining branches (missing key with no fallback, invalid components, plain text)", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
 
-      // 1. Covers line 82-86 branch: missing key with translator, WITHOUT fallback
+      // 1. Missing key with translator, WITHOUT fallback
       const html1 = renderToStaticMarkup(
+        // @ts-expect-error
         <Trans translator={translator} i18nKey="completelyMissing" />
       );
       expect(html1).toBe("completelyMissing");
 
-      // 2. Covers line 118 branch: component is defined but is neither element nor function
+      // 2. Component is defined but is neither element nor function
       const html2 = renderToStaticMarkup(
         <Trans
           translator={translator}
@@ -414,7 +445,7 @@ describe("React Integration", () => {
       );
       expect(html3).toBe("Hello World");
     });
-    
+
     it("should cover fallback to defaultTranslator outside BoundLocLProvider", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
       const suite = createLocLReact(translator);
