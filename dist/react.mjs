@@ -4,14 +4,15 @@ import { createContext, useContext as useContext2, useSyncExternalStore as useSy
 // src/react/Trans.tsx
 import React, { isValidElement, cloneElement, useContext, useMemo, useSyncExternalStore } from "react";
 import { Fragment, jsx } from "react/jsx-runtime";
-function Trans({
-  i18nKey,
-  values,
-  components = {},
-  translator: customTranslator,
-  scope,
-  fallback
-}) {
+function Trans(props) {
+  const {
+    i18nKey,
+    values,
+    components = {},
+    translator: customTranslator,
+    scope,
+    fallback
+  } = props;
   const contextTranslator = useContext(LocLContext);
   const activeTranslator = customTranslator ?? contextTranslator;
   const getSnapshot = () => activeTranslator ? activeTranslator.getLanguage() : "";

@@ -1,6 +1,6 @@
 {
   "name": "locl-js",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Modern TypeScript internationalization (i18n) library with type-safety, performance, and backend usability",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",

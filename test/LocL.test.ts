@@ -442,7 +442,7 @@ describe('initLocL', () => {
       greeting: "Hola!",
       nested: { val: "Anidado" }
     });
-    translator.changeLanguage("es" as any);
+    translator.changeLanguage("es");
     expect(translator.tt("greeting")).toBe("Hola!");
     expect(translator.tt("nested.val")).toBe("Anidado");
 

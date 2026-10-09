@@ -1,6 +1,6 @@
 import React, { ReactNode, ReactElement, isValidElement, cloneElement, useContext, useMemo, useSyncExternalStore } from "react";
 import { LocL } from "../LocL.js";
-import { ScopeType, InterpolationOptions, NestedKeyOf, TranslationObjectFor, PluralKeys } from "../types.js";
+import { ScopeType, InterpolationOptions, NestedKeyOf, TranslationObjectFor, PluralKeys, ParamsFor, PathValue, IsEmptyParams } from "../types.js";
 import { LocLContext, type DefaultResources, type DefaultFallback } from "./index.js";
 
 export type TransKey<
@@ -9,32 +9,39 @@ export type TransKey<
   S extends ScopeType<T, Fallback> = undefined
 > = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 
-export interface TransProps<
+export type TransValues<
+  T extends Record<string, any>,
+  Fallback extends keyof T & string,
+  S extends ScopeType<T, Fallback>,
+  K extends string
+> = IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true
+  ? InterpolationOptions | undefined
+  : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
+
+export type TransProps<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   S extends ScopeType<T, Fallback> = undefined,
-  K extends string = TransKey<T, Fallback, S>
-> {
-  /** The translation key to look up (with IDE autocomplete + fallback tolerance) */
-  i18nKey: K | (string & {});
-  /** Values to interpolate into variable placeholders ({name}, {{name}}) */
-  values?: InterpolationOptions;
-  /**
-   * Component elements or functions to substitute for `<tag>content</tag>`
-   * @example
-   * components={{
-   *   bold: <strong />,
-   *   link: (content) => <a href="/terms">{content}</a>
-   * }}
-   */
-  components?: Record<string, ReactElement | ((content: ReactNode) => ReactNode)>;
-  /** Optional custom translator instance if not using LocLContext */
-  translator?: LocL<any, any, any, any, any>;
-  /** Optional namespace scope for the translation key */
-  scope?: S;
-  /** Fallback string if key is not found */
-  fallback?: string;
-}
+  K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>
+> =
+  | {
+      /** Strictly typed translation key */
+      i18nKey: K;
+      values?: TransValues<T, Fallback, S, K>;
+      components?: Record<string, ReactElement | ((content: ReactNode) => ReactNode)>;
+      translator?: LocL<T, any, any, any, any>;
+      scope?: S;
+      fallback?: string;
+    }
+  | {
+      /** Dynamic / fallback key allowed ONLY when fallback string is provided */
+      i18nKey: K | (string & {});
+      values?: InterpolationOptions;
+      components?: Record<string, ReactElement | ((content: ReactNode) => ReactNode)>;
+      translator?: LocL<T, any, any, any, any>;
+      scope?: S;
+      fallback: string;
+    };
 
 /**
  * Renders translated text with rich React component interpolation without `dangerouslySetInnerHTML`.
@@ -46,7 +53,7 @@ export interface TransProps<
  *   values={{ name: "Alice" }}
  *   components={{
  *     bold: <strong />,
- *     link: <a href="/terms" />
+ *     link: (content) => <a href="/terms">{content}</a>
  *   }}
  * />
  * ```
@@ -55,19 +62,20 @@ export function Trans<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   S extends ScopeType<T, Fallback> = undefined,
-  K extends string = TransKey<T, Fallback, S>
->({
-  i18nKey,
-  values,
-  components = {},
-  translator: customTranslator,
-  scope,
-  fallback
-}: TransProps<T, Fallback, S, K>): ReactElement {
+  K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>
+>(props: TransProps<T, Fallback, S, K>): ReactElement {
+  const {
+    i18nKey,
+    values,
+    components = {},
+    translator: customTranslator,
+    scope,
+    fallback
+  } = props;
+
   const contextTranslator = useContext(LocLContext);
   const activeTranslator = (customTranslator ?? contextTranslator) as LocL<T, Fallback, any, any, any> | null;
 
-  // Reactively subscribe to language changes
   const getSnapshot = () => (activeTranslator ? activeTranslator.getLanguage() : "");
   const language = useSyncExternalStore(
     (onStoreChange) => (activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => {}),

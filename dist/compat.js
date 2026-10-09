@@ -38,41 +38,42 @@ function toI18next(translator) {
   translator.subscribe((newLang, prevLang) => {
     emit("languageChanged", newLang, prevLang);
   });
+  const tFunction = (key, arg1, arg2) => {
+    let defaultValue;
+    let options = {};
+    if (typeof arg1 === "string") {
+      defaultValue = arg1;
+      options = typeof arg2 === "object" && arg2 !== null ? arg2 : {};
+    } else if (typeof arg1 === "object" && arg1 !== null) {
+      options = arg1;
+      defaultValue = options.defaultValue;
+    }
+    let lookupKey = key;
+    let ns = options.ns;
+    if (key.includes(":")) {
+      const colonIdx = key.indexOf(":");
+      ns = key.slice(0, colonIdx);
+      lookupKey = key.slice(colonIdx + 1);
+    }
+    let activeTranslator = translator;
+    if (ns) {
+      activeTranslator = translator.withConfig({ scope: ns });
+    }
+    let result;
+    if (typeof options.count === "number") {
+      result = activeTranslator.plural(lookupKey, options);
+    } else {
+      result = activeTranslator.t(lookupKey, options);
+    }
+    const keyExists = activeTranslator.get(lookupKey) !== void 0 || result !== lookupKey;
+    if (!keyExists && defaultValue !== void 0) {
+      return defaultValue;
+    }
+    return result ?? defaultValue ?? key;
+  };
   const compat = {
     translator,
-    t(key, arg1, arg2) {
-      let defaultValue;
-      let options = {};
-      if (typeof arg1 === "string") {
-        defaultValue = arg1;
-        options = typeof arg2 === "object" && arg2 !== null ? arg2 : {};
-      } else if (typeof arg1 === "object" && arg1 !== null) {
-        options = arg1;
-        defaultValue = options.defaultValue;
-      }
-      let lookupKey = key;
-      let ns = options.ns;
-      if (key.includes(":")) {
-        const colonIdx = key.indexOf(":");
-        ns = key.slice(0, colonIdx);
-        lookupKey = key.slice(colonIdx + 1);
-      }
-      let activeTranslator = translator;
-      if (ns) {
-        activeTranslator = translator.withConfig({ scope: ns });
-      }
-      let result;
-      if (typeof options.count === "number") {
-        result = activeTranslator.plural(lookupKey, options);
-      } else {
-        result = activeTranslator.t(lookupKey, options);
-      }
-      const keyExists = activeTranslator.get(lookupKey) !== void 0 || result !== lookupKey;
-      if (!keyExists && defaultValue !== void 0) {
-        return defaultValue;
-      }
-      return result ?? defaultValue ?? key;
-    },
+    t: tFunction,
     exists(key, options) {
       let lookupKey = key;
       let ns = options?.ns;
@@ -112,7 +113,7 @@ function toI18next(translator) {
     addResources(lng, ns, resources) {
       translator.addResources(lng, { [ns]: resources });
     },
-    addResourceBundle(lng, ns, resources, deep, overwrite) {
+    addResourceBundle(lng, ns, resources) {
       translator.addResources(lng, { [ns]: resources });
     },
     hasResourceBundle(lng, ns) {

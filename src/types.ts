@@ -69,7 +69,7 @@ type Join<P extends string, K extends string> = P extends "" ? K : `${P}.${K}`;
 type Resources<T extends Record<string, any>> = T;
 export type Language<T extends Record<string, any>> = keyof T & string;
 type FallbackLanguage<T extends Record<string, any>, Fallback extends keyof T> = Fallback;
-type Scope<T extends Record<string, any>, Fallback extends keyof T> = NestedKeyOfObj<T[Fallback], true>;
+export type Scope<T extends Record<string, any>, Fallback extends keyof T> = NestedKeyOfObj<T[Fallback], true>;
 export type ScopeType<T extends Record<string, any>, F extends keyof T> = Scope<T, F> | Scope<T, F>[] | undefined;
 type EnsureObject<T> = T extends object ? T : {};
 
@@ -186,7 +186,7 @@ export type PluralParamsFor<K extends string, T> =
           ? ExtractPluralObjectParams<PathValue<T, K>>
           : ExtractSuffixPluralParams<K, T>;
 
-type ParamsFor<Val> =
+export type ParamsFor<Val> =
   string extends Val
     ? InterpolationOptions
     : Val extends string

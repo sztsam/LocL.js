@@ -4,7 +4,7 @@
 
 **LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, backend services, and multi-framework setups, it provides compile-time type-safety, automatic pluralization, ICU-style select branching, built-in formatters, and reactive subscriptions with **zero external dependencies**.
 
-It is inspired by libraries like `i18next` and `react-i18next`, but engineered with a focus on strict TypeScript type checking, sub-millisecond execution, clean APIs, and 100% test coverage.
+It is inspired by libraries like `i18next` and `react-i18next`, but engineered with a focus on strict TypeScript type checking, sub-millisecond execution, clean APIs, and **100% test coverage across every statement, branch, and function**.
 
 ---
 
@@ -16,12 +16,12 @@ It is inspired by libraries like `i18next` and `react-i18next`, but engineered w
   - **`createLocLReact` Hook Factory**: Zero-declaration, pre-bound React suite.
   - **`LocLRegister` Declaration Merging**: Ambient global autocomplete for standalone imports.
 - **📦 Zero Dependencies & Lightweight**: Pure TypeScript with no runtime dependencies.
-- **🔄 Drop-in i18next Compat**: Swap existing `i18next` codebases effortlessly using `locl-js/compat` without rewriting translation call sites. Supports colon namespaces (`auth:login`), default fallbacks, and event listener cleanup.
+- **🔄 Drop-in i18next Compat**: Swap existing `i18next` codebases effortlessly using `locl-js/compat` without rewriting translation call sites. Supports colon namespaces (`auth:login`), strict parameter checking, default fallbacks, and event listener cleanup.
 - **🌐 Multi-Framework Reactive Store**: Implements the standard reactive store contract via `translator.subscribe()`, working out of the box in Svelte, Vue, Solid, and Node.js.
 - **🔢 Automatic Plurals**: Handles object plurals (`{ zero, one, other }`) and suffix plurals (`_zero`, `_one`, `_other`) directly via `t()` or dedicated `plural()`.
 - **🔀 ICU Select Support**: Conditional branching (`{gender, select, male {He} female {She} other {They}}`) with nested parameter interpolation (`{gender, select, male {He has {count} items}}`).
 - **🔧 Built-in & Custom Formatters**: Format dates, numbers, currencies, strings, and booleans inline via pipe syntax (`{val | number}`, `{date | date:short}`).
-- **⚡ High Performance Caching**: Granular scope-based translation caching and multi-proxy instance reuse.
+- **⚡ High Performance Caching**: Granular scope-based translation caching and multi-proxy instance reuse with zero proxy-of-proxy overhead.
 - **🛡️ Prototype-Safe Dynamic Resources**: Safely merge resources dynamically at runtime with built-in prototype pollution guards.
 - **💯 100% Test Coverage**: Fully verified across every line, branch, function, and edge case.
 
@@ -114,7 +114,7 @@ translator.t("staticNotice");
 
 ### Workflow A: Zero-Declaration Factory (`createLocLReact`) ⭐ *Recommended*
 
-No `.d.ts` declaration merging required. Bind your translator once and export typed components and hooks:
+No `.d.ts` declaration merging required. Pass your translator instance to `createLocLReact` once and export pre-bound, 100% typed components and hooks:
 
 ```tsx
 // src/i18n-react.ts
@@ -162,7 +162,7 @@ function Header() {
 }
 
 function Profile() {
-  // Scoped autocomplete: keys are restricted to the "user" namespace!
+  // Scoped autocomplete: keys are restricted strictly to the "user" namespace!
   const { t } = useTranslation("user");
 
   return (
@@ -183,7 +183,7 @@ function Profile() {
 
 ### Workflow B: Global Type Registry (`LocLRegister`)
 
-If you prefer importing directly from `"locl-js/react"`, augment `LocLRegister` once in your project (e.g. `src/i18n.d.ts`):
+If you prefer importing hooks and components directly from `"locl-js/react"`, augment `LocLRegister` once in your project (e.g. `src/i18n.d.ts`):
 
 ```typescript
 import { translator } from "./i18n";
@@ -195,7 +195,7 @@ declare module "locl-js/react" {
 }
 ```
 
-Now, standalone imports automatically have full autocomplete everywhere:
+Now, standalone imports automatically have full autocomplete everywhere without passing any generic arguments:
 
 ```tsx
 import { useTranslation, Trans } from "locl-js/react";
@@ -224,38 +224,60 @@ Renders complex translations containing formatting tags (`<bold>read</bold>`, `<
 />
 ```
 
-- **Tag element replacement**: Replaces tags with JSX elements (e.g. `<strong />`) while preserving inner text as children.
-- **Function renderers**: Supports custom render functions: `(content) => <span style={{ fontWeight: "bold" }}>{content}</span>`.
-- **Reactive updates**: Subscribes to `useSyncExternalStore` so language changes re-render smoothly.
+#### Key Capabilities
+
+- **Strict Key Validation**: Autocompletes valid keys and flags typos at compile time.
+- **Strict Value Validation**: If the template contains `{name}`, `values={{ name: ... }}` is required at compile time.
+- **Dynamic Key Fallback**: Unregistered or dynamic keys are allowed whenever an explicit `fallback` string is provided (`fallback="Default string"`).
+- **Scope Support**: Narrow keys using the `scope` prop: `<Trans scope="user" i18nKey="greeting" values={{ name: "Alice" }} />`.
+- **Standalone `translator` Prop**: When passing `translator={translator}`, `Trans` automatically infers the dictionary and provides autocomplete for that translator's keys.
+- **Tag Element Replacement**: Clones JSX elements (e.g. `<strong />`) while preserving inner text as children.
+- **Function Renderers**: Supports custom render functions: `(content) => <span style={{ fontWeight: "bold" }}>{content}</span>`.
+- **Reactive Updates**: Subscribes to `useSyncExternalStore` so language changes re-render smoothly.
 
 ---
 
 ## Drop-in `i18next` Compatibility (`locl-js/compat`)
 
-Migrate existing `i18next` codebases effortlessly without refactoring callsites:
+Migrate existing `i18next` codebases effortlessly without refactoring callsites. `locl-js/compat` preserves `i18next` runtime flexibility while offering full compile-time strict type checking:
 
 ```typescript
-import { initLocL } from "locl-js";
+import { initLocL, defineResources } from "locl-js";
 import { toI18next, createI18nextCompat } from "locl-js/compat";
 
+const resources = defineResources({
+  en: {
+    common: {
+      hello: "Hello, {name}!",
+      save: "Save"
+    },
+    apple_one: "1 apple",
+    apple_other: "{count} apples"
+  }
+});
 const locl = initLocL({ resources, fallbackLanguage: "en" });
 export const i18n = toI18next(locl);
 
-// Standard i18next patterns supported seamlessly:
-i18n.t("common:login", { name: "Alice" }); // Colon namespaces
-i18n.t("common.login");                   // Dot namespaces
-i18n.t("missing.key", "Default String");   // Default values
-i18n.exists("common:login");              // Key existence checks
+// Colon and dot syntax autocompleted and strictly enforced:
+i18n.t("common:hello", { name: "Maria" }); // Requires { name }!
+i18n.t("common.save");                    // Static key: options optional!
 
-// Plurals via count:
-i18n.t("apple", { count: 5 });             // "5 apples"
+// Plurals strictly enforce { count: number }:
+i18n.t("apple", { count: 5 });
 
-// Dynamic resource bundle management:
+// Dynamic and fallback keys:
+i18n.t("missing.key", "Default Fallback");
+i18n.t("missing.key", { defaultValue: "Fallback Text" });
+
+// Key existence check (with autocomplete for colon and dot keys):
+i18n.exists("common:save"); // true
+
+// Resource bundle management:
 i18n.addResourceBundle("en", "dynamic", { title: "Title" });
-i18n.hasResourceBundle("en", "dynamic");   // true
-i18n.getResourceBundle("en", "dynamic");   // { title: "Title" }
+i18n.hasResourceBundle("en", "dynamic"); // true
+i18n.getResourceBundle("en", "dynamic"); // { title: "Title" }
 
-// Event listeners with unbind cleanup:
+// Event listeners with cleanup callback:
 const unbind = i18n.on("languageChanged", (lng) => {
   console.log("Language changed to", lng);
 });
@@ -476,16 +498,16 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 ### React Exports (`locl-js/react`)
 
-- **`createLocLReact(translator)`**: Returns a pre-bound React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`).
+- **`createLocLReact(translator)`**: Returns a pre-bound, zero-declaration React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`, `LocLContext`).
 - **`LocLProvider`**: React Context Provider for the active translator.
-- **`useTranslation(scope?, customTranslator?)`**: Translation hook with scope support.
+- **`useTranslation(scope?, customTranslator?)`**: Translation hook with namespace scoping support.
 - **`useLocL(customTranslator?)`**: Hook returning translator instance and reactive language state.
-- **`<Trans />`**: Rich JSX tag interpolation component.
+- **`<Trans />`**: Rich JSX component interpolation component supporting strict key/param checking, fallbacks, and scope narrowing.
 - **`LocLRegister`**: Ambient interface for global type registration.
 
 ### Compat Exports (`locl-js/compat`)
 
-- **`toI18next(translator)`**: Wraps a LocL instance into an `i18next`-compatible API.
+- **`toI18next(translator)`**: Wraps a LocL instance into an `i18next`-compatible API with strict parameter checking.
 - **`createI18nextCompat(translator)`**: Alias of `toI18next`.
 
 ### `LocL` Instance Methods
