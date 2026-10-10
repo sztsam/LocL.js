@@ -1,4 +1,4 @@
-import { N as NestedKeyOf, I as InterpolationOptions, P as PluralParamsFor, c as ParamsFor, d as PathValue, e as IsEmptyParams, T as TranslationObjectFor, f as PluralKeys, a as LocL } from './LocL-v4yNIiKt.mjs';
+import { N as NestedKeyOf, I as InterpolationOptions, P as PluralParamsFor, c as ParamsFor, d as PathValue, e as IsEmptyParams, T as TranslationObjectFor, f as PluralKeys, a as LocL } from './LocL-DJypL6Ni.mjs';
 import { DefaultResources, DefaultFallback } from './react.mjs';
 import 'react';
 

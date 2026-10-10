@@ -92,10 +92,18 @@ function toI18next(translator) {
       return Object.keys(translator.resources ?? {});
     },
     async changeLanguage(lng, callback) {
-      translator.changeLanguage(lng);
-      const current = translator.getLanguage();
-      callback?.(null, compat.t.bind(compat));
-      return current;
+      try {
+        if (typeof translator.isLoaded === "function" && typeof translator.load === "function" && !translator.isLoaded(lng)) {
+          await translator.load(lng);
+        }
+        translator.changeLanguage(lng);
+        const current = translator.getLanguage();
+        callback?.(null, compat.t.bind(compat));
+        return current;
+      } catch (err) {
+        callback?.(err, compat.t.bind(compat));
+        throw err;
+      }
     },
     on(event, listener) {
       listeners[event] ?? (listeners[event] = /* @__PURE__ */ new Set());
@@ -117,14 +125,16 @@ function toI18next(translator) {
       translator.addResources(lng, { [ns]: resources });
     },
     hasResourceBundle(lng, ns) {
-      const langObj = translator.resources?.[lng];
-      return langObj?.[ns] !== void 0;
+      return translator.isLoaded(lng, ns);
     },
     getResourceBundle(lng, ns) {
       const langObj = translator.resources?.[lng];
       return langObj?.[ns];
     },
     async loadNamespaces(ns, callback) {
+      const list = Array.isArray(ns) ? ns : [ns];
+      const currentLang = translator.getLanguage();
+      await Promise.all(list.map((n) => translator.load(currentLang, n)));
       callback?.();
     }
   };

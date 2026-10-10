@@ -277,7 +277,7 @@ describe("React Integration", () => {
       function ScopedComp() {
         const { t: userT } = suite.useTranslation("user");
         const { t: arrayT } = suite.useTranslation(["user"]);
-        const { t: customT } = suite.useTranslation("user", otherTranslator);
+        const { t: customT } = suite.useTranslation("user", {}, otherTranslator);
         return (
           <div>
             <p>{userT("greeting")}</p>
@@ -459,6 +459,117 @@ describe("React Integration", () => {
 
       const html2 = renderToStaticMarkup(<suite.Trans i18nKey="title" />);
       expect(html2).toBe("Hello World");
+    });
+
+    it("should cover Suspense throw and useEffect catch in useTranslation and createLocLReact", async () => {
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async (_lang, ns) => {
+          if (ns === "failing") throw new Error("Async failure");
+          return { text: "Async Text" };
+        }
+      });
+      const suite = createLocLReact(translator);
+
+      // --- 1. Root useTranslation Suspense throw (line 160) ---
+      let rootPromise: any;
+      function SuspenseRootComp() {
+        try {
+          useTranslation("asyncNs" as any, { suspense: true });
+        } catch (p) {
+          rootPromise = p;
+        }
+        return <h1>loaded</h1>;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <SuspenseRootComp />
+        </LocLProvider>
+      );
+      expect(rootPromise).toBeDefined();
+      expect(typeof rootPromise?.then).toBe("function");
+      await rootPromise;
+
+      // --- 2. Suite useBoundTranslation Suspense throw (line 292) ---
+      let boundPromise: any;
+      function SuspenseBoundComp() {
+        try {
+          suite.useTranslation("asyncNsBound" as any, { suspense: true });
+        } catch (p) {
+          boundPromise = p;
+        }
+        return <h1>loaded</h1>;
+      }
+
+      renderToStaticMarkup(
+        <suite.LocLProvider>
+          <SuspenseBoundComp />
+        </suite.LocLProvider>
+      );
+      expect(boundPromise).toBeDefined();
+      expect(typeof boundPromise?.then).toBe("function");
+      await boundPromise;
+
+      // --- 3. useEffect catch block in Root useTranslation (lines 164-166) ---
+      jest.spyOn(React, "useEffect").mockImplementation((cb) => cb());
+      const errSpy = jest.spyOn(console, "error").mockImplementation();
+
+      function FailingRootComp() {
+        useTranslation("failing" as any);
+        return <span>failing</span>;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <FailingRootComp />
+        </LocLProvider>
+      );
+
+      // --- 4. useEffect catch block in Suite useBoundTranslation (lines 296-298) ---
+      function FailingBoundComp() {
+        suite.useTranslation("failing" as any);
+        return <span>failing</span>;
+      }
+
+      renderToStaticMarkup(
+        <suite.LocLProvider>
+          <FailingBoundComp />
+        </suite.LocLProvider>
+      );
+
+      await new Promise((r) => setTimeout(r, 10));
+
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[LocL] Failed to load translations for "failing":'),
+        expect.any(Error)
+      );
+
+      // --- Root useTranslation with undefined scope (covers lines 164-166 scopeStr ?? language) ---
+      function FailingRootNoScopeComp() {
+        useTranslation(undefined, { loader: async () => { throw new Error("No scope fail"); } });
+        return <span>no-scope</span>;
+      }
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <FailingRootNoScopeComp />
+        </LocLProvider>
+      );
+
+      // --- Bound useTranslation with undefined scope (covers lines 296-298 scopeStr ?? language) ---
+      function FailingBoundNoScopeComp() {
+        suite.useTranslation(undefined, { loader: async () => { throw new Error("Bound no scope fail"); } });
+        return <span>bound-no-scope</span>;
+      }
+      renderToStaticMarkup(
+        <suite.LocLProvider>
+          <FailingBoundNoScopeComp />
+        </suite.LocLProvider>
+      );
+
+      (React.useEffect as any).mockRestore();
+      errSpy.mockRestore();
     });
   });
 });

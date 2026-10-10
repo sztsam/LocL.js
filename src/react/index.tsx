@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useSyncExternalStore, ReactNode, ReactElement, useMemo } from "react";
+import React, { createContext, useContext, useSyncExternalStore, ReactNode, ReactElement, useMemo, useEffect } from "react";
 import { LocL } from "../LocL.js";
-import { ScopeType, Language, Scope } from "../types.js";
+import { ScopeType, Language, Scope, ResourceLoader } from "../types.js";
 import { Trans, TransProps, TransKey, TransValues } from "./Trans.js";
 
 export { Trans, type TransProps, type TransKey, type TransValues };
@@ -78,12 +78,6 @@ export interface UseLocLResult<
   format: LocL<T, Fallback, S>["format"];
 }
 
-export interface UseTranslationResult<
-  T extends Record<string, any> = DefaultResources,
-  Fallback extends keyof T & string = DefaultFallback<T>,
-  S extends ScopeType<T, Fallback> = undefined
-> extends UseLocLResult<T, Fallback, S> {}
-
 export function useLocL<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
@@ -93,21 +87,19 @@ export function useLocL<
   const translator = (customTranslator ?? contextTranslator) as LocL<T, Fallback, S, any, any> | null;
 
   if (!translator) {
-    throw new Error(
-      "[LocL] `useLocL` or `useTranslation` must be used within a `<LocLProvider>` or passed an explicit translator instance."
-    );
+    throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
   }
 
-  const getSnapshot = () => translator.getLanguage();
-  const language = useSyncExternalStore(
+  const getVersion = () => translator.getVersion();
+  useSyncExternalStore(
     (onStoreChange) => translator.subscribe(onStoreChange),
-    getSnapshot,
-    getSnapshot
+    getVersion,
+    getVersion
   );
 
   return {
     translator,
-    language: language as Language<T>,
+    language: translator.getLanguage() as Language<T>,
     changeLanguage: (lang: Language<T>) => translator.changeLanguage(lang),
     t: translator.t.bind(translator) as LocL<T, Fallback, S>["t"],
     plural: translator.plural.bind(translator) as LocL<T, Fallback, S>["plural"],
@@ -116,11 +108,26 @@ export function useLocL<
   };
 }
 
+export interface UseTranslationOptions {
+  /** Enables React <Suspense> integration, defaults to false */
+  suspense?: boolean;
+  /** Custom loader override */
+  loader?: ResourceLoader;
+}
+export interface UseTranslationResult<
+  T extends Record<string, any> = DefaultResources,
+  Fallback extends keyof T & string = DefaultFallback<T>,
+  S extends ScopeType<T, Fallback> = undefined
+> extends UseLocLResult<T, Fallback, S> {
+  ready: boolean;
+}
+
 export function useTranslation<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>
 >(
   scope?: undefined,
+  options?: UseTranslationOptions,
   customTranslator?: LocL<T, Fallback, any, any, any> | LocL<any, any, any, any, any>
 ): UseTranslationResult<T, Fallback, undefined>;
 
@@ -130,6 +137,7 @@ export function useTranslation<
   S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
 >(
   scope: S,
+  options?: UseTranslationOptions,
   customTranslator?: LocL<T, Fallback, any, any, any> | LocL<any, any, any, any, any>
 ): UseTranslationResult<T, Fallback, S>;
 
@@ -139,11 +147,26 @@ export function useTranslation<
   S extends ScopeType<T, Fallback> = any
 >(
   scope?: S,
+  options?: UseTranslationOptions,
   customTranslator?: LocL<any, any, any, any, any>
 ): UseTranslationResult<T, Fallback, S> {
   const { translator, language, changeLanguage } = useLocL<T, Fallback, any>(customTranslator);
 
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
+  const scopeStr = typeof scope === "string" ? scope : undefined;
+
+  const isReady = translator.isLoaded(language, scopeStr);
+  if (!isReady && options?.suspense) {
+    throw translator.load(language, scopeStr, options.loader);
+  }
+
+  useEffect(() => {
+    if (!isReady && !options?.suspense) {
+      translator.load(language, scopeStr, options?.loader).catch((err: any) => {
+        console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
+      });
+    }
+  }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
 
   const scopedTranslator = useMemo(() => {
     return (scope !== undefined ? translator.withConfig({ scope } as any) : translator) as LocL<T, Fallback, S, any, any>;
@@ -153,6 +176,7 @@ export function useTranslation<
     translator: scopedTranslator,
     language,
     changeLanguage,
+    ready: isReady,
     t: scopedTranslator.t.bind(scopedTranslator) as LocL<T, Fallback, S>["t"],
     plural: scopedTranslator.plural.bind(scopedTranslator) as LocL<T, Fallback, S>["plural"],
     rich: scopedTranslator.rich.bind(scopedTranslator) as LocL<T, Fallback, S>["rich"],
@@ -182,10 +206,11 @@ export interface LocLReactSuite<
   ) => UseLocLResult<T, Fallback, S>;
   useTranslation: {
     (): UseTranslationResult<T, Fallback, undefined>;
-    <S extends Scope<T, Fallback>>(scope: S): UseTranslationResult<T, Fallback, S>;
-    <S extends Scope<T, Fallback>[]>(scope: S): UseTranslationResult<T, Fallback, S>;
-    (scope?: undefined, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, undefined>;
-    <S extends ScopeType<T, Fallback>>(scope: S, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
+    (scope: undefined, options?: UseTranslationOptions): UseTranslationResult<T, Fallback, undefined>;
+    <S extends Scope<T, Fallback>>(scope: S, options?: UseTranslationOptions): UseTranslationResult<T, Fallback, S>;
+    <S extends Scope<T, Fallback>[]>(scope: S, options?: UseTranslationOptions): UseTranslationResult<T, Fallback, S>;
+    (scope?: undefined, options?: UseTranslationOptions, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, undefined>;
+    <S extends ScopeType<T, Fallback>>(scope: S, options?: UseTranslationOptions, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
   };
   Trans: <
     S extends ScopeType<T, Fallback> = undefined,
@@ -199,7 +224,7 @@ export interface LocLReactSuite<
 /**
  * Creates a pre-bound, zero-declaration React integration suite for a LocL translator instance.
  *
- * Inifers resources, fallback language, translation keys, and namespace scopes
+ * Infers resources, fallback language, translation keys, and namespace scopes
  * automatically without requiring `.d.ts` module declarations or manual generics.
  *
  * @example
@@ -233,16 +258,16 @@ export function createLocLReact<
     const contextTranslator = useContext(BoundContext);
     const translator = (customTranslator ?? contextTranslator ?? defaultTranslator) as LocL<T, Fallback, S, any, any>;
 
-    const getSnapshot = () => translator.getLanguage();
-    const language = useSyncExternalStore(
+    const getVersion = () => translator.getVersion();
+    useSyncExternalStore(
       (onStoreChange) => translator.subscribe(onStoreChange),
-      getSnapshot,
-      getSnapshot
+      getVersion,
+      getVersion
     );
 
     return {
       translator,
-      language: language as Language<T>,
+      language: translator.getLanguage() as Language<T>,
       changeLanguage: (lang: Language<T>) => translator.changeLanguage(lang),
       t: translator.t.bind(translator) as LocL<T, Fallback, S>["t"],
       plural: translator.plural.bind(translator) as LocL<T, Fallback, S>["plural"],
@@ -251,14 +276,29 @@ export function createLocLReact<
     };
   }
 
-  function useBoundTranslation(scope?: undefined, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, undefined>;
-  function useBoundTranslation<S extends ScopeType<T, Fallback>>(scope: S, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
+  function useBoundTranslation(scope?: undefined, options?: UseTranslationOptions, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, undefined>;
+  function useBoundTranslation<S extends ScopeType<T, Fallback>>(scope: S, options?: UseTranslationOptions, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
   function useBoundTranslation<S extends ScopeType<T, Fallback> = any>(
     scope?: S,
+    options?: UseTranslationOptions,
     customTranslator?: LocL<any, any, any, any, any>
   ): UseTranslationResult<T, Fallback, S> {
     const { translator, language, changeLanguage } = useBoundLocL(customTranslator);
     const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
+    const scopeStr = typeof scope === "string" ? scope : undefined;
+
+    const isReady = translator.isLoaded(language, scopeStr);
+    if (!isReady && options?.suspense) {
+      throw translator.load(language, scopeStr, options.loader);
+    }
+
+    useEffect(() => {
+      if (!isReady && !options?.suspense) {
+        translator.load(language, scopeStr, options?.loader).catch((err: any) => {
+          console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
+        });
+      }
+    }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
 
     const scopedTranslator = useMemo(() => {
       return (scope !== undefined ? translator.withConfig({ scope } as any) : translator) as LocL<T, Fallback, S, any, any>;
@@ -268,6 +308,7 @@ export function createLocLReact<
       translator: scopedTranslator,
       language,
       changeLanguage,
+      ready: isReady,
       t: scopedTranslator.t.bind(scopedTranslator) as LocL<T, Fallback, S>["t"],
       plural: scopedTranslator.plural.bind(scopedTranslator) as LocL<T, Fallback, S>["plural"],
       rich: scopedTranslator.rich.bind(scopedTranslator) as LocL<T, Fallback, S>["rich"],

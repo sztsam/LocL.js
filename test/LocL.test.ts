@@ -764,3 +764,160 @@ describe("defineResources", () => {
     expect(translator.t("items", { gender: "female", count: 7 })).toBe("Sie hat 7 Artikel");
   });
 });
+
+describe("LocL Loader & Async Resolution", () => {
+  it("should cover resolveBundle for all supported bundle types", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en"
+    });
+
+    // 1. Fetch Response object
+    if (typeof Response !== "undefined") {
+      await translator.load(
+        "en",
+        "fromResponse",
+        async () => new Response(JSON.stringify({ text: "From Response" }))
+      );
+      expect(translator.tt("fromResponse.text")).toBe("From Response");
+    }
+
+    // 2. Raw JSON string (valid and invalid fallback)
+    await translator.load("en", "fromJsonStr", async () => JSON.stringify({ text: "From JSON String" }));
+    expect(translator.tt("fromJsonStr.text")).toBe("From JSON String");
+
+    await translator.load("en", "fromInvalidStr", async () => "not a valid json");
+    expect(translator.isLoaded("en", "fromInvalidStr")).toBe(true);
+
+    // 3. ES Module default export
+    await translator.load("en", "fromDefault", async () => ({ default: { text: "From Default" } }));
+    expect(translator.tt("fromDefault.text")).toBe("From Default");
+
+    // 4. Function / factory export
+    await translator.load("en", "fromFactory", async () => () => ({ text: "From Factory" }));
+    expect(translator.tt("fromFactory.text")).toBe("From Factory");
+
+    // 5. Named exports (translations, messages, resources, namespace key)
+    await translator.load("en", "fromNamed", async () => ({ fromNamed: { text: "From Named NS" } }));
+    expect(translator.tt("fromNamed.text")).toBe("From Named NS");
+
+    await translator.load("en", "fromTrans", async () => ({ translations: { text: "From Translations" } }));
+    expect(translator.tt("fromTrans.text")).toBe("From Translations");
+
+    await translator.load("en", "fromMsgs", async () => ({ messages: { text: "From Messages" } }));
+    expect(translator.tt("fromMsgs.text")).toBe("From Messages");
+
+    await translator.load("en", "fromRes", async () => ({ resources: { text: "From Resources" } }));
+    expect(translator.tt("fromRes.text")).toBe("From Resources");
+
+    // 6. Non-object / array fallback
+    await translator.load("en", "fromArray", async () => [1, 2, 3] as any);
+    expect(translator.isLoaded("en", "fromArray")).toBe(true);
+  });
+
+  it("should cover isLoaded and load variations (monolithic, nested dots, aliases, errors)", async () => {
+    const translator = initLocL({
+      resources: {
+        en: {
+          common: { title: "Title" }
+        }
+      },
+      fallbackLanguage: "en",
+      loader: async (lang, ns) => {
+        if (ns === "failing") throw new Error("Load failed");
+        return ns ? { val: `${ns} loaded` } : { full: `Full ${lang}` };
+      }
+    });
+
+    // isLoaded branches
+    expect(translator.isLoaded("en", "common")).toBe(true);
+    expect(translator.isLoaded("en", "missingNs")).toBe(false);
+    expect(translator.isLoaded("en")).toBe(true);
+    expect(translator.isLoaded("fr")).toBe(false);
+
+    // Monolithic language load (no namespace)
+    await translator.loadLanguage("fr");
+    expect(translator.isLoaded("fr")).toBe(true);
+    translator.changeLanguage("fr" as any);
+    expect(translator.t("full" as any)).toBe("Full fr");
+
+    // Nested dot namespace load
+    await translator.loadNamespace("admin.settings");
+    expect(translator.t("admin.settings.val" as any)).toBe("admin.settings loaded");
+
+    // Calling load when already loaded returns immediately
+    const loadSpy = jest.fn();
+    await translator.load("en", "common", loadSpy);
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    // Calling load without loader throws
+    const noLoaderT = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    await expect(noLoaderT.load("en", "test")).rejects.toThrow(/No loader configured/);
+
+    // Loader failure removes from in-flight cache and throws
+    await expect(translator.load("en", "failing")).rejects.toThrow("Load failed");
+    expect(translator.isLoaded("en", "failing")).toBe(false);
+  });
+
+  it("should catch errors in notifySubscribers", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => ({ val: "test" })
+    });
+
+    const errSpy = jest.spyOn(console, "error").mockImplementation();
+    translator.subscribe(() => {
+      throw new Error("Subscriber notify error");
+    });
+
+    await translator.load("en", "triggerNotify");
+
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[LocL] Error in subscriber:"),
+      expect.any(Error)
+    );
+    errSpy.mockRestore();
+  });
+
+  it("should cover addResource overwrite and isLoaded edge cases", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => ({ loaded: "yes" })
+    });
+
+    // 1. Initially "en" is empty, so isLoaded() with default lang is false
+    expect(translator.isLoaded()).toBe(false);
+
+    // 2. Load "en" using default lang argument
+    await translator.load();
+    expect(translator.isLoaded()).toBe(true);
+
+    // 3. Overwrite existing string primitive with a nested object path
+    translator.addResource("en", "nonObj", "stringValue");
+    translator.addResource("en", "nonObj.nested", "nestedValue");
+    //@ts-expect-error
+    expect(translator.t("nonObj.nested")).toBe("nestedValue");
+
+    // 4. isLoaded with non-existent language & dotted path
+    expect(translator.isLoaded("nonExistentLang", "someNs")).toBe(false);
+    expect(translator.isLoaded("nonExistentLang")).toBe(false);
+    expect(translator.isLoaded("en", "nonexistent.dotted.path")).toBe(false);
+
+    // 5. Monolithic load when already loaded returns immediately
+    const noopSpy = jest.fn();
+    await translator.load("en", undefined, noopSpy);
+    expect(noopSpy).not.toHaveBeenCalled();
+
+    // 6. Call load without namespace on translator with no loader (covers `: ""` branch)
+    const noLoaderT = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    await expect(noLoaderT.load("en")).rejects.toThrow(
+      '[LocL] No loader configured to load translations for "en".'
+    );
+
+    // 7. resolveBundle with named namespace having a primitive string
+    await translator.load("en", "primitiveNs", async () => ({ primitiveNs: "stringData" }));
+    expect(translator.isLoaded("en", "primitiveNs")).toBe(true);
+  });
+});

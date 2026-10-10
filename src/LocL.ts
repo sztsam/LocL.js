@@ -1,7 +1,7 @@
 import {
   ScopeType, Formatter, Language, EffectiveFormatters, FormatOptions, InterpolationOptions,
   NestedKeyOf, NestedKeyOfObj, PathValue, TranslationObjectFor, PluralKeys, DeepMergeResources, 
-  TagInterpolationOptions, PluralParamsFor, TArgs, TResult, Subscriber, Unsubscribe
+  TagInterpolationOptions, PluralParamsFor, TArgs, TResult, Subscriber, Unsubscribe, ResourceLoader
 } from "./types";
 import { type DefaultFormatters, defaultFormatters } from "./formatters";
 
@@ -28,6 +28,8 @@ export interface LocLConfig<T extends Record<string, any>, Fallback extends keyo
   devMode?: boolean;
   /** Enables caching of scopes and proxies. Defaults to `true`. */
   useCache?: boolean;
+  /** Default async loader function for lazy loading namespaces */
+  loader?: ResourceLoader;
 }
 
 /**
@@ -46,6 +48,7 @@ export class LocL<
   F extends Record<string, Formatter> = {},
   UseDefaultFormatter extends boolean = true
 > {
+  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter> = this;
   private config: LocLConfig<T, Fallback>;
   private resources: T & Record<string, any>;
   private language: Language<T>;
@@ -56,7 +59,11 @@ export class LocL<
   private proxyCache = new WeakMap<object, any>();
   private pluralRulesCache = new Map<string, Intl.PluralRules>();
   private subscribers: Set<Subscriber<T>> = new Set();
-  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter> = this;
+  private loader?: ResourceLoader;
+  private loadedNamespaces: Set<string> = new Set();
+  private loadedLanguages: Set<string> = new Set();
+  private loadingPromises: Map<string, Promise<void>> = new Map();
+  private version: number = 0;
 
   /**
    * Creates a new LocL instance.
@@ -75,6 +82,7 @@ export class LocL<
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope as S;
+    this.loader = config.loader;
     this.formatters = (this.config.useDefaultFormatters
       ? { ...(defaultFormatters as DefaultFormatters), ...(config.formatters ?? {}) }
       : { ...(config.formatters ?? {}) }) as EffectiveFormatters<F, UseDefaultFormatter>;
@@ -170,6 +178,113 @@ export class LocL<
   public getLanguage(): Language<T> {
     return this.language;
   }
+  public getVersion(): number {
+    return this.version;
+  }
+
+  /**
+   * Checks if an entire language or specific namespace is loaded.
+   */
+  public isLoaded(lang: string = this.language, namespace?: string): boolean {
+    if (namespace) {
+      const key = `${lang}::${namespace}`;
+      if (this.loadedNamespaces.has(key)) return true;
+      const langObj = this.resources[lang];
+      if (langObj && typeof langObj === "object") {
+        return namespace.split(".").reduce((acc, k) => acc?.[k], langObj) !== undefined;
+      }
+      return false;
+    }
+    return this.loadedLanguages.has(lang) || Object.keys(this.resources[lang] ?? {}).length > 0;
+  }
+  /**
+   * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
+   */
+  private async resolveBundle(raw: any, namespace?: string): Promise<Record<string, any>> {
+    let data = raw;
+
+    // 1. Direct fetch() Response object: automatically call .json()
+    if (typeof Response !== "undefined" && data instanceof Response) {
+      data = await data.json();
+    }
+    // 2. Raw JSON string: parse it
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch { }
+    }
+    // 3. ES Module default export (dynamic import('./file.ts') or import('./file.json'))
+    if (data && typeof data === "object" && "default" in data) {
+      data = data.default;
+    }
+    // 4. Function / Factory export: export default () => ({ ... })
+    if (typeof data === "function") {
+      data = await data();
+    }
+    // 5. Named export from a TS module: e.g. `export const user = { ... }` or `export const translations = { ... }`
+    if (data && typeof data === "object" && namespace && !(namespace in data)) {
+      if (typeof data.translations === "object") {
+        data = data.translations;
+      } else if (typeof data.messages === "object") {
+        data = data.messages;
+      } else if (typeof data.resources === "object") {
+        data = data.resources;
+      }
+    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
+      data = data[namespace];
+    }
+
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  }
+  /**
+   * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
+   * Supports both monolithic files and modular namespaces.
+   */
+  public async load(lang: string = this.language, namespace?: string, loader: ResourceLoader | undefined = this.loader): Promise<void> {
+    if (this.isLoaded(lang, namespace)) { return; }
+
+    const key = namespace ? `${lang}::${namespace}` : `${lang}::*`;
+    if (this.loadingPromises.has(key)) {
+      return this.loadingPromises.get(key);
+    }
+
+    if (!loader) {
+      throw new Error(`[LocL] No loader configured to load translations for "${lang}"${namespace ? ` ("${namespace}")` : ""}.`);
+    }
+
+    const loadPromise = (async () => {
+      try {
+        const raw = await loader(lang, namespace);
+        const bundle = await this.resolveBundle(raw, namespace);
+
+        if (namespace) {
+          // Namespaced file: nest under namespace path
+          const nested: Record<string, any> = {};
+          namespace.split(".").reduce((acc, k, i, arr) => {
+            acc[k] = (i === arr.length - 1) ? bundle : {};
+            return acc[k];
+          }, nested);
+          this.addResources(lang, nested);
+          this.loadedNamespaces.add(key);
+        }
+        else {
+          // Monolithic language file: merge directly at root of language!
+          this.addResources(lang, bundle);
+          this.loadedLanguages.add(lang);
+        }
+      }
+      finally {
+        this.loadingPromises.delete(key);
+      }
+    })();
+
+    this.loadingPromises.set(key, loadPromise);
+    return loadPromise;
+  }
+  public loadLanguage(lang: string, loader?: ResourceLoader): Promise<void> {
+    return this.load(lang, undefined, loader);
+  }
+  public loadNamespace(namespace: string, lang: string = this.language, loader?: ResourceLoader): Promise<void> {
+    return this.load(lang, namespace, loader);
+  }
 
   /**
    * Adds or overrides a single translation key at runtime.
@@ -199,12 +314,15 @@ export class LocL<
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
   }
 
   /**
    * Deeply merges a resource bundle into the specified language at runtime.
    * @param lang - Target language code.
    * @param bundle - Object of translations to merge.
+   * @returns DeepMergedResource LocL type
    */
   public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter> {
     if (this.isUnsafeObjectKey(lang)) { return this as any; }
@@ -227,6 +345,8 @@ export class LocL<
     };
     deepMerge(this.resources[lang], bundle);
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
     return this as any;
   }
 
@@ -239,6 +359,7 @@ export class LocL<
     if (validated && validated !== this.language) {
       const prev = this.language;
       this.language = validated;
+      this.version++;
       for (const sub of this.subscribers) {
         try {
           sub(this.language, prev);
@@ -669,6 +790,16 @@ export class LocL<
     });
     this.proxyCache.set(obj, proxy);
     return proxy;
+  }
+
+  private notifySubscribers() {
+    for (const sub of this.subscribers) {
+      try {
+        sub(this.language, this.language);
+      } catch (err) {
+        console.error("[LocL] Error in subscriber:", err);
+      }
+    }
   }
 
   private isUnsafeObjectKey(key: string): boolean {

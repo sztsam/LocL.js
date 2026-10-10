@@ -119,19 +119,17 @@ function useLocL(customTranslator) {
   const contextTranslator = (0, import_react2.useContext)(LocLContext);
   const translator = customTranslator ?? contextTranslator;
   if (!translator) {
-    throw new Error(
-      "[LocL] `useLocL` or `useTranslation` must be used within a `<LocLProvider>` or passed an explicit translator instance."
-    );
+    throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
   }
-  const getSnapshot = () => translator.getLanguage();
-  const language = (0, import_react2.useSyncExternalStore)(
+  const getVersion = () => translator.getVersion();
+  (0, import_react2.useSyncExternalStore)(
     (onStoreChange) => translator.subscribe(onStoreChange),
-    getSnapshot,
-    getSnapshot
+    getVersion,
+    getVersion
   );
   return {
     translator,
-    language,
+    language: translator.getLanguage(),
     changeLanguage: (lang) => translator.changeLanguage(lang),
     t: translator.t.bind(translator),
     plural: translator.plural.bind(translator),
@@ -139,9 +137,21 @@ function useLocL(customTranslator) {
     format: translator.format.bind(translator)
   };
 }
-function useTranslation(scope, customTranslator) {
+function useTranslation(scope, options, customTranslator) {
   const { translator, language, changeLanguage } = useLocL(customTranslator);
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
+  const scopeStr = typeof scope === "string" ? scope : void 0;
+  const isReady = translator.isLoaded(language, scopeStr);
+  if (!isReady && options?.suspense) {
+    throw translator.load(language, scopeStr, options.loader);
+  }
+  (0, import_react2.useEffect)(() => {
+    if (!isReady && !options?.suspense) {
+      translator.load(language, scopeStr, options?.loader).catch((err) => {
+        console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
+      });
+    }
+  }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
   const scopedTranslator = (0, import_react2.useMemo)(() => {
     return scope !== void 0 ? translator.withConfig({ scope }) : translator;
   }, [translator, scopeKey]);
@@ -149,6 +159,7 @@ function useTranslation(scope, customTranslator) {
     translator: scopedTranslator,
     language,
     changeLanguage,
+    ready: isReady,
     t: scopedTranslator.t.bind(scopedTranslator),
     plural: scopedTranslator.plural.bind(scopedTranslator),
     rich: scopedTranslator.rich.bind(scopedTranslator),
@@ -166,15 +177,15 @@ function createLocLReact(defaultTranslator) {
   function useBoundLocL(customTranslator) {
     const contextTranslator = (0, import_react2.useContext)(BoundContext);
     const translator = customTranslator ?? contextTranslator ?? defaultTranslator;
-    const getSnapshot = () => translator.getLanguage();
-    const language = (0, import_react2.useSyncExternalStore)(
+    const getVersion = () => translator.getVersion();
+    (0, import_react2.useSyncExternalStore)(
       (onStoreChange) => translator.subscribe(onStoreChange),
-      getSnapshot,
-      getSnapshot
+      getVersion,
+      getVersion
     );
     return {
       translator,
-      language,
+      language: translator.getLanguage(),
       changeLanguage: (lang) => translator.changeLanguage(lang),
       t: translator.t.bind(translator),
       plural: translator.plural.bind(translator),
@@ -182,9 +193,21 @@ function createLocLReact(defaultTranslator) {
       format: translator.format.bind(translator)
     };
   }
-  function useBoundTranslation(scope, customTranslator) {
+  function useBoundTranslation(scope, options, customTranslator) {
     const { translator, language, changeLanguage } = useBoundLocL(customTranslator);
     const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
+    const scopeStr = typeof scope === "string" ? scope : void 0;
+    const isReady = translator.isLoaded(language, scopeStr);
+    if (!isReady && options?.suspense) {
+      throw translator.load(language, scopeStr, options.loader);
+    }
+    (0, import_react2.useEffect)(() => {
+      if (!isReady && !options?.suspense) {
+        translator.load(language, scopeStr, options?.loader).catch((err) => {
+          console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
+        });
+      }
+    }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
     const scopedTranslator = (0, import_react2.useMemo)(() => {
       return scope !== void 0 ? translator.withConfig({ scope }) : translator;
     }, [translator, scopeKey]);
@@ -192,6 +215,7 @@ function createLocLReact(defaultTranslator) {
       translator: scopedTranslator,
       language,
       changeLanguage,
+      ready: isReady,
       t: scopedTranslator.t.bind(scopedTranslator),
       plural: scopedTranslator.plural.bind(scopedTranslator),
       rich: scopedTranslator.rich.bind(scopedTranslator),

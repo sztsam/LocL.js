@@ -279,6 +279,13 @@ export type DeepMergeResources<
   ? { [K in keyof T]: K extends L ? DeepMerge<T[K], B> : T[K] }
   : T & { [K in L]: B };
 
+type LoadableBundle =
+  | Record<string, any>
+  | { default: Record<string, any> | (() => any) }
+  | (() => Record<string, any> | Promise<Record<string, any>>)
+  | Response
+  | string;
+export type ResourceLoader = (language: string, namespace?: string) => LoadableBundle | Promise<LoadableBundle>;
 
 // - Language file typings
 //type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";

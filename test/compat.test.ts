@@ -33,7 +33,7 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.t("common.save")).toBe("Save");
   });
 
-  it("should support defaultValue fallback and 3-argument signature (Line 84 & 119)", () => {
+  it("should support defaultValue fallback and 3-argument signature", () => {
     const locl = initLocL({ resources, fallbackLanguage: "en" });
     const i18n = toI18next(locl);
 
@@ -124,7 +124,7 @@ describe("i18next Compatibility Adapter", () => {
     }
   };
 
-  it("should catch and log error when event listener throws (Line 66)", async () => {
+  it("should catch and log error when event listener throws", async () => {
     const translator = initLocL({ resources: extraResources, fallbackLanguage: "en" });
     const i18n = toI18next(translator);
     const errSpy = jest.spyOn(console, "error").mockImplementation();
@@ -217,7 +217,52 @@ describe("i18next Compatibility Adapter", () => {
     expect(compat2).toBeDefined();
   });
 
-  it("should cover missing resources fallback and undefined result fallback (Lines 119 and 144)", () => {
+  it("should cover compat async loading, changeLanguage failure, and loadNamespaces", async () => {
+    // 1. changeLanguage loading language when not loaded
+    const asyncTranslator = initLocL({
+      resources: { en: { hello: "Hello" } },
+      fallbackLanguage: "en",
+      loader: async (lang, ns) => (ns ? { msg: `${ns} loaded` } : { greeting: `Hola from ${lang}` })
+    });
+    const i18n = toI18next(asyncTranslator);
+
+    await i18n.changeLanguage("es");
+    expect(i18n.language).toBe("es");
+    expect(i18n.t("greeting" as any)).toBe("Hola from es");
+
+    // 2. loadNamespaces with single string and array
+    let singleLoaded = false;
+    await i18n.loadNamespaces("dashboard", () => {
+      singleLoaded = true;
+    });
+    expect(singleLoaded).toBe(true);
+    expect(i18n.t("dashboard:msg" as any)).toBe("dashboard loaded");
+
+    await i18n.loadNamespaces(["auth", "billing"]);
+    expect(i18n.t("auth:msg" as any)).toBe("auth loaded");
+
+    // 3. changeLanguage failure callback and catch block
+    const failingTranslator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => {
+        throw new Error("Network offline");
+      }
+    });
+    const failingI18n = toI18next(failingTranslator);
+
+    let caughtErr: any;
+    await expect(
+      failingI18n.changeLanguage("it", (err) => {
+        caughtErr = err;
+      })
+    ).rejects.toThrow("Network offline");
+
+    expect(caughtErr).toBeDefined();
+    expect(caughtErr.message).toBe("Network offline");
+  });
+
+  it("should cover missing resources fallback and undefined result fallback", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
 
     // 1. Line 144: Exercise languages when translator.resources is undefined

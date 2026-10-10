@@ -164,11 +164,15 @@ var LocL = class _LocL {
    * @param config - The configuration object.
    */
   constructor(config) {
+    this.rootInstance = this;
     this.cache = /* @__PURE__ */ new Map();
     this.proxyCache = /* @__PURE__ */ new WeakMap();
     this.pluralRulesCache = /* @__PURE__ */ new Map();
     this.subscribers = /* @__PURE__ */ new Set();
-    this.rootInstance = this;
+    this.loadedNamespaces = /* @__PURE__ */ new Set();
+    this.loadedLanguages = /* @__PURE__ */ new Set();
+    this.loadingPromises = /* @__PURE__ */ new Map();
+    this.version = 0;
     if (!config.resources) {
       throw new Error("[LocL] `resources` is required");
     }
@@ -185,6 +189,7 @@ var LocL = class _LocL {
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope;
+    this.loader = config.loader;
     this.formatters = this.config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
   }
   /**
@@ -270,6 +275,101 @@ var LocL = class _LocL {
   getLanguage() {
     return this.language;
   }
+  getVersion() {
+    return this.version;
+  }
+  /**
+   * Checks if an entire language or specific namespace is loaded.
+   */
+  isLoaded(lang = this.language, namespace) {
+    if (namespace) {
+      const key = `${lang}::${namespace}`;
+      if (this.loadedNamespaces.has(key)) return true;
+      const langObj = this.resources[lang];
+      if (langObj && typeof langObj === "object") {
+        return namespace.split(".").reduce((acc, k) => acc?.[k], langObj) !== void 0;
+      }
+      return false;
+    }
+    return this.loadedLanguages.has(lang) || Object.keys(this.resources[lang] ?? {}).length > 0;
+  }
+  /**
+   * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
+   */
+  async resolveBundle(raw, namespace) {
+    let data = raw;
+    if (typeof Response !== "undefined" && data instanceof Response) {
+      data = await data.json();
+    }
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+      }
+    }
+    if (data && typeof data === "object" && "default" in data) {
+      data = data.default;
+    }
+    if (typeof data === "function") {
+      data = await data();
+    }
+    if (data && typeof data === "object" && namespace && !(namespace in data)) {
+      if (typeof data.translations === "object") {
+        data = data.translations;
+      } else if (typeof data.messages === "object") {
+        data = data.messages;
+      } else if (typeof data.resources === "object") {
+        data = data.resources;
+      }
+    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
+      data = data[namespace];
+    }
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  }
+  /**
+   * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
+   * Supports both monolithic files and modular namespaces.
+   */
+  async load(lang = this.language, namespace, loader = this.loader) {
+    if (this.isLoaded(lang, namespace)) {
+      return;
+    }
+    const key = namespace ? `${lang}::${namespace}` : `${lang}::*`;
+    if (this.loadingPromises.has(key)) {
+      return this.loadingPromises.get(key);
+    }
+    if (!loader) {
+      throw new Error(`[LocL] No loader configured to load translations for "${lang}"${namespace ? ` ("${namespace}")` : ""}.`);
+    }
+    const loadPromise = (async () => {
+      try {
+        const raw = await loader(lang, namespace);
+        const bundle = await this.resolveBundle(raw, namespace);
+        if (namespace) {
+          const nested = {};
+          namespace.split(".").reduce((acc, k, i, arr) => {
+            acc[k] = i === arr.length - 1 ? bundle : {};
+            return acc[k];
+          }, nested);
+          this.addResources(lang, nested);
+          this.loadedNamespaces.add(key);
+        } else {
+          this.addResources(lang, bundle);
+          this.loadedLanguages.add(lang);
+        }
+      } finally {
+        this.loadingPromises.delete(key);
+      }
+    })();
+    this.loadingPromises.set(key, loadPromise);
+    return loadPromise;
+  }
+  loadLanguage(lang, loader) {
+    return this.load(lang, void 0, loader);
+  }
+  loadNamespace(namespace, lang = this.language, loader) {
+    return this.load(lang, namespace, loader);
+  }
   /**
    * Adds or overrides a single translation key at runtime.
    * @param lang - Target language code.
@@ -298,15 +398,18 @@ var LocL = class _LocL {
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
   }
   /**
    * Deeply merges a resource bundle into the specified language at runtime.
    * @param lang - Target language code.
    * @param bundle - Object of translations to merge.
+   * @returns DeepMergedResource LocL type
    */
   addResources(lang, bundle) {
     if (this.isUnsafeObjectKey(lang)) {
-      return;
+      return this;
     }
     if (!this.resources[lang]) {
       this.resources[lang] = /* @__PURE__ */ Object.create(null);
@@ -328,6 +431,9 @@ var LocL = class _LocL {
     };
     deepMerge(this.resources[lang], bundle);
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
+    return this;
   }
   /**
    * Changes the current language of the translator.
@@ -338,6 +444,7 @@ var LocL = class _LocL {
     if (validated && validated !== this.language) {
       const prev = this.language;
       this.language = validated;
+      this.version++;
       for (const sub of this.subscribers) {
         try {
           sub(this.language, prev);
@@ -712,6 +819,15 @@ var LocL = class _LocL {
     });
     this.proxyCache.set(obj, proxy);
     return proxy;
+  }
+  notifySubscribers() {
+    for (const sub of this.subscribers) {
+      try {
+        sub(this.language, this.language);
+      } catch (err) {
+        console.error("[LocL] Error in subscriber:", err);
+      }
+    }
   }
   isUnsafeObjectKey(key) {
     return key === "__proto__" || key === "constructor" || key === "prototype";

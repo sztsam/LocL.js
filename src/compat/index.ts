@@ -149,12 +149,12 @@ export function toI18next<
 
     let result: string | undefined;
     if (typeof options.count === "number") {
-      result = activeTranslator.plural(lookupKey as any, options as any) as string;
+      result = activeTranslator.plural(lookupKey, options as any) as string;
     } else {
-      result = activeTranslator.t(lookupKey as any, options as any) as string;
+      result = activeTranslator.t(lookupKey, options) as string;
     }
 
-    const keyExists = (activeTranslator as any).get(lookupKey) !== undefined || result !== lookupKey;
+    const keyExists = activeTranslator.get(lookupKey) !== undefined || result !== lookupKey;
 
     if (!keyExists && defaultValue !== undefined) {
       return defaultValue;
@@ -181,7 +181,7 @@ export function toI18next<
         ? (translator.withConfig({ scope: ns } as any) as LocL<any, any, any>)
         : (translator as LocL<any, any, any>);
 
-      return (activeTranslator as any).get(lookupKey) !== undefined;
+      return activeTranslator.get(lookupKey) !== undefined;
     },
 
     get language(): string {
@@ -193,10 +193,24 @@ export function toI18next<
     },
 
     async changeLanguage(lng: string, callback?: (err: any, t: any) => void): Promise<string> {
-      translator.changeLanguage(lng as any);
-      const current = translator.getLanguage();
-      callback?.(null, compat.t.bind(compat));
-      return current;
+      try {
+        if (
+          typeof (translator as any).isLoaded === "function" &&
+          typeof (translator as any).load === "function" &&
+          !translator.isLoaded(lng)
+        ) {
+          await translator.load(lng);
+        }
+
+        translator.changeLanguage(lng);
+        const current = translator.getLanguage();
+        callback?.(null, compat.t.bind(compat));
+        return current;
+      }
+      catch (err) {
+        callback?.(err, compat.t.bind(compat));
+        throw err;
+      }
     },
 
     on(event: string, listener: (...args: any[]) => void): () => void {
@@ -224,8 +238,7 @@ export function toI18next<
     },
 
     hasResourceBundle(lng: string, ns: string): boolean {
-      const langObj = (translator as any).resources?.[lng];
-      return langObj?.[ns] !== undefined;
+      return translator.isLoaded(lng, ns);
     },
 
     getResourceBundle(lng: string, ns: string): any {
@@ -234,6 +247,9 @@ export function toI18next<
     },
 
     async loadNamespaces(ns: string | string[], callback?: () => void): Promise<void> {
+      const list = Array.isArray(ns) ? ns : [ns];
+      const currentLang = translator.getLanguage();
+      await Promise.all(list.map((n) => translator.load(currentLang, n)));
       callback?.();
     }
   };
