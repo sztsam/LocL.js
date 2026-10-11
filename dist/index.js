@@ -22,6 +22,7 @@ var src_exports = {};
 __export(src_exports, {
   LocL: () => LocL,
   defineResources: () => defineResources,
+  defineStrictResources: () => defineStrictResources,
   initLocL: () => initLocL
 });
 module.exports = __toCommonJS(src_exports);
@@ -186,6 +187,60 @@ var defaultFormatters = {
 };
 
 // src/LocL.ts
+var PSEUDO_MAP = {
+  a: "\xE1",
+  b: "\u1E05",
+  c: "\xE7",
+  d: "\u0111",
+  e: "\xE9",
+  f: "\u0192",
+  g: "\u011F",
+  h: "\u1E29",
+  i: "\xED",
+  j: "\u0135",
+  k: "\u0137",
+  l: "\u013C",
+  m: "\u0271",
+  n: "\xF1",
+  o: "\xF6",
+  p: "\xFE",
+  q: "\u01EB",
+  r: "\u0155",
+  s: "\u0161",
+  t: "\u0163",
+  u: "\xFA",
+  v: "\u1E7D",
+  w: "\u0175",
+  x: "\u1E8B",
+  y: "\xFD",
+  z: "\u017E",
+  A: "\xC1",
+  B: "\u1E04",
+  C: "\xC7",
+  D: "\xD0",
+  E: "\xC9",
+  F: "\u0191",
+  G: "\u011E",
+  H: "\u1E28",
+  I: "\xCD",
+  J: "\u0134",
+  K: "\u0136",
+  L: "\u013B",
+  M: "\u1E42",
+  N: "\xD1",
+  O: "\xD6",
+  P: "\xDE",
+  Q: "\u01EA",
+  R: "\u0154",
+  S: "\u0160",
+  T: "\u0162",
+  U: "\xDA",
+  V: "\u1E7C",
+  W: "\u0174",
+  X: "\u1E8A",
+  Y: "\xDD",
+  Z: "\u017D"
+};
 var LocL = class _LocL {
   /**
    * Creates a new LocL instance.
@@ -218,6 +273,7 @@ var LocL = class _LocL {
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope;
     this.loader = config.loader;
+    config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
     this.formatters = this.config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
   }
   /**
@@ -305,6 +361,26 @@ var LocL = class _LocL {
   }
   getVersion() {
     return this.version;
+  }
+  /**
+   * Generates a BCP 47 hierarchical fallback chain:
+   * e.g. "de-AT-Vienna" -> ["de-AT-Vienna", "de-AT", "de", "en"]
+   */
+  getFallbackChain(lang = this.language) {
+    const chain = [];
+    let current = lang;
+    while (current) {
+      chain.push(current);
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) {
+        break;
+      }
+      current = current.slice(0, lastSeparator);
+    }
+    if (!chain.includes(this.fallbackLanguage)) {
+      chain.push(this.fallbackLanguage);
+    }
+    return chain;
   }
   /**
    * Checks if an entire language or specific namespace is loaded.
@@ -579,13 +655,34 @@ var LocL = class _LocL {
   getObj(key) {
     return this.get(key);
   }
+  /**
+   * Configures or toggles pseudo-localization at runtime.
+   */
+  setPseudoLocalization(options) {
+    if (typeof options === "boolean") {
+      this.pseudoOptions = options ? { enabled: true } : void 0;
+    } else {
+      this.pseudoOptions = options.enabled !== false ? { enabled: true, ...options } : void 0;
+    }
+    this.cache.clear();
+    this.version++;
+    this.notifySubscribers();
+  }
   isLanguage(value) {
     if (!value) {
       return null;
     }
     const available = Object.keys(this.resources);
-    if (available.includes(value)) {
-      return value;
+    let current = value;
+    while (current) {
+      if (available.includes(current)) {
+        return current;
+      }
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) {
+        break;
+      }
+      current = current.slice(0, lastSeparator);
     }
     const prefix = value.substring(0, 2);
     if (available.includes(prefix)) {
@@ -607,18 +704,27 @@ var LocL = class _LocL {
   }
   lookupWithFallback(key, base) {
     const keys = key.split(".");
-    let result = this.findTranslation(keys, base ?? this.buildTranslationObject(this.language));
-    if (result === void 0 && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.language}"`);
+    if (base) {
+      const res = this.findTranslation(keys, base);
+      if (res !== void 0) {
+        return res;
+      }
     }
-    if (result === void 0) {
-      const fbBase = this.buildTranslationObject(this.fallbackLanguage);
-      result = this.findTranslation(keys, fbBase);
+    const chain = this.getFallbackChain(this.language);
+    for (const lang of chain) {
+      const langObj = this.buildTranslationObject(lang);
+      if (!langObj) {
+        continue;
+      }
+      const res = this.findTranslation(keys, langObj);
+      if (res !== void 0) {
+        return res;
+      }
     }
-    if (result === void 0 && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.fallbackLanguage}"`);
+    if (this.config.devMode) {
+      console.warn(`[LocL] Missing key: "${key}" in "${this.language}" (fallback chain: ${chain.join(" -> ")})`);
     }
-    return result;
+    return void 0;
   }
   buildTranslationObject(language) {
     const langObject = this.resources[language];
@@ -735,7 +841,11 @@ var LocL = class _LocL {
     return void 0;
   }
   interpolate(result, values) {
-    if (!values || typeof result !== "string") {
+    if (typeof result !== "string") {
+      return result;
+    }
+    result = this.pseudoOptions?.enabled ? this.applyPseudoLocalization(result) : result;
+    if (!values) {
       return result;
     }
     const tokens = [];
@@ -799,17 +909,37 @@ var LocL = class _LocL {
         const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
         replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
       } else {
-        const [fieldName, formatterAndArgs] = token.inner.split("|").map((x) => x.trim());
-        const [formatterName, argsStr] = formatterAndArgs ? formatterAndArgs.split(":") : [];
-        const args = argsStr ? argsStr.split(",").map((a) => a.trim()) : [];
+        const pipeParts = token.inner.split("|").map((x) => x.trim());
+        const fieldName = pipeParts[0];
+        const formattersList = pipeParts.slice(1);
         const val = values[fieldName];
-        if (formatterName) {
-          if (this.formatters?.[formatterName]) {
-            replacement = this.formatters[formatterName](val, args);
-          } else {
-            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-            replacement = val !== void 0 ? String(val) : token.raw;
+        if (formattersList.length > 0) {
+          let currentVal = val;
+          let missingFormatter = false;
+          for (const segment of formattersList) {
+            const colonIdx = segment.indexOf(":");
+            let formatterName = segment;
+            let args = [];
+            if (colonIdx !== -1) {
+              formatterName = segment.slice(0, colonIdx).trim();
+              args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
+            } else {
+              formatterName = segment.trim();
+            }
+            const formatterFn = this.formatters?.[formatterName];
+            if (formatterFn) {
+              currentVal = formatterFn(currentVal, args);
+            } else {
+              this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
+              if (val === void 0) {
+                currentVal = token.raw;
+                missingFormatter = true;
+                break;
+              }
+              currentVal = currentVal !== void 0 ? String(currentVal) : token.raw;
+            }
           }
+          replacement = missingFormatter ? String(currentVal) : currentVal !== void 0 ? String(currentVal) : token.raw;
         } else if (val instanceof Date) {
           replacement = new Intl.DateTimeFormat(this.language).format(val);
         } else if (typeof val === "number") {
@@ -829,6 +959,23 @@ var LocL = class _LocL {
       return value;
     }
     return formatterFn(value, args);
+  }
+  applyPseudoLocalization(text) {
+    const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
+    const suffix = this.pseudoOptions?.suffix ?? " !!!]";
+    const useAccents = this.pseudoOptions?.accents !== false;
+    const tokenRegex = /(<[a-zA-Z0-9_-]+>[\s\S]*?<\/[a-zA-Z0-9_-]+>|{[^{}]+})/g;
+    const parts = text.split(tokenRegex);
+    const transformed = parts.map((part) => {
+      if (part.startsWith("<") || part.startsWith("{")) {
+        return part;
+      }
+      if (!useAccents) {
+        return part;
+      }
+      return part.split("").map((ch) => PSEUDO_MAP[ch] ?? ch).join("");
+    }).join("");
+    return `${prefix}${transformed}${suffix}`;
   }
   makeReadOnly(obj) {
     const self = this;
@@ -869,9 +1016,13 @@ function initLocL(config) {
 function defineResources(resources) {
   return resources;
 }
+function defineStrictResources(resources) {
+  return resources;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   LocL,
   defineResources,
+  defineStrictResources,
   initLocL
 });

@@ -1,5 +1,5 @@
 import { LocL, LocLConfig } from "./LocL.js";
-import { ScopeType, Formatter, LangWithPlurals } from "./types.js";
+import { ScopeType, Formatter, LangWithPlurals, EnforceParity } from "./types.js";
 
 /**
  * A helper type that provides strong typing for your language resources,
@@ -50,6 +50,8 @@ export { LocL, type LocLConfig, type LangWithPlurals };
  * @param {boolean} [config.useDefaultFormatters=true] - Whether to include the built-in formatters.
  * @param {boolean} [config.devMode=false] - Enables warnings for missing keys and scopes.
  * @param {boolean} [config.useCache=true] - Enables caching of scopes and proxies.
+ * @param {ResourceLoader} [config.loader] - Default async loader function for lazy loading namespaces
+ * @param {PseudoLocalizationOptions} [config.pseudoLocalization] - Built-in Pseudo-Localization for enterprise layout & QA testing
  *
  * @returns A new `LocL` instance configured with the provided options.
  */
@@ -80,4 +82,23 @@ export function initLocL<
  */
 export function defineResources<const T extends Record<string, any>>(resources: T): T {
   return resources;
+}
+
+/**
+ * Declares translation resources and enforces at compile time that every secondary
+ * language implements all keys present in the fallback language.
+ *
+ * @example
+ * ```ts
+ * const resources = defineStrictResources({
+ *   en: { title: "Hello", save: "Save" },
+ *   de: { title: "Hallo", save: "Speichern" } // ❌ Error if 'save' is missing in 'de'
+ * });
+ * ```
+ */
+export function defineStrictResources<
+  const T extends Record<string, any>,
+  Fallback extends keyof T & string = "en" extends keyof T ? "en" : keyof T & string
+>(resources: EnforceParity<T, Fallback>): T {
+  return resources as T;
 }

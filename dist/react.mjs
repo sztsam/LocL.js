@@ -4,19 +4,62 @@ import { createContext, useContext as useContext2, useSyncExternalStore as useSy
 // src/react/Trans.tsx
 import React, { isValidElement, cloneElement, useContext, useMemo, useSyncExternalStore } from "react";
 import { Fragment, jsx } from "react/jsx-runtime";
+function renderNodes(rawText, components = {}) {
+  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  let counter = 0;
+  while ((match = tagRegex.exec(rawText)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(rawText.slice(lastIndex, match.index));
+    }
+    const isSelfClosing = match[3] !== void 0;
+    const tagName = isSelfClosing ? match[3] : match[1];
+    const rawContent = isSelfClosing ? void 0 : match[2];
+    const component = components[tagName];
+    const key = `trans-${tagName}-${counter++}`;
+    if (component !== void 0) {
+      const children = rawContent !== void 0 ? rawContent.includes("<") ? renderNodes(rawContent, components) : rawContent : void 0;
+      if (isValidElement(component)) {
+        nodes.push(
+          children !== void 0 ? cloneElement(component, { key }, children) : cloneElement(component, { key })
+        );
+      } else if (typeof component === "function") {
+        nodes.push(
+          /* @__PURE__ */ jsx(React.Fragment, { children: component(children ?? "") }, key)
+        );
+      } else {
+        nodes.push(match[0]);
+      }
+    } else {
+      nodes.push(match[0]);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < rawText.length) {
+    nodes.push(rawText.slice(lastIndex));
+  }
+  return nodes;
+}
 function Trans(props) {
   const {
     i18nKey,
     values,
-    components = {},
+    components,
     translator: customTranslator,
     scope,
     fallback
   } = props;
   const contextTranslator = useContext(LocLContext);
   const activeTranslator = customTranslator ?? contextTranslator;
-  const getSnapshot = () => activeTranslator ? activeTranslator.getLanguage() : "";
-  const language = useSyncExternalStore(
+  const getSnapshot = () => {
+    if (!activeTranslator) {
+      return "";
+    }
+    return typeof activeTranslator.getVersion === "function" ? activeTranslator.getVersion() : activeTranslator.getLanguage?.() || "";
+  };
+  const version = useSyncExternalStore(
     (onStoreChange) => activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => {
     },
     getSnapshot,
@@ -24,82 +67,65 @@ function Trans(props) {
   );
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
   const scopedTranslator = useMemo(() => {
-    if (!activeTranslator) return null;
+    if (!activeTranslator) {
+      return null;
+    }
     return scope !== void 0 ? activeTranslator.withConfig({ scope }) : activeTranslator;
-  }, [activeTranslator, scopeKey, language]);
+  }, [activeTranslator, scopeKey]);
   const raw = useMemo(() => {
     if (!scopedTranslator) {
       return String(fallback ?? i18nKey);
     }
     const tInstance = scopedTranslator;
     const res = tInstance.t(i18nKey, values);
-    const keyExists = tInstance.get(i18nKey) !== void 0;
+    if (res !== i18nKey && res !== void 0) {
+      return String(res);
+    }
+    const keyExists = tInstance.get(i18nKey) !== void 0 || tInstance.get(`${i18nKey}_other`) !== void 0;
     if (keyExists) {
       return String(res);
     }
     return String(fallback ?? i18nKey);
-  }, [scopedTranslator, i18nKey, values, fallback, language]);
-  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
-  const nodes = [];
-  let lastIndex = 0;
-  let match;
-  let counter = 0;
-  while ((match = tagRegex.exec(raw)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(raw.slice(lastIndex, match.index));
-    }
-    const tagName = match[1];
-    const content = match[2];
-    const component = components[tagName];
-    if (isValidElement(component)) {
-      nodes.push(
-        cloneElement(component, { key: `trans-${tagName}-${counter++}` }, content)
-      );
-    } else if (typeof component === "function") {
-      nodes.push(
-        /* @__PURE__ */ jsx(React.Fragment, { children: component(content) }, `trans-${tagName}-${counter++}`)
-      );
-    } else {
-      nodes.push(match[0]);
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < raw.length) {
-    nodes.push(raw.slice(lastIndex));
-  }
+  }, [scopedTranslator, i18nKey, values, fallback, version]);
+  const nodes = useMemo(() => {
+    return renderNodes(raw, components);
+  }, [raw, components]);
   return /* @__PURE__ */ jsx(Fragment, { children: nodes });
 }
 
 // src/react/index.tsx
 import { jsx as jsx2 } from "react/jsx-runtime";
 var LocLContext = createContext(null);
-function LocLProvider({ translator, children }) {
-  return /* @__PURE__ */ jsx2(LocLContext.Provider, { value: translator, children });
+function bindApi(translator) {
+  return {
+    t: translator.t.bind(translator),
+    tt: translator.tt.bind(translator),
+    plural: translator.plural.bind(translator),
+    rich: translator.rich.bind(translator),
+    format: translator.format.bind(translator),
+    get: translator.get.bind(translator),
+    getObj: translator.getObj.bind(translator)
+  };
 }
-function useLocL(customTranslator) {
-  const contextTranslator = useContext2(LocLContext);
-  const translator = customTranslator ?? contextTranslator;
-  if (!translator) {
-    throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
-  }
-  const getVersion = () => translator.getVersion();
+function useTranslatorSubscription(translator) {
+  const getSnapshot = () => typeof translator.getVersion === "function" ? translator.getVersion() : translator.getLanguage?.() || "";
   useSyncExternalStore2(
     (onStoreChange) => translator.subscribe(onStoreChange),
-    getVersion,
-    getVersion
+    getSnapshot,
+    getSnapshot
   );
+}
+function toResult(translator) {
   return {
     translator,
     language: translator.getLanguage(),
     changeLanguage: (lang) => translator.changeLanguage(lang),
-    t: translator.t.bind(translator),
-    plural: translator.plural.bind(translator),
-    rich: translator.rich.bind(translator),
-    format: translator.format.bind(translator)
+    getLanguage: () => translator.getLanguage(),
+    ...bindApi(translator)
   };
 }
-function useTranslation(scope, options, customTranslator) {
-  const { translator, language, changeLanguage } = useLocL(customTranslator);
+function useScopedTranslation(base, scope, options) {
+  const { translator, language } = base;
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
   const scopeStr = typeof scope === "string" ? scope : void 0;
   const isReady = translator.isLoaded(language, scopeStr);
@@ -117,15 +143,25 @@ function useTranslation(scope, options, customTranslator) {
     return scope !== void 0 ? translator.withConfig({ scope }) : translator;
   }, [translator, scopeKey]);
   return {
-    translator: scopedTranslator,
-    language,
-    changeLanguage,
-    ready: isReady,
-    t: scopedTranslator.t.bind(scopedTranslator),
-    plural: scopedTranslator.plural.bind(scopedTranslator),
-    rich: scopedTranslator.rich.bind(scopedTranslator),
-    format: scopedTranslator.format.bind(scopedTranslator)
+    ...toResult(scopedTranslator),
+    ready: isReady
   };
+}
+function LocLProvider({ translator, children }) {
+  return /* @__PURE__ */ jsx2(LocLContext.Provider, { value: translator, children });
+}
+function useLocL(customTranslator) {
+  const contextTranslator = useContext2(LocLContext);
+  const translator = customTranslator ?? contextTranslator;
+  if (!translator) {
+    throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
+  }
+  useTranslatorSubscription(translator);
+  return toResult(translator);
+}
+function useTranslation(scope, options, customTranslator) {
+  const base = useLocL(customTranslator);
+  return useScopedTranslation(base, scope, options);
 }
 function createLocLReact(defaultTranslator) {
   const BoundContext = createContext(null);
@@ -138,50 +174,12 @@ function createLocLReact(defaultTranslator) {
   function useBoundLocL(customTranslator) {
     const contextTranslator = useContext2(BoundContext);
     const translator = customTranslator ?? contextTranslator ?? defaultTranslator;
-    const getVersion = () => translator.getVersion();
-    useSyncExternalStore2(
-      (onStoreChange) => translator.subscribe(onStoreChange),
-      getVersion,
-      getVersion
-    );
-    return {
-      translator,
-      language: translator.getLanguage(),
-      changeLanguage: (lang) => translator.changeLanguage(lang),
-      t: translator.t.bind(translator),
-      plural: translator.plural.bind(translator),
-      rich: translator.rich.bind(translator),
-      format: translator.format.bind(translator)
-    };
+    useTranslatorSubscription(translator);
+    return toResult(translator);
   }
   function useBoundTranslation(scope, options, customTranslator) {
-    const { translator, language, changeLanguage } = useBoundLocL(customTranslator);
-    const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-    const scopeStr = typeof scope === "string" ? scope : void 0;
-    const isReady = translator.isLoaded(language, scopeStr);
-    if (!isReady && options?.suspense) {
-      throw translator.load(language, scopeStr, options.loader);
-    }
-    useEffect(() => {
-      if (!isReady && !options?.suspense) {
-        translator.load(language, scopeStr, options?.loader).catch((err) => {
-          console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
-        });
-      }
-    }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
-    const scopedTranslator = useMemo2(() => {
-      return scope !== void 0 ? translator.withConfig({ scope }) : translator;
-    }, [translator, scopeKey]);
-    return {
-      translator: scopedTranslator,
-      language,
-      changeLanguage,
-      ready: isReady,
-      t: scopedTranslator.t.bind(scopedTranslator),
-      plural: scopedTranslator.plural.bind(scopedTranslator),
-      rich: scopedTranslator.rich.bind(scopedTranslator),
-      format: scopedTranslator.format.bind(scopedTranslator)
-    };
+    const base = useBoundLocL(customTranslator);
+    return useScopedTranslation(base, scope, options);
   }
   function BoundTrans(props) {
     const contextTranslator = useContext2(BoundContext);

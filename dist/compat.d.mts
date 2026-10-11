@@ -1,4 +1,4 @@
-import { N as NestedKeyOf, I as InterpolationOptions, P as PluralParamsFor, c as ParamsFor, d as PathValue, e as IsEmptyParams, T as TranslationObjectFor, f as PluralKeys, a as LocL } from './LocL-DJypL6Ni.mjs';
+import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as ParamsFor, d as PathValue, e as PluralParamsFor, f as InterpolationOptions } from './LocL-CwO1VWe5.mjs';
 import { DefaultResources, DefaultFallback } from './react.mjs';
 import 'react';
 
@@ -51,4 +51,4 @@ interface I18nextCompat<T extends Record<string, any> = DefaultResources, Fallba
 declare function toI18next<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>>(translator: LocL<T, Fallback, any, any, any>): I18nextCompat<T, Fallback>;
 declare const createI18nextCompat: typeof toI18next;
 
-export { type BaseKeys, type ColonKeys, type I18nextCompat, type I18nextHasParams, type I18nextKey, type I18nextOptions, type I18nextOptionsFor, type I18nextParamsFor, type I18nextTranslation, type NormalizeKey, createI18nextCompat, toI18next };
+export { createI18nextCompat, toI18next };

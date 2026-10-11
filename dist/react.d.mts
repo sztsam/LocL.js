@@ -1,8 +1,8 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, f as PluralKeys, e as IsEmptyParams, c as ParamsFor, d as PathValue, I as InterpolationOptions, a as LocL, g as Language, R as ResourceLoader, h as Scope } from './LocL-DJypL6Ni.mjs';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, e as PluralParamsFor, I as IsEmptyParams, c as ParamsFor, d as PathValue, f as InterpolationOptions, a as LocL, g as Language, R as ResourceLoader, h as Scope } from './LocL-CwO1VWe5.mjs';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
-type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
+type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = K extends PluralKeys<S, T, Fallback> ? PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>> : IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
 type TransProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined, K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>> = {
     /** Strictly typed translation key */
     i18nKey: K;
@@ -23,6 +23,7 @@ type TransProps<T extends Record<string, any> = DefaultResources, Fallback exten
 /**
  * Renders translated text with rich React component interpolation without `dangerouslySetInnerHTML`.
  * Subscribes reactively to language updates and supports strict type checking and autocompletion.
+ *
  * @example
  * ```tsx
  * <Trans
@@ -30,7 +31,8 @@ type TransProps<T extends Record<string, any> = DefaultResources, Fallback exten
  *   values={{ name: "Alice" }}
  *   components={{
  *     bold: <strong />,
- *     link: (content) => <a href="/terms">{content}</a>
+ *     link: (content) => <a href="/terms">{content}</a>,
+ *     br: <br />
  *   }}
  * />
  * ```
@@ -64,19 +66,17 @@ type DefaultFallback<T = DefaultResources> = LocLRegister extends {
     fallbackLanguage: infer FB extends string;
 } ? FB : [keyof T & string] extends [never] ? string : keyof T & string;
 declare const LocLContext: React.Context<LocL<any, any, any, any, any> | null>;
+type TranslatorApi<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj">;
 interface LocLProviderProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> {
     translator: LocL<T, Fallback, S, any, any>;
     children: ReactNode;
 }
 declare function LocLProvider<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined>({ translator, children }: LocLProviderProps<T, Fallback, S>): React.JSX.Element;
-interface UseLocLResult<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> {
+interface UseLocLResult<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> extends TranslatorApi<T, Fallback, S> {
     translator: LocL<T, Fallback, S, any, any>;
     language: Language<T>;
     changeLanguage: (lang: Language<T>) => void;
-    t: LocL<T, Fallback, S>["t"];
-    plural: LocL<T, Fallback, S>["plural"];
-    rich: LocL<T, Fallback, S>["rich"];
-    format: LocL<T, Fallback, S>["format"];
+    getLanguage: () => Language<T>;
 }
 declare function useLocL<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined>(customTranslator?: LocL<T, Fallback, S, any, any> | LocL<any, any, any, any, any>): UseLocLResult<T, Fallback, S>;
 interface UseTranslationOptions {
@@ -123,4 +123,4 @@ interface LocLReactSuite<T extends Record<string, any>, Fallback extends keyof T
  */
 declare function createLocLReact<T extends Record<string, any>, Fallback extends keyof T & string>(defaultTranslator: LocL<T, Fallback, any, any, any>): LocLReactSuite<T, Fallback>;
 
-export { type BoundLocLProviderProps, type DefaultFallback, type DefaultResources, LocLContext, LocLProvider, type LocLProviderProps, type LocLReactSuite, type LocLRegister, Trans, type TransKey, type TransProps, type TransValues, type UseLocLResult, type UseTranslationOptions, type UseTranslationResult, createLocLReact, useLocL, useTranslation };
+export { type BoundLocLProviderProps, type DefaultFallback, type DefaultResources, LocLContext, LocLProvider, type LocLProviderProps, type LocLReactSuite, type LocLRegister, Trans, type TransKey, type TransProps, type TransValues, type TranslatorApi, type UseLocLResult, type UseTranslationOptions, type UseTranslationResult, createLocLReact, useLocL, useTranslation };

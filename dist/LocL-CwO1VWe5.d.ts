@@ -211,7 +211,6 @@ interface FormatOptions<F extends Record<string, Formatter>, UseDefaultFormatter
     args?: string[];
 }
 type Formatter<TArgs extends unknown[] = string[]> = (value: any, args?: TArgs) => string;
-
 type EffectiveFormatters<F extends Record<string, Formatter>, UseDefault extends boolean> = UseDefault extends true ? F & DefaultFormatters : F;
 type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>) => void;
 type Unsubscribe = () => void;
@@ -231,6 +230,20 @@ type LoadableBundle = Record<string, any> | {
     default: Record<string, any> | (() => any);
 } | (() => Record<string, any> | Promise<Record<string, any>>) | Response | string;
 type ResourceLoader = (language: string, namespace?: string) => LoadableBundle | Promise<LoadableBundle>;
+interface PseudoLocalizationOptions {
+    enabled?: boolean;
+    prefix?: string;
+    suffix?: string;
+    accents?: boolean;
+}
+type DeepParityMatch<Base, Target> = Base extends object ? {
+    [K in keyof Base]: K extends keyof Target ? DeepParityMatch<Base[K], Target[K]> : never;
+} : Target;
+type EnforceParity<T, Fallback extends keyof T> = {
+    [L in keyof T]: L extends Fallback ? T[L] : DeepParityMatch<T[Fallback], T[L]> & {
+        [K in Exclude<keyof T[L], keyof T[Fallback]>]?: T[L][K];
+    };
+};
 type RequiredPlural = "one" | "other";
 type OptionalPlural = Exclude<PluralForms, RequiredPlural>;
 type ObjectPlural = {
@@ -249,6 +262,11 @@ type NamespaceKeys<T> = {
 type PlainStringKeys<T> = {
     [K in StrKey<T>]: K extends SuffixKey<T> ? never : T[K] extends string ? K : never;
 }[StrKey<T>];
+/**
+ * Type utility to strictly type-check secondary translation files against a fallback language object.
+ * Enforces `one` and `other` plurals, makes non-essential grammatical plurals (`zero`, `few`, `many`) optional,
+ * and recursively validates namespace structures.
+ */
 type LangWithPlurals<T> = T extends Primitive ? T : T extends (infer U)[] ? LangWithPlurals<U>[] : {
     [K in NamespaceKeys<T>]: LangWithPlurals<T[K]>;
 } & {
@@ -288,6 +306,8 @@ interface LocLConfig<T extends Record<string, any>, Fallback extends keyof T & s
     useCache?: boolean;
     /** Default async loader function for lazy loading namespaces */
     loader?: ResourceLoader;
+    /** Built-in Pseudo-Localization for enterprise layout & QA testing */
+    pseudoLocalization?: boolean | PseudoLocalizationOptions;
 }
 /**
  * The main class for handling translations.
@@ -315,6 +335,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private loadedLanguages;
     private loadingPromises;
     private version;
+    private pseudoOptions?;
     /**
      * Creates a new LocL instance.
      * @param config - The configuration object.
@@ -358,6 +379,11 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      */
     getLanguage(): Language<T>;
     getVersion(): number;
+    /**
+     * Generates a BCP 47 hierarchical fallback chain:
+     * e.g. "de-AT-Vienna" -> ["de-AT-Vienna", "de-AT", "de", "en"]
+     */
+    getFallbackChain(lang?: string): string[];
     /**
      * Checks if an entire language or specific namespace is loaded.
      */
@@ -457,6 +483,10 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * @returns The nested translation object, or `undefined` if not found.
      */
     getObj<K extends NestedKeyOfObj<TranslationObjectFor<S, T, Fallback>, false>>(key: K): PathValue<TranslationObjectFor<S, T, Fallback>, K> | undefined;
+    /**
+     * Configures or toggles pseudo-localization at runtime.
+     */
+    setPseudoLocalization(options: boolean | PseudoLocalizationOptions): void;
     private isLanguage;
     private getCacheKey;
     private invalidateCacheForLang;
@@ -467,9 +497,10 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private checkPlural;
     private interpolate;
     private applyFormat;
+    private applyPseudoLocalization;
     private makeReadOnly;
     private notifySubscribers;
     private isUnsafeObjectKey;
 }
 
-export { type Formatter as F, type InterpolationOptions as I, type LocLConfig as L, type NestedKeyOf as N, type PluralParamsFor as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type ParamsFor as c, type PathValue as d, type IsEmptyParams as e, type PluralKeys as f, type Language as g, type Scope as h };
+export { type EnforceParity as E, type Formatter as F, type IsEmptyParams as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type ParamsFor as c, type PathValue as d, type PluralParamsFor as e, type InterpolationOptions as f, type Language as g, type Scope as h };

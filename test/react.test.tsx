@@ -14,7 +14,8 @@ const resources = defineResources({
       other: "{count} messages"
     },
     user: {
-      greeting: "Greetings from user namespace!"
+      greeting: "Greetings from user namespace!",
+      same: "same"
     }
   },
   de: {
@@ -26,7 +27,8 @@ const resources = defineResources({
       other: "{count} Nachrichten"
     },
     user: {
-      greeting: "Grüße aus dem Benutzer-Namespace!"
+      greeting: "Grüße aus dem Benutzer-Namespace!",
+      same: "same"
     }
   }
 });
@@ -91,6 +93,7 @@ describe("React Integration", () => {
     const html = renderToStaticMarkup(
       <LocLProvider translator={translator}>
         <UserComponent />
+        {}
       </LocLProvider>
     );
 
@@ -173,6 +176,24 @@ describe("React Integration", () => {
       expect(html).toBe("<div>Hallo Welt</div>");
     });
 
+    it("should cover getLanguage, tt, get, and getObj from useLocL and useTranslation", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+
+      function MethodsComponent() {
+        const { getLanguage, tt, get, getObj } = useLocL(translator);
+        expect(getLanguage()).toBe("en");
+        expect(tt("title")).toBe("Hello World");
+        expect(get("title")).toBe("Hello World");
+        expect(getObj("user")).toEqual({
+          greeting: "Greetings from user namespace!",
+          same: "same"
+        });
+        return <span>methods</span>;
+      }
+
+      renderToStaticMarkup(<MethodsComponent />);
+    });
+
     it("should cover useSyncExternalStore subscribe and getSnapshot in useLocL", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
       let subscribeCalled = false;
@@ -194,6 +215,54 @@ describe("React Integration", () => {
       renderToStaticMarkup(<SubComp />);
       expect(subscribeCalled).toBe(true);
       expect(snapshotCalled).toBe(true);
+      (React.useSyncExternalStore as any).mockRestore();
+    });
+
+    it("should cover useTranslatorSubscription fallback branches when getVersion is not a function", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+      const snapshots: string[] = [];
+
+      jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
+        subscribe(() => {});
+        const val = getSnapshot();
+        snapshots.push(val as any);
+        return getServerSnapshot ? getServerSnapshot() : val;
+      });
+
+      // 1. getLanguage returns "en"
+      const mockWithLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: () => "en",
+      });
+      function CompWithLang() {
+        useLocL(mockWithLang as any);
+        return <span>lang</span>;
+      }
+      renderToStaticMarkup(<CompWithLang />);
+
+      // 2. getLanguage returns "" (evaluates || "")
+      const mockWithEmptyLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: () => "",
+      });
+      function CompWithEmptyLang() {
+        useLocL(mockWithEmptyLang as any);
+        return <span>empty</span>;
+      }
+      renderToStaticMarkup(<CompWithEmptyLang />);
+
+      // 3. getLanguage is undefined (evaluates optional chain undefined -> "")
+      const mockWithUndefinedLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: () => undefined as any,
+      });
+      function CompWithUndefinedLang() {
+        useLocL(mockWithUndefinedLang as any);
+        return <span>no-lang</span>;
+      }
+      renderToStaticMarkup(<CompWithUndefinedLang />);
+
+      expect(snapshots).toEqual(["en", "", ""]);
       (React.useSyncExternalStore as any).mockRestore();
     });
 
@@ -243,6 +312,80 @@ describe("React Integration", () => {
         />
       );
       expect(html5).toBe("<b>ExactBoundary</b>");
+    });
+
+    it("should support self-closing tags with element and function renderers in Trans", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+
+      // Self-closing tag with React element: exercises match[3], isSelfClosing, rawContent === undefined, cloneElement without children
+      const html1 = renderToStaticMarkup(
+        <Trans
+          translator={translator}
+          fallback="Before<br/>Middle<br />After"
+          i18nKey="missingKey"
+          components={{
+            br: <br className="my-br" />
+          }}
+        />
+      );
+      expect(html1).toContain('<br class="my-br"/>');
+
+      // Self-closing tag with function component renderer: exercises children === undefined -> children ?? "" fallback
+      let functionPassedContent: any;
+      const html2 = renderToStaticMarkup(
+        <Trans
+          translator={translator}
+          fallback="Start<divider />End"
+          i18nKey="missingKey"
+          components={{
+            divider: (content) => {
+              functionPassedContent = content;
+              return <hr className="sep" />;
+            }
+          }}
+        />
+      );
+      expect(functionPassedContent).toBe("");
+      expect(html2).toContain('<hr class="sep"/>');
+    });
+
+    it("should support nested rich tags in Trans", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+
+      // Exercises rawContent.includes("<") recursively calling renderNodes
+      const html = renderToStaticMarkup(
+        <Trans
+          translator={translator}
+          fallback="<card>Container with <bold>bold content</bold></card>"
+          i18nKey="missingKey"
+          components={{
+            card: <div className="card" />,
+            bold: <strong />
+          }}
+        />
+      );
+      expect(html).toContain('<div class="card">Container with <strong>bold content</strong></div>');
+    });
+
+    it("should verify key existence via _other plural suffix in Trans", () => {
+      const customPluralTranslator = initLocL({
+        resources: {
+          en: {
+            items_other: "items"
+          }
+        },
+        fallbackLanguage: "en"
+      });
+
+      // Exercises keyExists finding `_other` suffix when base key matches res
+      const html = renderToStaticMarkup(
+        <Trans
+          translator={customPluralTranslator}
+          i18nKey="items"
+          fallback="Fallback Plural"
+        />
+      );
+      expect(html).toBe("items");
     });
   });
 
@@ -343,6 +486,42 @@ describe("React Integration", () => {
       (React.useSyncExternalStore as any).mockRestore();
     });
 
+    it("should cover getSnapshot in Trans when activeTranslator.getVersion is not a function", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+      const snapshots: string[] = [];
+
+      jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
+        subscribe(() => {});
+        const val = getSnapshot();
+        snapshots.push(val as any);
+        return getServerSnapshot ? getServerSnapshot() : val;
+      });
+
+      // 1. activeTranslator without getVersion, getLanguage returns "en"
+      const mockWithLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: () => "en",
+      });
+      renderToStaticMarkup(<Trans translator={mockWithLang as any} i18nKey="title" />);
+
+      // 2. activeTranslator without getVersion, getLanguage returns ""
+      const mockWithEmptyLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: () => "",
+      });
+      renderToStaticMarkup(<Trans translator={mockWithEmptyLang as any} i18nKey="title" />);
+
+      // 3. activeTranslator without getVersion, getLanguage undefined
+      const mockWithoutGetLang = Object.assign(Object.create(translator), {
+        getVersion: undefined,
+        getLanguage: undefined,
+      });
+      renderToStaticMarkup(<Trans translator={mockWithoutGetLang as any} i18nKey="title" />);
+
+      expect(snapshots).toEqual(["en", "", ""]);
+      (React.useSyncExternalStore as any).mockRestore();
+    });
+
     it("should cover Trans with scope, values, and unsubscribe guards", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
 
@@ -363,6 +542,12 @@ describe("React Integration", () => {
         <Trans translator={translator} i18nKey="welcome" values={{ name: "Alice" }} />
       );
       expect(htmlValues).toBe("Welcome, Alice!");
+
+      // Trans with string scope
+      const htmlScopeWithSameResult = renderToStaticMarkup(
+        <Trans translator={translator} scope="user" i18nKey="same" />
+      );
+      expect(htmlScopeWithSameResult).toBe("same");
 
       // Test unsubscribe guard when activeTranslator is missing
       let unsub1: any;
@@ -472,7 +657,7 @@ describe("React Integration", () => {
       });
       const suite = createLocLReact(translator);
 
-      // --- 1. Root useTranslation Suspense throw (line 160) ---
+      // --- 1. Root useTranslation Suspense throw ---
       let rootPromise: any;
       function SuspenseRootComp() {
         try {
@@ -492,7 +677,7 @@ describe("React Integration", () => {
       expect(typeof rootPromise?.then).toBe("function");
       await rootPromise;
 
-      // --- 2. Suite useBoundTranslation Suspense throw (line 292) ---
+      // --- 2. Suite useBoundTranslation Suspense throw ---
       let boundPromise: any;
       function SuspenseBoundComp() {
         try {
@@ -512,7 +697,7 @@ describe("React Integration", () => {
       expect(typeof boundPromise?.then).toBe("function");
       await boundPromise;
 
-      // --- 3. useEffect catch block in Root useTranslation (lines 164-166) ---
+      // --- 3. useEffect catch block in Root useTranslation ---
       jest.spyOn(React, "useEffect").mockImplementation((cb) => cb());
       const errSpy = jest.spyOn(console, "error").mockImplementation();
 
@@ -527,7 +712,7 @@ describe("React Integration", () => {
         </LocLProvider>
       );
 
-      // --- 4. useEffect catch block in Suite useBoundTranslation (lines 296-298) ---
+      // --- 4. useEffect catch block in Suite useBoundTranslation ---
       function FailingBoundComp() {
         suite.useTranslation("failing" as any);
         return <span>failing</span>;
@@ -546,7 +731,7 @@ describe("React Integration", () => {
         expect.any(Error)
       );
 
-      // --- Root useTranslation with undefined scope (covers lines 164-166 scopeStr ?? language) ---
+      // --- Root useTranslation with undefined scope ---
       function FailingRootNoScopeComp() {
         useTranslation(undefined, { loader: async () => { throw new Error("No scope fail"); } });
         return <span>no-scope</span>;
@@ -557,7 +742,7 @@ describe("React Integration", () => {
         </LocLProvider>
       );
 
-      // --- Bound useTranslation with undefined scope (covers lines 296-298 scopeStr ?? language) ---
+      // --- Bound useTranslation with undefined scope ---
       function FailingBoundNoScopeComp() {
         suite.useTranslation(undefined, { loader: async () => { throw new Error("Bound no scope fail"); } });
         return <span>bound-no-scope</span>;

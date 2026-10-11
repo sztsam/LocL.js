@@ -1,4 +1,4 @@
-import { initLocL, LocL, defineResources } from '../src/index';
+import { initLocL, LocL, defineResources, defineStrictResources } from '../src/index';
 
 describe('initLocL', () => {
   const resources = {
@@ -228,7 +228,7 @@ describe('initLocL', () => {
     // @ts-ignore
     expect(p1.scope).toBeUndefined();
 
-    // Trigger line 108 (target[prop])
+    // Trigger (target[prop])
     // @ts-ignore
     expect((p1).getObj).toBeDefined();
 
@@ -719,9 +719,97 @@ describe('initLocL', () => {
     const tArr = initLocL({ resources, fallbackLanguage: "en", useCache: false, scope: ["nested"] });
     expect(tArr.get("nested.a.b")).toBe("Nested value");
   });
+
+  it("should cover BCP 47 multi-separator slicing and 2-letter fallback", () => {
+    const translator = initLocL({
+      resources: { en: { title: "Hi" } },
+      fallbackLanguage: "en"
+    });
+
+    // Call without arguments to exercise default `lang = this.language` parameter
+    expect(translator.getFallbackChain()).toEqual(["en"]);
+
+    // multi-segment subtags with hyphens and underscores
+    expect(translator.getFallbackChain("de-AT-Vienna")).toEqual([
+      "de-AT-Vienna",
+      "de-AT",
+      "de",
+      "en"
+    ]);
+    expect(translator.getFallbackChain("zh_Hans_CN")).toEqual([
+      "zh_Hans_CN",
+      "zh_Hans",
+      "zh",
+      "en"
+    ]);
+
+    // 2-letter prefix fallback without hyphen/underscore
+    expect((translator as any).isLanguage("enUS")).toBe("en");
+  });
+
+  it("should cover pseudo-localization constructor, toggling, and options", () => {
+    const tPseudo = initLocL({
+      resources: { en: { welcome: "Welcome, {name}! <bold>Click</bold>" } },
+      fallbackLanguage: "en",
+      pseudoLocalization: true
+    });
+
+    const res1 = tPseudo.t("welcome", { name: "Alice" });
+    expect(res1).toContain("Alice");
+    expect(res1).toContain("<bold>");
+    expect(res1).toContain("[!!! ");
+    expect(res1).toContain(" !!!]");
+
+    // setPseudoLocalization with boolean false
+    tPseudo.setPseudoLocalization(false);
+    expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+
+    // setPseudoLocalization with boolean true
+    tPseudo.setPseudoLocalization(true);
+    expect(tPseudo.t("welcome", { name: "Alice" })).toContain("[!!! ");
+
+    // setPseudoLocalization with object options: accents: false
+    tPseudo.setPseudoLocalization({
+      enabled: true,
+      prefix: ">>> ",
+      suffix: " <<<",
+      accents: false
+    });
+    const resNoAccents = tPseudo.t("welcome", { name: "Alice" });
+    expect(resNoAccents).toBe(">>> Welcome, Alice! <bold>Click</bold> <<<");
+
+    // setPseudoLocalization with enabled: false
+    tPseudo.setPseudoLocalization({ enabled: false });
+    expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+  });
+
+  it("should cover formatter returning undefined fallback to token.raw", () => {
+    // formatter returns undefined -> falls back to token.raw
+    const tFmt = initLocL({
+      resources: { en: { test: "Result: {val | returnsUndef}" } },
+      fallbackLanguage: "en",
+      formatters: {
+        returnsUndef: () => undefined as any
+      }
+    });
+    expect(tFmt.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef}");
+
+    // intermediate formatter returns undefined before a missing formatter
+    const tFmt2 = initLocL({
+      resources: { en: { test: "Result: {val | returnsUndef | missingFormatter}" } },
+      fallbackLanguage: "en",
+      devMode: true,
+      formatters: {
+        returnsUndef: () => undefined as any
+      }
+    });
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    expect(tFmt2.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef | missingFormatter}");
+    warnSpy.mockRestore();
+  });
 });
 
-describe("defineResources", () => {
+describe("defineResources / defineStrictResources", () => {
   it("should return the exact resources object reference passed in", () => {
     const rawResources = {
       en: {
@@ -762,6 +850,15 @@ describe("defineResources", () => {
     translator.changeLanguage("de");
     expect(translator.t("welcome", { name: "Alice" })).toBe("Willkommen, Alice!");
     expect(translator.t("items", { gender: "female", count: 7 })).toBe("Sie hat 7 Artikel");
+  });
+
+  it("should cover defineStrictResources at runtime", () => {
+    const res = defineStrictResources({
+      en: { title: "Hello", save: "Save" },
+      de: { title: "Hallo", save: "Speichern" }
+    });
+    expect(res.en.title).toBe("Hello");
+    expect(res.de.save).toBe("Speichern");
   });
 });
 

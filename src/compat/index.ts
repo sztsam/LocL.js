@@ -2,40 +2,40 @@ import { LocL } from "../LocL.js";
 import { NestedKeyOf, InterpolationOptions, PathValue, ParamsFor, IsEmptyParams, PluralParamsFor, PluralKeys, TranslationObjectFor } from "../types.js";
 import { DefaultResources, DefaultFallback } from "../react/index.js";
 
-export type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
+type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
   ? `${NS}.${Rest}`
   : K;
 
-export type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}`
+type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}`
   ? `${NS}:${Rest}` | `${NS}.${Rest}`
   : K;
 
-export type BaseKeys<Tr, PK extends string> = ((Tr extends object ? NestedKeyOf<Tr> : never) | PK) & string;
-export type I18nextKey<Tr, PK extends string> = ColonKeys<BaseKeys<Tr, PK>>;
+type BaseKeys<Tr, PK extends string> = ((Tr extends object ? NestedKeyOf<Tr> : never) | PK) & string;
+type I18nextKey<Tr, PK extends string> = ColonKeys<BaseKeys<Tr, PK>>;
 
-export interface I18nextOptions extends InterpolationOptions {
+interface I18nextOptions extends InterpolationOptions {
   ns?: string;
   defaultValue?: string;
   count?: number;
 }
 
-export type I18nextParamsFor<K extends string, Tr, PK extends string> =
+type I18nextParamsFor<K extends string, Tr, PK extends string> =
   NormalizeKey<K> extends PK
     ? PluralParamsFor<NormalizeKey<K>, Tr>
     : ParamsFor<PathValue<Tr, NormalizeKey<K>>>;
 
-export type I18nextHasParams<K extends string, Tr, PK extends string> =
+type I18nextHasParams<K extends string, Tr, PK extends string> =
   NormalizeKey<K> extends PK
     ? true
     : IsEmptyParams<ParamsFor<PathValue<Tr, NormalizeKey<K>>>> extends true
       ? false
       : true;
 
-export type I18nextOptionsFor<K extends string, Tr, PK extends string> =
+type I18nextOptionsFor<K extends string, Tr, PK extends string> =
   I18nextParamsFor<K, Tr, PK> & I18nextOptions;
 
 
-export interface I18nextTranslation<
+interface I18nextTranslation<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   Tr = TranslationObjectFor<undefined, T, Fallback>,
@@ -78,7 +78,7 @@ export interface I18nextTranslation<
   ): string;
 }
 
-export interface I18nextCompat<
+interface I18nextCompat<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   Tr = TranslationObjectFor<undefined, T, Fallback>,

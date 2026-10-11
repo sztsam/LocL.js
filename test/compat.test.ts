@@ -40,11 +40,11 @@ describe("i18next Compatibility Adapter", () => {
     // Signature 1: t(key, defaultValue)
     expect(i18n.t("missing.key", "Default String")).toBe("Default String");
 
-    // Signature 2: t(key, defaultValue, options) -> exercises line 84 truthy branch
+    // Signature 2: t(key, defaultValue, options) -> exercises truthy branch
     expect(i18n.t("common:hello", "Default {name}", { name: "Maria" })).toBe("Hello, Maria!");
     expect(i18n.t("missing.key", "Default {name}", { name: "Maria" })).toBe("Default {name}");
 
-    // Signature 2 with non-object arg2 -> exercises line 84 fallback branch
+    // Signature 2 with non-object arg2 -> exercises fallback branch
     expect(i18n.t("missing.key", "Default String", null as any)).toBe("Default String");
 
     // Signature 3: t(key, { defaultValue })
@@ -265,7 +265,7 @@ describe("i18next Compatibility Adapter", () => {
   it("should cover missing resources fallback and undefined result fallback", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
 
-    // 1. Line 144: Exercise languages when translator.resources is undefined
+    // Exercise languages when translator.resources is undefined
     const dummyLocL = {
       ...translator,
       resources: undefined,
@@ -275,7 +275,7 @@ describe("i18next Compatibility Adapter", () => {
     const i18nWithoutRes = toI18next(dummyLocL as any);
     expect(i18nWithoutRes.languages).toEqual([]);
 
-    // 2. Line 119: Exercise return fallback when translator.t returns undefined
+    // Exercise return fallback when translator.t returns undefined
     const mockUndefinedT = {
       ...translator,
       t: () => undefined as any,
