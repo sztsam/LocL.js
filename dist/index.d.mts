@@ -1,5 +1,5 @@
-import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL } from './LocL-v4yNIiKt.mjs';
-export { b as LangWithPlurals } from './LocL-v4yNIiKt.mjs';
+import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-CywjdTt7.mjs';
+export { b as LangWithPlurals } from './LocL-CywjdTt7.mjs';
 
 /**
  * Initializes a new LocL instance.
@@ -32,6 +32,8 @@ export { b as LangWithPlurals } from './LocL-v4yNIiKt.mjs';
  * @param {boolean} [config.useDefaultFormatters=true] - Whether to include the built-in formatters.
  * @param {boolean} [config.devMode=false] - Enables warnings for missing keys and scopes.
  * @param {boolean} [config.useCache=true] - Enables caching of scopes and proxies.
+ * @param {ResourceLoader} [config.loader] - Default async loader function for lazy loading namespaces
+ * @param {PseudoLocalizationOptions} [config.pseudoLocalization] - Built-in Pseudo-Localization for enterprise layout & QA testing
  *
  * @returns A new `LocL` instance configured with the provided options.
  */
@@ -56,5 +58,18 @@ declare function initLocL<const T extends Record<string, any>, Fallback extends 
  * ```
  */
 declare function defineResources<const T extends Record<string, any>>(resources: T): T;
+/**
+ * Declares translation resources and enforces at compile time that every secondary
+ * language implements all keys present in the fallback language.
+ *
+ * @example
+ * ```ts
+ * const resources = defineStrictResources({
+ *   en: { title: "Hello", save: "Save" },
+ *   de: { title: "Hallo", save: "Speichern" } // ❌ Error if 'save' is missing in 'de'
+ * });
+ * ```
+ */
+declare function defineStrictResources<const T extends Record<string, any>, Fallback extends keyof T & string = "en" extends keyof T ? "en" : keyof T & string>(resources: EnforceParity<T, Fallback>): T;
 
-export { LocL, LocLConfig, defineResources, initLocL };
+export { LocL, LocLConfig, defineResources, defineStrictResources, initLocL };

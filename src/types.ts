@@ -1,3 +1,9 @@
+import type { DefaultFormatters } from "./formatters";
+
+/* =========================================================================
+ * Path & Key Resolution Types (Internal & Package Core)
+ * ========================================================================= */
+
 type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
 }
@@ -66,6 +72,11 @@ type DeepPickValue<T, P extends string> = P extends `${infer K}.${infer Rest}`
 
 type Join<P extends string, K extends string> = P extends "" ? K : `${P}.${K}`;
 
+
+/* =========================================================================
+ * Language, Scope & Resource Types
+ * ========================================================================= */
+
 type Resources<T extends Record<string, any>> = T;
 export type Language<T extends Record<string, any>> = keyof T & string;
 type FallbackLanguage<T extends Record<string, any>, Fallback extends keyof T> = Fallback;
@@ -87,6 +98,11 @@ export type TranslationObjectFor<
         : EnsureObject<T[Fallback]>;
 
 type Translations<S extends ScopeType<T, F>, T extends Record<string, any>, F extends keyof T & string> = TranslationObjectFor<S, T, F>;
+
+
+/* =========================================================================
+ * Token & Interpolation Parsing Types (Internal)
+ * ========================================================================= */
 
 type Trim<T extends string> =
   T extends ` ${infer Rest}` ? Trim<Rest> :
@@ -175,6 +191,11 @@ type ExtractSuffixPluralParams<Base extends string, T> =
     }[PluralForms]>
   >;
 
+
+  /* =========================================================================
+ * Params & Plural Key Resolution Types (Package Core)
+ * ========================================================================= */
+
 export type PluralParamsFor<K extends string, T> =
   string extends K
     ? { count: number } & InterpolationOptions
@@ -222,6 +243,11 @@ type ExtractPluralKeys<T, Path extends string = "", Depth extends any[] = []> =
         : never)
   }[keyof T & string] : never;
 
+
+/* =========================================================================
+ * Options & Function Signatures
+ * ========================================================================= */
+
 export interface InterpolationOptions {
   [key: string]: string | number | Date | boolean | undefined;
   count?: number;
@@ -231,16 +257,15 @@ export interface PluralInterpolationOptions extends InterpolationOptions {
 }
 export interface FormatOptions<F extends Record<string, Formatter>, UseDefaultFormatter extends boolean> {
   formatter: keyof EffectiveFormatters<F, UseDefaultFormatter>;
-  args?: string[]
+  args?: string[];
 }
 export type Formatter<TArgs extends unknown[] = string[]> = (value: any, args?: TArgs) => string;
-import type { DefaultFormatters } from "./formatters";
 export type EffectiveFormatters<F extends Record<string, Formatter>, UseDefault extends boolean> = UseDefault extends true ? F & DefaultFormatters : F;
 
 export type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>) => void;
 export type Unsubscribe = () => void;
 
-export type TagFormatter<T = any> = (content: string) => T;
+type TagFormatter<T = any> = (content: string) => T;
 export type TagInterpolationOptions<T = any> = Record<string, TagFormatter<T> | string | number | Date | boolean | undefined>;
 
 export type TArgs<K extends string, Tr, PK extends string, F extends Record<string, Formatter>, U extends boolean> =
@@ -257,6 +282,62 @@ export type TResult<K extends string, Tr, PK extends string> =
   string extends PK
     ? PathValue<Tr, K>
     : K extends PK ? string : PathValue<Tr, K>;
+
+type DeepMerge<T, U> = T extends object
+  ? U extends object
+    ? {
+        [K in keyof T | keyof U]: K extends keyof U
+          ? K extends keyof T
+            ? DeepMerge<T[K], U[K]>
+            : U[K]
+          : K extends keyof T
+            ? T[K]
+            : never;
+      }
+    : U
+  : U;
+export type DeepMergeResources<
+  T extends Record<string, any>,
+  L extends string,
+  B extends Record<string, any>
+> = L extends keyof T
+  ? { [K in keyof T]: K extends L ? DeepMerge<T[K], B> : T[K] }
+  : T & { [K in L]: B };
+
+type LoadableBundle =
+  | Record<string, any>
+  | { default: Record<string, any> | (() => any) }
+  | (() => Record<string, any> | Promise<Record<string, any>>)
+  | Response
+  | string;
+export type ResourceLoader = (language: string, namespace?: string) => LoadableBundle | Promise<LoadableBundle>;
+
+export interface PseudoLocalizationOptions {
+  enabled?: boolean;
+  prefix?: string;
+  suffix?: string;
+  accents?: boolean;
+}
+
+
+/* =========================================================================
+ * Consumer Language Schema Typing (For lang files parity checking)
+ * ========================================================================= */
+
+type DeepParityMatch<Base, Target> = Base extends object
+  ? {
+      [K in keyof Base]: K extends keyof Target
+        ? DeepParityMatch<Base[K], Target[K]>
+        : never;
+    }
+  : Target;
+export type EnforceParity<T, Fallback extends keyof T> = {
+  [L in keyof T]: L extends Fallback
+    ? T[L]
+    : DeepParityMatch<T[Fallback], T[L]> & {
+        [K in Exclude<keyof T[L], keyof T[Fallback]>]?: T[L][K];
+      };
+};
 
 
 // - Language file typings
@@ -288,6 +369,24 @@ type PlainStringKeys<T> = {
       : never;
 }[StrKey<T>];
 
+
+/**
+ * Type utility to strictly type-check secondary translation files against a fallback language object.
+ * Enforces `one` and `other` plurals, makes non-essential grammatical plurals (`zero`, `few`, `many`) optional,
+ * and recursively validates namespace structures.
+ *
+ * @example
+ * ```ts
+ * import { LangWithPlurals } from "locl-js";
+ *
+ * const en: LangWithPlurals<typeof en> = {
+ *   messages: {
+ *     one: "You have one message.",
+ *     other: "You have {count} messages."
+ *   }
+ * };
+ * ```
+ */
 export type LangWithPlurals<T> =
   // 1. If primitive → keep original type
   T extends Primitive ? T :

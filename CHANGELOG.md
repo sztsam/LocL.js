@@ -2,6 +2,41 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.1.0] — 2026-10-12
+
+### Added
+
+- **Lazy Loading Namespaces & Bundles**:
+  - Added `translator.load(lang, ns, loader)`, `translator.loadLanguage(lang, loader)`, and `translator.loadNamespace(ns, lang, loader)` to support on-demand network loading and bundler code-splitting.
+  - Added `translator.isLoaded(lang, ns)` to verify loading status across both monolithic language bundles (`de.json`) and modular namespaces (`de/dashboard.json`).
+  - Added universal `ResourceLoader` resolution supporting raw JSON, ES Module dynamic `import()` with `.default`, TypeScript named exports (`translations`, `messages`, `resources`), factory functions, and direct browser `fetch()` `Response` objects.
+  - Added native React `<Suspense>` integration via `useTranslation(scope, { suspense: true })` with built-in failure TTL handling to prevent infinite suspense retry loops.
+  - Added non-suspense background loading with a reactive `ready: boolean` flag in `useTranslation()`.
+- **Compile-Time Translation Parity (`defineStrictResources`)**:
+  - Added `defineStrictResources()` and the `EnforceParity<T, Fallback>` type helper to strictly catch missing translation keys in secondary languages at compile time against the fallback language.
+- **Multi-Pipe Formatter Chaining**:
+  - Added pipeline formatting execution in translation tokens (e.g. `{val | trim | upper | truncate:10, ...}`), evaluating formatters sequentially from left to right.
+- **Built-in Pseudo-Localization (Enterprise QA Mode)**:
+  - Added `pseudoLocalization` configuration option during initialization and `translator.setPseudoLocalization()` runtime toggle.
+  - Automatically transforms ASCII letters into accented characters (`[!!! Ḩéļļö Ŵöŕļđ !!!]`) while keeping HTML/JSX tags (`<bold>`, `<link>`) and interpolation tokens (`{name}`, `{{name}}`) completely intact.
+- **BCP 47 Language Negotiation Fallback Chains**:
+  - Added hierarchical locale fallback resolution (e.g. `de-AT-Vienna` → `de-AT` → `de` → `fallbackLanguage`).
+  - Added `translator.getFallbackChain(lang)` helper method.
+- **Store Versioning & External Store Stability**:
+  - Added `translator.getVersion()` integer tracking language switches, dynamic resource additions, and lazy bundle arrivals to guarantee immediate `useSyncExternalStore` React re-renders.
+- **Nested & Self-Closing Tags in `<Trans />`**:
+  - Added support for self-closing JSX elements (e.g., `<br />`, `<hr />`, `<spacer />`) in addition to paired tags.
+  - Added recursive element parsing to support nested tags (e.g., `<bold>Click <link>here</link></bold>`).
+  - Added automatic fallback check for suffix plurals (`${key}_other`) in `<Trans />`.
+- **Type-Evolved `addResources()`**:
+  - `addResources()` now returns a strongly-typed instance using `DeepMergeResources<T, L, B>`, allowing subsequent `t()` calls to autocomplete and type-check newly injected resources at compile time.
+- **Expanded React Hook API**:
+  - Added `ready`, `tt`, `get`, `getObj`, and `getLanguage` to the objects returned by `useTranslation()` and `useLocL()`.
+- **Enhanced i18next Compatibility (`locl-js/compat`)**:
+  - Connected `i18n.loadNamespaces()` directly to `translator.load()`.
+  - Added automatic missing-language preloading to `await i18n.changeLanguage(lng)`.
+  - Unified `i18n.hasResourceBundle()` with `translator.isLoaded()`.
+
 ## [2.0.1] — 2026-10-09
 
 ### Fixed

@@ -1,9 +1,20 @@
 import {
   ScopeType, Formatter, Language, EffectiveFormatters, FormatOptions, InterpolationOptions,
-  NestedKeyOf, NestedKeyOfObj, PathValue, TranslationObjectFor, PluralKeys,
-  TagInterpolationOptions, PluralParamsFor, TArgs, TResult, Subscriber, Unsubscribe
-} from "./types";
-import { type DefaultFormatters, defaultFormatters } from "./formatters";
+  NestedKeyOf, NestedKeyOfObj, PathValue, TranslationObjectFor, PluralKeys, DeepMergeResources, 
+  TagInterpolationOptions, PluralParamsFor, TArgs, TResult, Subscriber, Unsubscribe, ResourceLoader,
+  PseudoLocalizationOptions
+} from "./types.js";
+import { type DefaultFormatters, defaultFormatters } from "./formatters.js";
+
+const PSEUDO_MAP: Record<string, string> = {
+  a: "á", b: "ḅ", c: "ç", d: "đ", e: "é", f: "ƒ", g: "ğ", h: "ḩ", i: "í",
+  j: "ĵ", k: "ķ", l: "ļ", m: "ɱ", n: "ñ", o: "ö", p: "þ", q: "ǫ", r: "ŕ",
+  s: "š", t: "ţ", u: "ú", v: "ṽ", w: "ŵ", x: "ẋ", y: "ý", z: "ž",
+  A: "Á", B: "Ḅ", C: "Ç", D: "Ð", E: "É", F: "Ƒ", G: "Ğ", H: "Ḩ", I: "Í",
+  J: "Ĵ", K: "Ķ", L: "Ļ", M: "Ṃ", N: "Ñ", O: "Ö", P: "Þ", Q: "Ǫ", R: "Ŕ",
+  S: "Š", T: "Ţ", U: "Ú", V: "Ṽ", W: "Ŵ", X: "Ẋ", Y: "Ý", Z: "Ž"
+};
+
 
 /**
  * Configuration for the LocL instance.
@@ -28,6 +39,10 @@ export interface LocLConfig<T extends Record<string, any>, Fallback extends keyo
   devMode?: boolean;
   /** Enables caching of scopes and proxies. Defaults to `true`. */
   useCache?: boolean;
+  /** Default async loader function for lazy loading namespaces */
+  loader?: ResourceLoader;
+  /** Built-in Pseudo-Localization for enterprise layout & QA testing */
+  pseudoLocalization?: boolean | PseudoLocalizationOptions;
 }
 
 /**
@@ -46,6 +61,7 @@ export class LocL<
   F extends Record<string, Formatter> = {},
   UseDefaultFormatter extends boolean = true
 > {
+  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter> = this;
   private config: LocLConfig<T, Fallback>;
   private resources: T & Record<string, any>;
   private language: Language<T>;
@@ -56,7 +72,12 @@ export class LocL<
   private proxyCache = new WeakMap<object, any>();
   private pluralRulesCache = new Map<string, Intl.PluralRules>();
   private subscribers: Set<Subscriber<T>> = new Set();
-  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter> = this;
+  private loader?: ResourceLoader;
+  private loadedNamespaces: Set<string> = new Set();
+  private loadedLanguages: Set<string> = new Set();
+  private loadingPromises: Map<string, Promise<void>> = new Map();
+  private version: number = 0;
+  private pseudoOptions?: PseudoLocalizationOptions;
 
   /**
    * Creates a new LocL instance.
@@ -75,6 +96,8 @@ export class LocL<
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope as S;
+    this.loader = config.loader;
+    config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
     this.formatters = (this.config.useDefaultFormatters
       ? { ...(defaultFormatters as DefaultFormatters), ...(config.formatters ?? {}) }
       : { ...(config.formatters ?? {}) }) as EffectiveFormatters<F, UseDefaultFormatter>;
@@ -170,6 +193,137 @@ export class LocL<
   public getLanguage(): Language<T> {
     return this.language;
   }
+  public getVersion(): number {
+    return this.version;
+  }
+  /**
+   * Generates a BCP 47 hierarchical fallback chain:
+   * e.g. "de-AT-Vienna" -> ["de-AT-Vienna", "de-AT", "de", "en"]
+   */
+  public getFallbackChain(lang: string = this.language): string[] {
+    const chain: string[] = [];
+    let current = lang;
+
+    while (current) {
+      chain.push(current);
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) { break; }
+      current = current.slice(0, lastSeparator);
+    }
+
+    if (!chain.includes(this.fallbackLanguage)) {
+      chain.push(this.fallbackLanguage);
+    }
+    return chain;
+  }
+
+  /**
+   * Checks if an entire language or specific namespace is loaded.
+   */
+  public isLoaded(lang: string = this.language, namespace?: string): boolean {
+    if (namespace) {
+      const key = `${lang}::${namespace}`;
+      if (this.loadedNamespaces.has(key)) return true;
+      const langObj = this.resources[lang];
+      if (langObj && typeof langObj === "object") {
+        return namespace.split(".").reduce((acc, k) => acc?.[k], langObj) !== undefined;
+      }
+      return false;
+    }
+    return this.loadedLanguages.has(lang) || Object.keys(this.resources[lang] ?? {}).length > 0;
+  }
+  /**
+   * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
+   */
+  private async resolveBundle(raw: any, namespace?: string): Promise<Record<string, any>> {
+    let data = raw;
+
+    // Direct fetch() Response object: automatically call .json()
+    if (typeof Response !== "undefined" && data instanceof Response) {
+      if (!data.ok) {
+        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
+      }
+      data = await data.json();
+    }
+    // Raw JSON string: parse it
+    if (typeof data === "string") {
+      try { data = JSON.parse(data); } catch { }
+    }
+    // ES Module default export (dynamic import('./file.ts') or import('./file.json'))
+    if (data && typeof data === "object" && "default" in data) {
+      data = data.default;
+    }
+    // Function / Factory export: export default () => ({ ... })
+    if (typeof data === "function") {
+      data = await data();
+    }
+    // Named export from a TS module: e.g. `export const user = { ... }` or `export const translations = { ... }`
+    if (data && typeof data === "object" && namespace && !(namespace in data)) {
+      if (typeof data.translations === "object") {
+        data = data.translations;
+      } else if (typeof data.messages === "object") {
+        data = data.messages;
+      } else if (typeof data.resources === "object") {
+        data = data.resources;
+      }
+    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
+      data = data[namespace];
+    }
+
+    return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+  }
+  /**
+   * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
+   * Supports both monolithic files and modular namespaces.
+   */
+  public async load(lang: string = this.language, namespace?: string, loader: ResourceLoader | undefined = this.loader): Promise<void> {
+    if (this.isLoaded(lang, namespace)) { return; }
+
+    const key = namespace ? `${lang}::${namespace}` : `${lang}::*`;
+    if (this.loadingPromises.has(key)) {
+      return this.loadingPromises.get(key);
+    }
+
+    if (!loader) {
+      throw new Error(`[LocL] No loader configured to load translations for "${lang}"${namespace ? ` ("${namespace}")` : ""}.`);
+    }
+
+    const loadPromise = (async () => {
+      const raw = await loader(lang, namespace);
+      const bundle = await this.resolveBundle(raw, namespace);
+
+      if (namespace) {
+        // Namespaced file: nest under namespace path
+        const nested: Record<string, any> = {};
+        namespace.split(".").reduce((acc, k, i, arr) => {
+          acc[k] = (i === arr.length - 1) ? bundle : {};
+          return acc[k];
+        }, nested);
+        this.addResources(lang, nested);
+        this.loadedNamespaces.add(key);
+      }
+      else {
+        // Monolithic language file: merge directly at root of language!
+        this.addResources(lang, bundle);
+        this.loadedLanguages.add(lang);
+      }
+    })();
+
+    this.loadingPromises.set(key, loadPromise);
+    const settled = () => {
+      if (this.loadingPromises.get(key) === loadPromise) {
+        this.loadingPromises.delete(key);
+      }
+    };
+    loadPromise.then(settled, settled);
+    return loadPromise;
+  }
+  public loadLanguage(lang: string, loader?: ResourceLoader): Promise<void> {
+    return this.load(lang, undefined, loader);
+  }
+  public loadNamespace(namespace: string, lang: string = this.language, loader?: ResourceLoader): Promise<void> {
+    return this.load(lang, namespace, loader);
+  }
 
   /**
    * Adds or overrides a single translation key at runtime.
@@ -199,15 +353,18 @@ export class LocL<
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
   }
 
   /**
    * Deeply merges a resource bundle into the specified language at runtime.
    * @param lang - Target language code.
    * @param bundle - Object of translations to merge.
+   * @returns DeepMergedResource LocL type
    */
-  public addResources(lang: Language<T> | string, bundle: Record<string, any>) {
-    if (this.isUnsafeObjectKey(lang)) { return; }
+  public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter> {
+    if (this.isUnsafeObjectKey(lang)) { return this as any; }
     if (!this.resources[lang]) {
       this.resources[lang] = Object.create(null);
     }
@@ -227,6 +384,9 @@ export class LocL<
     };
     deepMerge(this.resources[lang], bundle);
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
+    return this as any;
   }
 
   /**
@@ -238,6 +398,7 @@ export class LocL<
     if (validated && validated !== this.language) {
       const prev = this.language;
       this.language = validated;
+      this.version++;
       for (const sub of this.subscribers) {
         try {
           sub(this.language, prev);
@@ -258,9 +419,9 @@ export class LocL<
    * @returns The translated and formatted string, or the translation object.
    */
   public t<K extends (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string>(
-  key: K,
-  ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>
-): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
+    key: K,
+    ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>
+  ): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
   public t(key?: string, values?: any, format?: FormatOptions<F, UseDefaultFormatter>): any {
     if (!key) { return this.get(); }
     const pluralCheckResult = this.checkPlural(key, values);
@@ -336,7 +497,7 @@ export class LocL<
       return [rawStr as any];
     }
 
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
     const result: (string | TOutput)[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -345,13 +506,18 @@ export class LocL<
       if (match.index > lastIndex) {
         result.push(rawStr.slice(lastIndex, match.index));
       }
-      const tagName = match[1];
-      const content = match[2];
+      const isSelfClosing = match[3] !== undefined;
+      const tagName = isSelfClosing ? match[3] : match[1];
+      const content = isSelfClosing ? "" : match[2];
       const renderer = tags[tagName];
       
-      typeof renderer === "function"
-        ? result.push(renderer(content))
-        : result.push(match[0]);
+      if (typeof renderer === "function") {
+        result.push(renderer(content));
+      } else if (renderer !== undefined) {
+        result.push(String(renderer) as any);
+      } else {
+        result.push(match[0]);
+      }
       lastIndex = match.index + match[0].length;
     }
     if (lastIndex < rawStr.length) {
@@ -385,16 +551,40 @@ export class LocL<
    * @returns The nested translation object, or `undefined` if not found.
    */
   public getObj<K extends NestedKeyOfObj<TranslationObjectFor<S, T, Fallback>, false>>(key: K): PathValue<TranslationObjectFor<S, T, Fallback>, K> | undefined {
-    return this.get(key as never) as any
+    return this.get(key as never) as any;
+  }
+
+  /**
+   * Configures or toggles pseudo-localization at runtime.
+   */
+  public setPseudoLocalization(options: boolean | PseudoLocalizationOptions): void {
+    if (typeof options === "boolean") {
+      this.pseudoOptions = options ? { enabled: true } : undefined;
+    } else {
+      this.pseudoOptions = options.enabled !== false ? { enabled: true, ...options } : undefined;
+    }
+    this.cache.clear();
+    this.version++;
+    this.notifySubscribers();
   }
 
 
-  private isLanguage(value?: string) {
+  private isLanguage(value?: string): Language<T> | null {
     if (!value) { return null; }
     const available = Object.keys(this.resources);
-    if (available.includes(value)) {
-      return value as Language<T>;
+    
+    // Check exact match and BCP 47 truncated subtags
+    let current = value;
+    while (current) {
+      if (available.includes(current)) {
+        return current as Language<T>;
+      }
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) { break; }
+      current = current.slice(0, lastSeparator);
     }
+
+    // 2-letter fallback
     const prefix = value.substring(0, 2);
     if (available.includes(prefix)) {
       return prefix as Language<T>;
@@ -418,19 +608,24 @@ export class LocL<
 
   private lookupWithFallback(key: string, base?: object) {
     const keys = key.split(".");
-    let result = this.findTranslation(keys, base ?? this.buildTranslationObject(this.language));
+    
+    if (base) {
+      const res = this.findTranslation(keys, base);
+      if (res !== undefined) { return res; }
+    }
 
-    if (result === undefined && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.language}"`);
+    const chain = this.getFallbackChain(this.language);
+    for (const lang of chain) {
+      const langObj = this.buildTranslationObject(lang);
+      if (!langObj) { continue; }
+      const res = this.findTranslation(keys, langObj);
+      if (res !== undefined) { return res; }
     }
-    if (result === undefined) {
-      const fbBase = this.buildTranslationObject(this.fallbackLanguage);
-      result = this.findTranslation(keys, fbBase);
+
+    if (this.config.devMode) {
+      console.warn(`[LocL] Missing key: "${key}" in "${this.language}" (fallback chain: ${chain.join(" -> ")})`);
     }
-    if (result === undefined && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.fallbackLanguage}"`);
-    }
-    return result;
+    return undefined;
   }
 
   private buildTranslationObject(language: Language<T>): object | undefined {
@@ -542,23 +737,19 @@ export class LocL<
     return undefined;
   }
 
-  private interpolate(result: any, values?: InterpolationOptions): string {
-    if (!values || typeof result !== "string") { return result; }
-
-    // Searching for all balanced { ... } blocks
+  private getTokens(text: string): { raw: string; inner: string }[] {
     const tokens: { raw: string; inner: string }[] = [];
     let depth = 0, start = -1;
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] === "{") {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "{") {
         if (depth === 0) { start = i; }
         depth++;
       }
-      else if (result[i] === "}") {
+      else if (text[i] === "}") {
         depth--;
         if (depth === 0 && start >= 0) {
-          const raw = result.slice(start, i + 1);
+          const raw = text.slice(start, i + 1);
           let inner = raw.slice(1, -1);
-          // Support {{var}} double curly brackets seamlessly
           if (inner.startsWith("{") && inner.endsWith("}")) {
             inner = inner.slice(1, -1);
           }
@@ -567,7 +758,79 @@ export class LocL<
         }
       }
     }
+    return tokens;
+  }
 
+  private resolveIcuSelect(template: string, values?: InterpolationOptions): string {
+    let result = template;
+    let hasSelect = true;
+    let iterations = 0;
+
+    while (hasSelect && iterations < 10) {
+      iterations++;
+      hasSelect = false;
+      const tokens = this.getTokens(result);
+
+      for (const token of tokens) {
+        const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+        if (selectMatch) {
+          hasSelect = true;
+          const field = selectMatch[1].trim();
+          const casesBody = selectMatch[2];
+          const value = values ? String(values[field] ?? "other") : "other";
+
+          const caseMap: Record<string, string> = {};
+          let i = 0;
+          while (i < casesBody.length) {
+            while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
+            if (i >= casesBody.length) break;
+            let keyStart = i;
+            while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
+            const caseKey = casesBody.slice(keyStart, i).trim();
+            while (i < casesBody.length && casesBody[i] !== "{") i++;
+            if (casesBody[i] === "{") {
+              let bodyDepth = 1;
+              let bodyStart = i + 1;
+              i++;
+              while (i < casesBody.length && bodyDepth > 0) {
+                if (casesBody[i] === "{") bodyDepth++;
+                else if (casesBody[i] === "}") bodyDepth--;
+                i++;
+              }
+              const caseText = casesBody.slice(bodyStart, i - 1).trim();
+              if (caseKey) {
+                caseMap[caseKey] = caseText;
+              }
+            }
+          }
+
+          const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
+          result = result.split(token.raw).join(rawReplacement);
+          break; // Re-scan tokens on updated template
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private interpolate(result: any, values?: InterpolationOptions): string {
+    if (typeof result !== "string") { return result; }
+
+    // 1. Resolve ICU select expressions first
+    if (/,[\t ]*select[\t ]*,/.test(result)) {
+      result = this.resolveIcuSelect(result, values);
+    }
+
+    // 2. Apply pseudo-localization once to the assembled template
+    if (this.pseudoOptions?.enabled) {
+      result = this.applyPseudoLocalization(result);
+    }
+
+    if (!values) { return result; }
+
+    // 3. Interpolate remaining tokens (variables, dates, formatters)
+    const tokens = this.getTokens(result);
     let output = result;
     const processed = new Set<string>();
 
@@ -576,67 +839,56 @@ export class LocL<
       processed.add(token.raw);
 
       let replacement = "";
+      const pipeParts = token.inner.split("|").map(x => x.trim());
+      const fieldName = pipeParts[0];
+      const formattersList = pipeParts.slice(1);
+      const val = values[fieldName];
 
-      // 1. ICU select handling: {gender, select, male {He} female {She} other {They}}
-      const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
-      if (selectMatch) {
-        const field = selectMatch[1].trim();
-        const casesBody = selectMatch[2];
-        const value = String(values[field] ?? "other");
+      if (formattersList.length > 0) {
+        let currentVal = val;
+        let missingFormatter = false;
 
-        const caseMap: Record<string, string> = {};
-        let i = 0;
-        while (i < casesBody.length) {
-          while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
-          if (i >= casesBody.length) break;
-          let keyStart = i;
-          while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
-          const caseKey = casesBody.slice(keyStart, i).trim();
-          while (i < casesBody.length && casesBody[i] !== "{") i++;
-          if (casesBody[i] === "{") {
-            let bodyDepth = 1;
-            let bodyStart = i + 1;
-            i++;
-            while (i < casesBody.length && bodyDepth > 0) {
-              if (casesBody[i] === "{") bodyDepth++;
-              else if (casesBody[i] === "}") bodyDepth--;
-              i++;
+        for (const segment of formattersList) {
+          const colonIdx = segment.indexOf(":");
+          let formatterName = segment;
+          let args: string[] = [];
+
+          if (colonIdx !== -1) {
+            formatterName = segment.slice(0, colonIdx).trim();
+            args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
+          }
+          else {
+            formatterName = segment.trim();
+          }
+
+          const formatterFn = this.formatters?.[formatterName];
+          if (formatterFn) {
+            currentVal = formatterFn(currentVal, args);
+          }
+          else {
+            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
+            if (val === undefined) {
+              currentVal = token.raw;
+              missingFormatter = true;
+              break;
             }
-            const caseText = casesBody.slice(bodyStart, i - 1).trim();
-            if (caseKey) {
-              caseMap[caseKey] = caseText;
-            }
+            currentVal = currentVal !== undefined ? String(currentVal) : token.raw;
           }
         }
-
-        const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
-        replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
+        replacement = missingFormatter
+          ? String(currentVal)
+          : currentVal !== undefined ? String(currentVal) : token.raw;
+      }
+      else if (val instanceof Date) {
+        replacement = new Intl.DateTimeFormat(this.language).format(val);
+      }
+      else if (typeof val === "number") {
+        replacement = new Intl.NumberFormat(this.language).format(val);
       }
       else {
-        // 2. Interpolation and Formatter handling: {count | number} or {date | date:YYYY-MM-DD}
-        const [fieldName, formatterAndArgs] = token.inner.split("|").map(x => x.trim());
-        const [formatterName, argsStr] = formatterAndArgs ? formatterAndArgs.split(":") : [];
-        const args = argsStr ? argsStr.split(",").map(a => a.trim()) : [];
-        const val = values[fieldName];
-
-        if (formatterName) {
-          if (this.formatters?.[formatterName]) {
-            replacement = this.formatters[formatterName](val, args);
-          } else {
-            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-            replacement = val !== undefined ? String(val) : token.raw;
-          }
-        }
-        else if (val instanceof Date) {
-          replacement = new Intl.DateTimeFormat(this.language).format(val);
-        }
-        else if (typeof val === "number") {
-          replacement = new Intl.NumberFormat(this.language).format(val);
-        }
-        else {
-          replacement = val !== undefined ? String(val) : token.raw;
-        }
+        replacement = val !== undefined ? String(val) : token.raw;
       }
+
       output = output.split(token.raw).join(replacement);
     }
     return output;
@@ -649,6 +901,27 @@ export class LocL<
       return value;
     }
     return formatterFn(value, args);
+  }
+
+  private applyPseudoLocalization(text: string): string {
+    const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
+    const suffix = this.pseudoOptions?.suffix ?? " !!!]";
+    const useAccents = this.pseudoOptions?.accents !== false;
+
+    // Isolate opening tags, closing tags, self-closing tags, and variable tokens
+    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
+    const parts = text.split(tokenRegex);
+
+    const transformed = parts.map((part) => {
+      // Don't modify tokens or tags
+      if (part.startsWith("<") || part.startsWith("{")) {
+        return part;
+      }
+      if (!useAccents) { return part; }
+      return part.split("").map((ch) => PSEUDO_MAP[ch] ?? ch).join("");
+    }).join("");
+
+    return `${prefix}${transformed}${suffix}`;
   }
 
   private makeReadOnly<T extends object>(obj: T): T {
@@ -668,6 +941,16 @@ export class LocL<
     });
     this.proxyCache.set(obj, proxy);
     return proxy;
+  }
+
+  private notifySubscribers() {
+    for (const sub of this.subscribers) {
+      try {
+        sub(this.language, this.language);
+      } catch (err) {
+        console.error("[LocL] Error in subscriber:", err);
+      }
+    }
   }
 
   private isUnsafeObjectKey(key: string): boolean {

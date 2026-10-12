@@ -22,6 +22,7 @@ var src_exports = {};
 __export(src_exports, {
   LocL: () => LocL,
   defineResources: () => defineResources,
+  defineStrictResources: () => defineStrictResources,
   initLocL: () => initLocL
 });
 module.exports = __toCommonJS(src_exports);
@@ -186,17 +187,75 @@ var defaultFormatters = {
 };
 
 // src/LocL.ts
+var PSEUDO_MAP = {
+  a: "\xE1",
+  b: "\u1E05",
+  c: "\xE7",
+  d: "\u0111",
+  e: "\xE9",
+  f: "\u0192",
+  g: "\u011F",
+  h: "\u1E29",
+  i: "\xED",
+  j: "\u0135",
+  k: "\u0137",
+  l: "\u013C",
+  m: "\u0271",
+  n: "\xF1",
+  o: "\xF6",
+  p: "\xFE",
+  q: "\u01EB",
+  r: "\u0155",
+  s: "\u0161",
+  t: "\u0163",
+  u: "\xFA",
+  v: "\u1E7D",
+  w: "\u0175",
+  x: "\u1E8B",
+  y: "\xFD",
+  z: "\u017E",
+  A: "\xC1",
+  B: "\u1E04",
+  C: "\xC7",
+  D: "\xD0",
+  E: "\xC9",
+  F: "\u0191",
+  G: "\u011E",
+  H: "\u1E28",
+  I: "\xCD",
+  J: "\u0134",
+  K: "\u0136",
+  L: "\u013B",
+  M: "\u1E42",
+  N: "\xD1",
+  O: "\xD6",
+  P: "\xDE",
+  Q: "\u01EA",
+  R: "\u0154",
+  S: "\u0160",
+  T: "\u0162",
+  U: "\xDA",
+  V: "\u1E7C",
+  W: "\u0174",
+  X: "\u1E8A",
+  Y: "\xDD",
+  Z: "\u017D"
+};
 var LocL = class _LocL {
   /**
    * Creates a new LocL instance.
    * @param config - The configuration object.
    */
   constructor(config) {
+    this.rootInstance = this;
     this.cache = /* @__PURE__ */ new Map();
     this.proxyCache = /* @__PURE__ */ new WeakMap();
     this.pluralRulesCache = /* @__PURE__ */ new Map();
     this.subscribers = /* @__PURE__ */ new Set();
-    this.rootInstance = this;
+    this.loadedNamespaces = /* @__PURE__ */ new Set();
+    this.loadedLanguages = /* @__PURE__ */ new Set();
+    this.loadingPromises = /* @__PURE__ */ new Map();
+    this.version = 0;
     if (!config.resources) {
       throw new Error("[LocL] `resources` is required");
     }
@@ -213,6 +272,8 @@ var LocL = class _LocL {
     this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope;
+    this.loader = config.loader;
+    config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
     this.formatters = this.config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
   }
   /**
@@ -298,6 +359,126 @@ var LocL = class _LocL {
   getLanguage() {
     return this.language;
   }
+  getVersion() {
+    return this.version;
+  }
+  /**
+   * Generates a BCP 47 hierarchical fallback chain:
+   * e.g. "de-AT-Vienna" -> ["de-AT-Vienna", "de-AT", "de", "en"]
+   */
+  getFallbackChain(lang = this.language) {
+    const chain = [];
+    let current = lang;
+    while (current) {
+      chain.push(current);
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) {
+        break;
+      }
+      current = current.slice(0, lastSeparator);
+    }
+    if (!chain.includes(this.fallbackLanguage)) {
+      chain.push(this.fallbackLanguage);
+    }
+    return chain;
+  }
+  /**
+   * Checks if an entire language or specific namespace is loaded.
+   */
+  isLoaded(lang = this.language, namespace) {
+    if (namespace) {
+      const key = `${lang}::${namespace}`;
+      if (this.loadedNamespaces.has(key)) return true;
+      const langObj = this.resources[lang];
+      if (langObj && typeof langObj === "object") {
+        return namespace.split(".").reduce((acc, k) => acc?.[k], langObj) !== void 0;
+      }
+      return false;
+    }
+    return this.loadedLanguages.has(lang) || Object.keys(this.resources[lang] ?? {}).length > 0;
+  }
+  /**
+   * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
+   */
+  async resolveBundle(raw, namespace) {
+    let data = raw;
+    if (typeof Response !== "undefined" && data instanceof Response) {
+      if (!data.ok) {
+        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
+      }
+      data = await data.json();
+    }
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+      }
+    }
+    if (data && typeof data === "object" && "default" in data) {
+      data = data.default;
+    }
+    if (typeof data === "function") {
+      data = await data();
+    }
+    if (data && typeof data === "object" && namespace && !(namespace in data)) {
+      if (typeof data.translations === "object") {
+        data = data.translations;
+      } else if (typeof data.messages === "object") {
+        data = data.messages;
+      } else if (typeof data.resources === "object") {
+        data = data.resources;
+      }
+    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
+      data = data[namespace];
+    }
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  }
+  /**
+   * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
+   * Supports both monolithic files and modular namespaces.
+   */
+  async load(lang = this.language, namespace, loader = this.loader) {
+    if (this.isLoaded(lang, namespace)) {
+      return;
+    }
+    const key = namespace ? `${lang}::${namespace}` : `${lang}::*`;
+    if (this.loadingPromises.has(key)) {
+      return this.loadingPromises.get(key);
+    }
+    if (!loader) {
+      throw new Error(`[LocL] No loader configured to load translations for "${lang}"${namespace ? ` ("${namespace}")` : ""}.`);
+    }
+    const loadPromise = (async () => {
+      const raw = await loader(lang, namespace);
+      const bundle = await this.resolveBundle(raw, namespace);
+      if (namespace) {
+        const nested = {};
+        namespace.split(".").reduce((acc, k, i, arr) => {
+          acc[k] = i === arr.length - 1 ? bundle : {};
+          return acc[k];
+        }, nested);
+        this.addResources(lang, nested);
+        this.loadedNamespaces.add(key);
+      } else {
+        this.addResources(lang, bundle);
+        this.loadedLanguages.add(lang);
+      }
+    })();
+    this.loadingPromises.set(key, loadPromise);
+    const settled = () => {
+      if (this.loadingPromises.get(key) === loadPromise) {
+        this.loadingPromises.delete(key);
+      }
+    };
+    loadPromise.then(settled, settled);
+    return loadPromise;
+  }
+  loadLanguage(lang, loader) {
+    return this.load(lang, void 0, loader);
+  }
+  loadNamespace(namespace, lang = this.language, loader) {
+    return this.load(lang, namespace, loader);
+  }
   /**
    * Adds or overrides a single translation key at runtime.
    * @param lang - Target language code.
@@ -326,15 +507,18 @@ var LocL = class _LocL {
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
   }
   /**
    * Deeply merges a resource bundle into the specified language at runtime.
    * @param lang - Target language code.
    * @param bundle - Object of translations to merge.
+   * @returns DeepMergedResource LocL type
    */
   addResources(lang, bundle) {
     if (this.isUnsafeObjectKey(lang)) {
-      return;
+      return this;
     }
     if (!this.resources[lang]) {
       this.resources[lang] = /* @__PURE__ */ Object.create(null);
@@ -356,6 +540,9 @@ var LocL = class _LocL {
     };
     deepMerge(this.resources[lang], bundle);
     this.invalidateCacheForLang(lang);
+    this.version++;
+    this.notifySubscribers();
+    return this;
   }
   /**
    * Changes the current language of the translator.
@@ -366,6 +553,7 @@ var LocL = class _LocL {
     if (validated && validated !== this.language) {
       const prev = this.language;
       this.language = validated;
+      this.version++;
       for (const sub of this.subscribers) {
         try {
           sub(this.language, prev);
@@ -436,7 +624,7 @@ var LocL = class _LocL {
     if (typeof rawStr !== "string") {
       return [rawStr];
     }
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
     const result = [];
     let lastIndex = 0;
     let match;
@@ -444,10 +632,17 @@ var LocL = class _LocL {
       if (match.index > lastIndex) {
         result.push(rawStr.slice(lastIndex, match.index));
       }
-      const tagName = match[1];
-      const content = match[2];
+      const isSelfClosing = match[3] !== void 0;
+      const tagName = isSelfClosing ? match[3] : match[1];
+      const content = isSelfClosing ? "" : match[2];
       const renderer = tags[tagName];
-      typeof renderer === "function" ? result.push(renderer(content)) : result.push(match[0]);
+      if (typeof renderer === "function") {
+        result.push(renderer(content));
+      } else if (renderer !== void 0) {
+        result.push(String(renderer));
+      } else {
+        result.push(match[0]);
+      }
       lastIndex = match.index + match[0].length;
     }
     if (lastIndex < rawStr.length) {
@@ -472,13 +667,34 @@ var LocL = class _LocL {
   getObj(key) {
     return this.get(key);
   }
+  /**
+   * Configures or toggles pseudo-localization at runtime.
+   */
+  setPseudoLocalization(options) {
+    if (typeof options === "boolean") {
+      this.pseudoOptions = options ? { enabled: true } : void 0;
+    } else {
+      this.pseudoOptions = options.enabled !== false ? { enabled: true, ...options } : void 0;
+    }
+    this.cache.clear();
+    this.version++;
+    this.notifySubscribers();
+  }
   isLanguage(value) {
     if (!value) {
       return null;
     }
     const available = Object.keys(this.resources);
-    if (available.includes(value)) {
-      return value;
+    let current = value;
+    while (current) {
+      if (available.includes(current)) {
+        return current;
+      }
+      const lastSeparator = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSeparator === -1) {
+        break;
+      }
+      current = current.slice(0, lastSeparator);
     }
     const prefix = value.substring(0, 2);
     if (available.includes(prefix)) {
@@ -500,18 +716,27 @@ var LocL = class _LocL {
   }
   lookupWithFallback(key, base) {
     const keys = key.split(".");
-    let result = this.findTranslation(keys, base ?? this.buildTranslationObject(this.language));
-    if (result === void 0 && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.language}"`);
+    if (base) {
+      const res = this.findTranslation(keys, base);
+      if (res !== void 0) {
+        return res;
+      }
     }
-    if (result === void 0) {
-      const fbBase = this.buildTranslationObject(this.fallbackLanguage);
-      result = this.findTranslation(keys, fbBase);
+    const chain = this.getFallbackChain(this.language);
+    for (const lang of chain) {
+      const langObj = this.buildTranslationObject(lang);
+      if (!langObj) {
+        continue;
+      }
+      const res = this.findTranslation(keys, langObj);
+      if (res !== void 0) {
+        return res;
+      }
     }
-    if (result === void 0 && this.config.devMode) {
-      console.warn(`[LocL] Missing key: "${key}" in "${this.fallbackLanguage}"`);
+    if (this.config.devMode) {
+      console.warn(`[LocL] Missing key: "${key}" in "${this.language}" (fallback chain: ${chain.join(" -> ")})`);
     }
-    return result;
+    return void 0;
   }
   buildTranslationObject(language) {
     const langObject = this.resources[language];
@@ -627,22 +852,19 @@ var LocL = class _LocL {
     }
     return void 0;
   }
-  interpolate(result, values) {
-    if (!values || typeof result !== "string") {
-      return result;
-    }
+  getTokens(text) {
     const tokens = [];
     let depth = 0, start = -1;
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] === "{") {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "{") {
         if (depth === 0) {
           start = i;
         }
         depth++;
-      } else if (result[i] === "}") {
+      } else if (text[i] === "}") {
         depth--;
         if (depth === 0 && start >= 0) {
-          const raw = result.slice(start, i + 1);
+          const raw = text.slice(start, i + 1);
           let inner = raw.slice(1, -1);
           if (inner.startsWith("{") && inner.endsWith("}")) {
             inner = inner.slice(1, -1);
@@ -652,6 +874,69 @@ var LocL = class _LocL {
         }
       }
     }
+    return tokens;
+  }
+  resolveIcuSelect(template, values) {
+    let result = template;
+    let hasSelect = true;
+    let iterations = 0;
+    while (hasSelect && iterations < 10) {
+      iterations++;
+      hasSelect = false;
+      const tokens = this.getTokens(result);
+      for (const token of tokens) {
+        const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+        if (selectMatch) {
+          hasSelect = true;
+          const field = selectMatch[1].trim();
+          const casesBody = selectMatch[2];
+          const value = values ? String(values[field] ?? "other") : "other";
+          const caseMap = {};
+          let i = 0;
+          while (i < casesBody.length) {
+            while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
+            if (i >= casesBody.length) break;
+            let keyStart = i;
+            while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
+            const caseKey = casesBody.slice(keyStart, i).trim();
+            while (i < casesBody.length && casesBody[i] !== "{") i++;
+            if (casesBody[i] === "{") {
+              let bodyDepth = 1;
+              let bodyStart = i + 1;
+              i++;
+              while (i < casesBody.length && bodyDepth > 0) {
+                if (casesBody[i] === "{") bodyDepth++;
+                else if (casesBody[i] === "}") bodyDepth--;
+                i++;
+              }
+              const caseText = casesBody.slice(bodyStart, i - 1).trim();
+              if (caseKey) {
+                caseMap[caseKey] = caseText;
+              }
+            }
+          }
+          const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
+          result = result.split(token.raw).join(rawReplacement);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+  interpolate(result, values) {
+    if (typeof result !== "string") {
+      return result;
+    }
+    if (/,[\t ]*select[\t ]*,/.test(result)) {
+      result = this.resolveIcuSelect(result, values);
+    }
+    if (this.pseudoOptions?.enabled) {
+      result = this.applyPseudoLocalization(result);
+    }
+    if (!values) {
+      return result;
+    }
+    const tokens = this.getTokens(result);
     let output = result;
     const processed = /* @__PURE__ */ new Set();
     for (const token of tokens) {
@@ -660,56 +945,43 @@ var LocL = class _LocL {
       }
       processed.add(token.raw);
       let replacement = "";
-      const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
-      if (selectMatch) {
-        const field = selectMatch[1].trim();
-        const casesBody = selectMatch[2];
-        const value = String(values[field] ?? "other");
-        const caseMap = {};
-        let i = 0;
-        while (i < casesBody.length) {
-          while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
-          if (i >= casesBody.length) break;
-          let keyStart = i;
-          while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
-          const caseKey = casesBody.slice(keyStart, i).trim();
-          while (i < casesBody.length && casesBody[i] !== "{") i++;
-          if (casesBody[i] === "{") {
-            let bodyDepth = 1;
-            let bodyStart = i + 1;
-            i++;
-            while (i < casesBody.length && bodyDepth > 0) {
-              if (casesBody[i] === "{") bodyDepth++;
-              else if (casesBody[i] === "}") bodyDepth--;
-              i++;
-            }
-            const caseText = casesBody.slice(bodyStart, i - 1).trim();
-            if (caseKey) {
-              caseMap[caseKey] = caseText;
-            }
+      const pipeParts = token.inner.split("|").map((x) => x.trim());
+      const fieldName = pipeParts[0];
+      const formattersList = pipeParts.slice(1);
+      const val = values[fieldName];
+      if (formattersList.length > 0) {
+        let currentVal = val;
+        let missingFormatter = false;
+        for (const segment of formattersList) {
+          const colonIdx = segment.indexOf(":");
+          let formatterName = segment;
+          let args = [];
+          if (colonIdx !== -1) {
+            formatterName = segment.slice(0, colonIdx).trim();
+            args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
+          } else {
+            formatterName = segment.trim();
           }
-        }
-        const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
-        replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
-      } else {
-        const [fieldName, formatterAndArgs] = token.inner.split("|").map((x) => x.trim());
-        const [formatterName, argsStr] = formatterAndArgs ? formatterAndArgs.split(":") : [];
-        const args = argsStr ? argsStr.split(",").map((a) => a.trim()) : [];
-        const val = values[fieldName];
-        if (formatterName) {
-          if (this.formatters?.[formatterName]) {
-            replacement = this.formatters[formatterName](val, args);
+          const formatterFn = this.formatters?.[formatterName];
+          if (formatterFn) {
+            currentVal = formatterFn(currentVal, args);
           } else {
             this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-            replacement = val !== void 0 ? String(val) : token.raw;
+            if (val === void 0) {
+              currentVal = token.raw;
+              missingFormatter = true;
+              break;
+            }
+            currentVal = currentVal !== void 0 ? String(currentVal) : token.raw;
           }
-        } else if (val instanceof Date) {
-          replacement = new Intl.DateTimeFormat(this.language).format(val);
-        } else if (typeof val === "number") {
-          replacement = new Intl.NumberFormat(this.language).format(val);
-        } else {
-          replacement = val !== void 0 ? String(val) : token.raw;
         }
+        replacement = missingFormatter ? String(currentVal) : currentVal !== void 0 ? String(currentVal) : token.raw;
+      } else if (val instanceof Date) {
+        replacement = new Intl.DateTimeFormat(this.language).format(val);
+      } else if (typeof val === "number") {
+        replacement = new Intl.NumberFormat(this.language).format(val);
+      } else {
+        replacement = val !== void 0 ? String(val) : token.raw;
       }
       output = output.split(token.raw).join(replacement);
     }
@@ -722,6 +994,23 @@ var LocL = class _LocL {
       return value;
     }
     return formatterFn(value, args);
+  }
+  applyPseudoLocalization(text) {
+    const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
+    const suffix = this.pseudoOptions?.suffix ?? " !!!]";
+    const useAccents = this.pseudoOptions?.accents !== false;
+    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
+    const parts = text.split(tokenRegex);
+    const transformed = parts.map((part) => {
+      if (part.startsWith("<") || part.startsWith("{")) {
+        return part;
+      }
+      if (!useAccents) {
+        return part;
+      }
+      return part.split("").map((ch) => PSEUDO_MAP[ch] ?? ch).join("");
+    }).join("");
+    return `${prefix}${transformed}${suffix}`;
   }
   makeReadOnly(obj) {
     const self = this;
@@ -741,6 +1030,15 @@ var LocL = class _LocL {
     this.proxyCache.set(obj, proxy);
     return proxy;
   }
+  notifySubscribers() {
+    for (const sub of this.subscribers) {
+      try {
+        sub(this.language, this.language);
+      } catch (err) {
+        console.error("[LocL] Error in subscriber:", err);
+      }
+    }
+  }
   isUnsafeObjectKey(key) {
     return key === "__proto__" || key === "constructor" || key === "prototype";
   }
@@ -753,9 +1051,13 @@ function initLocL(config) {
 function defineResources(resources) {
   return resources;
 }
+function defineStrictResources(resources) {
+  return resources;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   LocL,
   defineResources,
+  defineStrictResources,
   initLocL
 });

@@ -2,40 +2,40 @@ import { LocL } from "../LocL.js";
 import { NestedKeyOf, InterpolationOptions, PathValue, ParamsFor, IsEmptyParams, PluralParamsFor, PluralKeys, TranslationObjectFor } from "../types.js";
 import { DefaultResources, DefaultFallback } from "../react/index.js";
 
-export type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
+type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
   ? `${NS}.${Rest}`
   : K;
 
-export type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}`
+type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}`
   ? `${NS}:${Rest}` | `${NS}.${Rest}`
   : K;
 
-export type BaseKeys<Tr, PK extends string> = ((Tr extends object ? NestedKeyOf<Tr> : never) | PK) & string;
-export type I18nextKey<Tr, PK extends string> = ColonKeys<BaseKeys<Tr, PK>>;
+type BaseKeys<Tr, PK extends string> = ((Tr extends object ? NestedKeyOf<Tr> : never) | PK) & string;
+type I18nextKey<Tr, PK extends string> = ColonKeys<BaseKeys<Tr, PK>>;
 
-export interface I18nextOptions extends InterpolationOptions {
+interface I18nextOptions extends InterpolationOptions {
   ns?: string;
   defaultValue?: string;
   count?: number;
 }
 
-export type I18nextParamsFor<K extends string, Tr, PK extends string> =
+type I18nextParamsFor<K extends string, Tr, PK extends string> =
   NormalizeKey<K> extends PK
     ? PluralParamsFor<NormalizeKey<K>, Tr>
     : ParamsFor<PathValue<Tr, NormalizeKey<K>>>;
 
-export type I18nextHasParams<K extends string, Tr, PK extends string> =
+type I18nextHasParams<K extends string, Tr, PK extends string> =
   NormalizeKey<K> extends PK
     ? true
     : IsEmptyParams<ParamsFor<PathValue<Tr, NormalizeKey<K>>>> extends true
       ? false
       : true;
 
-export type I18nextOptionsFor<K extends string, Tr, PK extends string> =
+type I18nextOptionsFor<K extends string, Tr, PK extends string> =
   I18nextParamsFor<K, Tr, PK> & I18nextOptions;
 
 
-export interface I18nextTranslation<
+interface I18nextTranslation<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   Tr = TranslationObjectFor<undefined, T, Fallback>,
@@ -78,7 +78,7 @@ export interface I18nextTranslation<
   ): string;
 }
 
-export interface I18nextCompat<
+interface I18nextCompat<
   T extends Record<string, any> = DefaultResources,
   Fallback extends keyof T & string = DefaultFallback<T>,
   Tr = TranslationObjectFor<undefined, T, Fallback>,
@@ -97,7 +97,7 @@ export interface I18nextCompat<
   addResourceBundle(lng: string, ns: string, resources: any, deep?: boolean, overwrite?: boolean): void;
   hasResourceBundle(lng: string, ns: string): boolean;
   getResourceBundle(lng: string, ns: string): any;
-  loadNamespaces(ns: string | string[], callback?: () => void): Promise<void>;
+  loadNamespaces(ns: string | string[], callback?: (err?: any) => void): Promise<void>;
   translator: LocL<T, Fallback, any, any, any>;
 }
 
@@ -118,7 +118,9 @@ export function toI18next<
   };
 
   translator.subscribe((newLang, prevLang) => {
-    emit("languageChanged", newLang, prevLang);
+    if (newLang !== prevLang) {
+      emit("languageChanged", newLang, prevLang);
+    }
   });
 
   const tFunction = (key: string, arg1?: any, arg2?: any): string => {
@@ -149,12 +151,12 @@ export function toI18next<
 
     let result: string | undefined;
     if (typeof options.count === "number") {
-      result = activeTranslator.plural(lookupKey as any, options as any) as string;
+      result = activeTranslator.plural(lookupKey, options as any) as string;
     } else {
-      result = activeTranslator.t(lookupKey as any, options as any) as string;
+      result = activeTranslator.t(lookupKey, options) as string;
     }
 
-    const keyExists = (activeTranslator as any).get(lookupKey) !== undefined || result !== lookupKey;
+    const keyExists = activeTranslator.get(lookupKey) !== undefined || result !== lookupKey;
 
     if (!keyExists && defaultValue !== undefined) {
       return defaultValue;
@@ -181,7 +183,7 @@ export function toI18next<
         ? (translator.withConfig({ scope: ns } as any) as LocL<any, any, any>)
         : (translator as LocL<any, any, any>);
 
-      return (activeTranslator as any).get(lookupKey) !== undefined;
+      return activeTranslator.get(lookupKey) !== undefined;
     },
 
     get language(): string {
@@ -193,10 +195,24 @@ export function toI18next<
     },
 
     async changeLanguage(lng: string, callback?: (err: any, t: any) => void): Promise<string> {
-      translator.changeLanguage(lng as any);
-      const current = translator.getLanguage();
-      callback?.(null, compat.t.bind(compat));
-      return current;
+      try {
+        if (
+          typeof (translator as any).isLoaded === "function" &&
+          typeof (translator as any).load === "function" &&
+          !translator.isLoaded(lng)
+        ) {
+          await translator.load(lng);
+        }
+
+        translator.changeLanguage(lng);
+        const current = translator.getLanguage();
+        callback?.(null, compat.t.bind(compat));
+        return current;
+      }
+      catch (err) {
+        callback?.(err, compat.t.bind(compat));
+        throw err;
+      }
     },
 
     on(event: string, listener: (...args: any[]) => void): () => void {
@@ -224,8 +240,7 @@ export function toI18next<
     },
 
     hasResourceBundle(lng: string, ns: string): boolean {
-      const langObj = (translator as any).resources?.[lng];
-      return langObj?.[ns] !== undefined;
+      return translator.isLoaded(lng, ns);
     },
 
     getResourceBundle(lng: string, ns: string): any {
@@ -233,8 +248,16 @@ export function toI18next<
       return langObj?.[ns];
     },
 
-    async loadNamespaces(ns: string | string[], callback?: () => void): Promise<void> {
-      callback?.();
+    async loadNamespaces(ns: string | string[], callback?: (err?: any) => void): Promise<void> {
+      const list = Array.isArray(ns) ? ns : [ns];
+      const currentLang = translator.getLanguage();
+      try {
+        await Promise.all(list.map((n) => translator.load(currentLang, n)));
+        callback?.(null);
+      } catch (err) {
+        callback?.(err);
+        throw err;
+      }
     }
   };
 

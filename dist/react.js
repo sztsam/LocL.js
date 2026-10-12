@@ -43,19 +43,62 @@ var import_react2 = require("react");
 // src/react/Trans.tsx
 var import_react = __toESM(require("react"));
 var import_jsx_runtime = require("react/jsx-runtime");
+function renderNodes(rawText, components = {}) {
+  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+  const nodes = [];
+  let lastIndex = 0;
+  let match;
+  let counter = 0;
+  while ((match = tagRegex.exec(rawText)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(rawText.slice(lastIndex, match.index));
+    }
+    const isSelfClosing = match[3] !== void 0;
+    const tagName = isSelfClosing ? match[3] : match[1];
+    const rawContent = isSelfClosing ? void 0 : match[2];
+    const component = components[tagName];
+    const key = `trans-${tagName}-${counter++}`;
+    if (component !== void 0) {
+      const children = rawContent !== void 0 ? rawContent.includes("<") ? renderNodes(rawContent, components) : rawContent : void 0;
+      if ((0, import_react.isValidElement)(component)) {
+        nodes.push(
+          children !== void 0 ? (0, import_react.cloneElement)(component, { key }, children) : (0, import_react.cloneElement)(component, { key })
+        );
+      } else if (typeof component === "function") {
+        nodes.push(
+          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react.default.Fragment, { children: component(children ?? "") }, key)
+        );
+      } else {
+        nodes.push(match[0]);
+      }
+    } else {
+      nodes.push(match[0]);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < rawText.length) {
+    nodes.push(rawText.slice(lastIndex));
+  }
+  return nodes;
+}
 function Trans(props) {
   const {
     i18nKey,
     values,
-    components = {},
+    components,
     translator: customTranslator,
     scope,
     fallback
   } = props;
   const contextTranslator = (0, import_react.useContext)(LocLContext);
   const activeTranslator = customTranslator ?? contextTranslator;
-  const getSnapshot = () => activeTranslator ? activeTranslator.getLanguage() : "";
-  const language = (0, import_react.useSyncExternalStore)(
+  const getSnapshot = () => {
+    if (!activeTranslator) {
+      return "";
+    }
+    return typeof activeTranslator.getVersion === "function" ? activeTranslator.getVersion() : activeTranslator.getLanguage?.() || "";
+  };
+  const version = (0, import_react.useSyncExternalStore)(
     (onStoreChange) => activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => {
     },
     getSnapshot,
@@ -63,55 +106,138 @@ function Trans(props) {
   );
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
   const scopedTranslator = (0, import_react.useMemo)(() => {
-    if (!activeTranslator) return null;
+    if (!activeTranslator) {
+      return null;
+    }
     return scope !== void 0 ? activeTranslator.withConfig({ scope }) : activeTranslator;
-  }, [activeTranslator, scopeKey, language]);
+  }, [activeTranslator, scopeKey]);
   const raw = (0, import_react.useMemo)(() => {
     if (!scopedTranslator) {
       return String(fallback ?? i18nKey);
     }
     const tInstance = scopedTranslator;
     const res = tInstance.t(i18nKey, values);
-    const keyExists = tInstance.get(i18nKey) !== void 0;
+    if (res !== i18nKey && res !== void 0) {
+      return String(res);
+    }
+    const keyExists = tInstance.get(i18nKey) !== void 0 || tInstance.get(`${i18nKey}_other`) !== void 0;
     if (keyExists) {
       return String(res);
     }
     return String(fallback ?? i18nKey);
-  }, [scopedTranslator, i18nKey, values, fallback, language]);
-  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
-  const nodes = [];
-  let lastIndex = 0;
-  let match;
-  let counter = 0;
-  while ((match = tagRegex.exec(raw)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(raw.slice(lastIndex, match.index));
-    }
-    const tagName = match[1];
-    const content = match[2];
-    const component = components[tagName];
-    if ((0, import_react.isValidElement)(component)) {
-      nodes.push(
-        (0, import_react.cloneElement)(component, { key: `trans-${tagName}-${counter++}` }, content)
-      );
-    } else if (typeof component === "function") {
-      nodes.push(
-        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react.default.Fragment, { children: component(content) }, `trans-${tagName}-${counter++}`)
-      );
-    } else {
-      nodes.push(match[0]);
-    }
-    lastIndex = match.index + match[0].length;
-  }
-  if (lastIndex < raw.length) {
-    nodes.push(raw.slice(lastIndex));
-  }
+  }, [scopedTranslator, i18nKey, values, fallback, version]);
+  const nodes = (0, import_react.useMemo)(() => {
+    return renderNodes(raw, components);
+  }, [raw, components]);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children: nodes });
 }
 
 // src/react/index.tsx
 var import_jsx_runtime2 = require("react/jsx-runtime");
 var LocLContext = (0, import_react2.createContext)(null);
+function bindApi(translator) {
+  return {
+    t: translator.t.bind(translator),
+    tt: translator.tt.bind(translator),
+    plural: translator.plural.bind(translator),
+    rich: translator.rich.bind(translator),
+    format: translator.format.bind(translator),
+    get: translator.get.bind(translator),
+    getObj: translator.getObj.bind(translator)
+  };
+}
+function useTranslatorSubscription(translator) {
+  const getSnapshot = () => typeof translator.getVersion === "function" ? translator.getVersion() : translator.getLanguage?.() || "";
+  (0, import_react2.useSyncExternalStore)(
+    (onStoreChange) => translator.subscribe(onStoreChange),
+    getSnapshot,
+    getSnapshot
+  );
+}
+function toResult(translator) {
+  return {
+    translator,
+    language: translator.getLanguage(),
+    changeLanguage: (lang) => translator.changeLanguage(lang),
+    getLanguage: () => translator.getLanguage(),
+    ...bindApi(translator)
+  };
+}
+var SUSPENSE_FAILURE_TTL_MS = 2e3;
+var suspenseLoads = /* @__PURE__ */ new WeakMap();
+function suspendUntilLoaded(translator, language, scopes, loader) {
+  const root = translator.rootInstance ?? translator;
+  let loads = suspenseLoads.get(root);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Map();
+    suspenseLoads.set(root, loads);
+  }
+  for (const s of scopes) {
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "failed") {
+      if (Date.now() - state.failedAt < SUSPENSE_FAILURE_TTL_MS) {
+        throw state.error;
+      }
+      loads.delete(key);
+    }
+  }
+  const promises = [];
+  for (const s of scopes) {
+    if (translator.isLoaded(language, s)) {
+      continue;
+    }
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "pending") {
+      promises.push(state.promise);
+      continue;
+    }
+    const loadPromise = translator.load(language, s, loader).then(
+      () => {
+        if (loads.get(key)?.status === "pending") {
+          loads.delete(key);
+        }
+      },
+      (error) => {
+        loads.set(key, {
+          status: "failed",
+          error: error ?? new Error(`[LocL] Failed to load translations for "${language}"${s ? ` ("${s}")` : ""}.`),
+          failedAt: Date.now()
+        });
+      }
+    );
+    loads.set(key, { status: "pending", promise: loadPromise });
+    promises.push(loadPromise);
+  }
+  throw Promise.all(promises);
+}
+function useScopedTranslation(base, scope, options) {
+  const { translator, language } = base;
+  const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
+  const scopes = Array.isArray(scope) ? scope : typeof scope === "string" ? [scope] : [void 0];
+  const isReady = scopes.every((s) => translator.isLoaded(language, s));
+  if (!isReady && options?.suspense) {
+    suspendUntilLoaded(translator, language, scopes, options.loader);
+  }
+  (0, import_react2.useEffect)(() => {
+    if (!isReady && !options?.suspense) {
+      const pendingScopes = scopes.filter((s) => !translator.isLoaded(language, s));
+      if (pendingScopes.length > 0) {
+        Promise.all(pendingScopes.map((s) => translator.load(language, s, options?.loader))).catch((err) => {
+          console.error(`[LocL] Failed to load translations for "${scopeKey}":`, err);
+        });
+      }
+    }
+  }, [translator, language, scopeKey, isReady, options?.loader, options?.suspense]);
+  const scopedTranslator = (0, import_react2.useMemo)(() => {
+    return scope !== void 0 ? translator.withConfig({ scope }) : translator;
+  }, [translator, scopeKey]);
+  return {
+    ...toResult(scopedTranslator),
+    ready: isReady
+  };
+}
 function LocLProvider({ translator, children }) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(LocLContext.Provider, { value: translator, children });
 }
@@ -119,41 +245,14 @@ function useLocL(customTranslator) {
   const contextTranslator = (0, import_react2.useContext)(LocLContext);
   const translator = customTranslator ?? contextTranslator;
   if (!translator) {
-    throw new Error(
-      "[LocL] `useLocL` or `useTranslation` must be used within a `<LocLProvider>` or passed an explicit translator instance."
-    );
+    throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
   }
-  const getSnapshot = () => translator.getLanguage();
-  const language = (0, import_react2.useSyncExternalStore)(
-    (onStoreChange) => translator.subscribe(onStoreChange),
-    getSnapshot,
-    getSnapshot
-  );
-  return {
-    translator,
-    language,
-    changeLanguage: (lang) => translator.changeLanguage(lang),
-    t: translator.t.bind(translator),
-    plural: translator.plural.bind(translator),
-    rich: translator.rich.bind(translator),
-    format: translator.format.bind(translator)
-  };
+  useTranslatorSubscription(translator);
+  return toResult(translator);
 }
-function useTranslation(scope, customTranslator) {
-  const { translator, language, changeLanguage } = useLocL(customTranslator);
-  const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-  const scopedTranslator = (0, import_react2.useMemo)(() => {
-    return scope !== void 0 ? translator.withConfig({ scope }) : translator;
-  }, [translator, scopeKey]);
-  return {
-    translator: scopedTranslator,
-    language,
-    changeLanguage,
-    t: scopedTranslator.t.bind(scopedTranslator),
-    plural: scopedTranslator.plural.bind(scopedTranslator),
-    rich: scopedTranslator.rich.bind(scopedTranslator),
-    format: scopedTranslator.format.bind(scopedTranslator)
-  };
+function useTranslation(scope, options, customTranslator) {
+  const base = useLocL(customTranslator);
+  return useScopedTranslation(base, scope, options);
 }
 function createLocLReact(defaultTranslator) {
   const BoundContext = (0, import_react2.createContext)(null);
@@ -166,37 +265,12 @@ function createLocLReact(defaultTranslator) {
   function useBoundLocL(customTranslator) {
     const contextTranslator = (0, import_react2.useContext)(BoundContext);
     const translator = customTranslator ?? contextTranslator ?? defaultTranslator;
-    const getSnapshot = () => translator.getLanguage();
-    const language = (0, import_react2.useSyncExternalStore)(
-      (onStoreChange) => translator.subscribe(onStoreChange),
-      getSnapshot,
-      getSnapshot
-    );
-    return {
-      translator,
-      language,
-      changeLanguage: (lang) => translator.changeLanguage(lang),
-      t: translator.t.bind(translator),
-      plural: translator.plural.bind(translator),
-      rich: translator.rich.bind(translator),
-      format: translator.format.bind(translator)
-    };
+    useTranslatorSubscription(translator);
+    return toResult(translator);
   }
-  function useBoundTranslation(scope, customTranslator) {
-    const { translator, language, changeLanguage } = useBoundLocL(customTranslator);
-    const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-    const scopedTranslator = (0, import_react2.useMemo)(() => {
-      return scope !== void 0 ? translator.withConfig({ scope }) : translator;
-    }, [translator, scopeKey]);
-    return {
-      translator: scopedTranslator,
-      language,
-      changeLanguage,
-      t: scopedTranslator.t.bind(scopedTranslator),
-      plural: scopedTranslator.plural.bind(scopedTranslator),
-      rich: scopedTranslator.rich.bind(scopedTranslator),
-      format: scopedTranslator.format.bind(scopedTranslator)
-    };
+  function useBoundTranslation(scope, options, customTranslator) {
+    const base = useBoundLocL(customTranslator);
+    return useScopedTranslation(base, scope, options);
   }
   function BoundTrans(props) {
     const contextTranslator = (0, import_react2.useContext)(BoundContext);

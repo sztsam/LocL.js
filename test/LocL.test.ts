@@ -1,4 +1,4 @@
-import { initLocL, LocL, defineResources } from '../src/index';
+import { initLocL, LocL, defineResources, defineStrictResources } from '../src/index';
 
 describe('initLocL', () => {
   const resources = {
@@ -40,7 +40,7 @@ describe('initLocL', () => {
     hu: {
       simple: "Egyszerű",
     }
-  };
+  } as const;
 
   type Resources = typeof resources;
   const getResources = () => JSON.parse(JSON.stringify(resources));
@@ -65,6 +65,7 @@ describe('initLocL', () => {
     });
     expect(translator.t('greeting', { name: 'World' })).toBe('Hello, World!');
     // Placeholder if value missing
+    // @ts-expect-error
     expect(translator.t('greeting')).toBe('Hello, {name}!');
     // Date interpolation
     expect(translator.t('date_fmt', { d: new Date() })).toContain('/');
@@ -227,7 +228,7 @@ describe('initLocL', () => {
     // @ts-ignore
     expect(p1.scope).toBeUndefined();
 
-    // Trigger line 108 (target[prop])
+    // Trigger (target[prop])
     // @ts-ignore
     expect((p1).getObj).toBeDefined();
 
@@ -612,7 +613,9 @@ describe('initLocL', () => {
         en: {
           nested: { val: 123 },
           tagsWithUnmatched: "Click <custom>here</custom> to <bold>proceed</bold>.",
-          tagOnly: "<bold>ExactTag</bold>"
+          tagOnly: "<bold>ExactTag</bold>",
+          selfClosingTag: "Hello<br/>World",
+          nonFuncTag: "Hello <bold>World</bold>"
         }
       },
       fallbackLanguage: "en"
@@ -631,6 +634,18 @@ describe('initLocL', () => {
 
     // Tag covering entire string
     expect(translator.rich("tagOnly", { bold: (c) => `[${c}]` })).toEqual(["[ExactTag]"]);
+  
+    // Self-closing tag in rich() (exercises match[3], isSelfClosing, and content === "")
+    const scChunks = translator.rich("selfClosingTag", {
+      br: (c) => `[BR:${c}]`
+    });
+    expect(scChunks.join("")).toBe("Hello[BR:]World");
+
+    // Defined non-function renderer in rich() (exercises renderer !== undefined branch)
+    const nfChunks = translator.rich("nonFuncTag", {
+      bold: "BOLDED" as any
+    });
+    expect(nfChunks.join("")).toBe("Hello BOLDED");
   });
 
   it("should cover ICU select with nested parameters, no other case, and trailing whitespace in casesBody", () => {
@@ -652,6 +667,10 @@ describe('initLocL', () => {
     // select without passing field (falls back to 'other')
     // @ts-ignore
     expect(translator.t("selectNested", {})).toBe("They have {count} items");
+
+    // select with values === undefined (exercises values ? ... : "other" false branch)
+    // @ts-expect-error
+    expect(translator.t("selectNested", undefined)).toBe("They have {count} items");
 
     // select with no 'other' and unmatched value returns empty string
     expect(translator.t("selectNoOther", { gender: "female" })).toBe("");
@@ -718,9 +737,97 @@ describe('initLocL', () => {
     const tArr = initLocL({ resources, fallbackLanguage: "en", useCache: false, scope: ["nested"] });
     expect(tArr.get("nested.a.b")).toBe("Nested value");
   });
+
+  it("should cover BCP 47 multi-separator slicing and 2-letter fallback", () => {
+    const translator = initLocL({
+      resources: { en: { title: "Hi" } },
+      fallbackLanguage: "en"
+    });
+
+    // Call without arguments to exercise default `lang = this.language` parameter
+    expect(translator.getFallbackChain()).toEqual(["en"]);
+
+    // multi-segment subtags with hyphens and underscores
+    expect(translator.getFallbackChain("de-AT-Vienna")).toEqual([
+      "de-AT-Vienna",
+      "de-AT",
+      "de",
+      "en"
+    ]);
+    expect(translator.getFallbackChain("zh_Hans_CN")).toEqual([
+      "zh_Hans_CN",
+      "zh_Hans",
+      "zh",
+      "en"
+    ]);
+
+    // 2-letter prefix fallback without hyphen/underscore
+    expect((translator as any).isLanguage("enUS")).toBe("en");
+  });
+
+  it("should cover pseudo-localization constructor, toggling, and options", () => {
+    const tPseudo = initLocL({
+      resources: { en: { welcome: "Welcome, {name}! <bold>Click</bold>" } },
+      fallbackLanguage: "en",
+      pseudoLocalization: true
+    });
+
+    const res1 = tPseudo.t("welcome", { name: "Alice" });
+    expect(res1).toContain("Alice");
+    expect(res1).toContain("<bold>");
+    expect(res1).toContain("[!!! ");
+    expect(res1).toContain(" !!!]");
+
+    // setPseudoLocalization with boolean false
+    tPseudo.setPseudoLocalization(false);
+    expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+
+    // setPseudoLocalization with boolean true
+    tPseudo.setPseudoLocalization(true);
+    expect(tPseudo.t("welcome", { name: "Alice" })).toContain("[!!! ");
+
+    // setPseudoLocalization with object options: accents: false
+    tPseudo.setPseudoLocalization({
+      enabled: true,
+      prefix: ">>> ",
+      suffix: " <<<",
+      accents: false
+    });
+    const resNoAccents = tPseudo.t("welcome", { name: "Alice" });
+    expect(resNoAccents).toBe(">>> Welcome, Alice! <bold>Click</bold> <<<");
+
+    // setPseudoLocalization with enabled: false
+    tPseudo.setPseudoLocalization({ enabled: false });
+    expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+  });
+
+  it("should cover formatter returning undefined fallback to token.raw", () => {
+    // formatter returns undefined -> falls back to token.raw
+    const tFmt = initLocL({
+      resources: { en: { test: "Result: {val | returnsUndef}" } },
+      fallbackLanguage: "en",
+      formatters: {
+        returnsUndef: () => undefined as any
+      }
+    });
+    expect(tFmt.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef}");
+
+    // intermediate formatter returns undefined before a missing formatter
+    const tFmt2 = initLocL({
+      resources: { en: { test: "Result: {val | returnsUndef | missingFormatter}" } },
+      fallbackLanguage: "en",
+      devMode: true,
+      formatters: {
+        returnsUndef: () => undefined as any
+      }
+    });
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    expect(tFmt2.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef | missingFormatter}");
+    warnSpy.mockRestore();
+  });
 });
 
-describe("defineResources", () => {
+describe("defineResources / defineStrictResources", () => {
   it("should return the exact resources object reference passed in", () => {
     const rawResources = {
       en: {
@@ -761,5 +868,189 @@ describe("defineResources", () => {
     translator.changeLanguage("de");
     expect(translator.t("welcome", { name: "Alice" })).toBe("Willkommen, Alice!");
     expect(translator.t("items", { gender: "female", count: 7 })).toBe("Sie hat 7 Artikel");
+  });
+
+  it("should cover defineStrictResources at runtime", () => {
+    const res = defineStrictResources({
+      en: { title: "Hello", save: "Save" },
+      de: { title: "Hallo", save: "Speichern" }
+    });
+    expect(res.en.title).toBe("Hello");
+    expect(res.de.save).toBe("Speichern");
+  });
+});
+
+describe("LocL Loader & Async Resolution", () => {
+  it("should cover resolveBundle for all supported bundle types", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en"
+    });
+
+    // 1. Fetch Response object
+    if (typeof Response !== "undefined") {
+      await translator.load(
+        "en",
+        "fromResponse",
+        async () => new Response(JSON.stringify({ text: "From Response" }))
+      );
+      expect(translator.tt("fromResponse.text")).toBe("From Response");
+
+      await expect(
+        translator.load(
+          "en",
+          "fromFailedResponse",
+          async () => new Response("Not Found", { status: 404, statusText: "Not Found" })
+        )
+      ).rejects.toThrow("[LocL] Failed to load resource: 404 Not Found");
+    }
+
+    // 2. Raw JSON string (valid and invalid fallback)
+    await translator.load("en", "fromJsonStr", async () => JSON.stringify({ text: "From JSON String" }));
+    expect(translator.tt("fromJsonStr.text")).toBe("From JSON String");
+
+    await translator.load("en", "fromInvalidStr", async () => "not a valid json");
+    expect(translator.isLoaded("en", "fromInvalidStr")).toBe(true);
+
+    // 3. ES Module default export
+    await translator.load("en", "fromDefault", async () => ({ default: { text: "From Default" } }));
+    expect(translator.tt("fromDefault.text")).toBe("From Default");
+
+    // 4. Function / factory export
+    await translator.load("en", "fromFactory", async () => () => ({ text: "From Factory" }));
+    expect(translator.tt("fromFactory.text")).toBe("From Factory");
+
+    // 5. Named exports (translations, messages, resources, namespace key)
+    await translator.load("en", "fromNamed", async () => ({ fromNamed: { text: "From Named NS" } }));
+    expect(translator.tt("fromNamed.text")).toBe("From Named NS");
+
+    await translator.load("en", "fromTrans", async () => ({ translations: { text: "From Translations" } }));
+    expect(translator.tt("fromTrans.text")).toBe("From Translations");
+
+    await translator.load("en", "fromMsgs", async () => ({ messages: { text: "From Messages" } }));
+    expect(translator.tt("fromMsgs.text")).toBe("From Messages");
+
+    await translator.load("en", "fromRes", async () => ({ resources: { text: "From Resources" } }));
+    expect(translator.tt("fromRes.text")).toBe("From Resources");
+
+    // 6. Non-object / array fallback
+    await translator.load("en", "fromArray", async () => [1, 2, 3] as any);
+    expect(translator.isLoaded("en", "fromArray")).toBe(true);
+  });
+
+  it("should cover isLoaded and load variations (monolithic, nested dots, aliases, errors)", async () => {
+    const translator = initLocL({
+      resources: {
+        en: {
+          common: { title: "Title" }
+        }
+      },
+      fallbackLanguage: "en",
+      loader: async (lang, ns) => {
+        if (ns === "failing") throw new Error("Load failed");
+        return ns ? { val: `${ns} loaded` } : { full: `Full ${lang}` };
+      }
+    });
+
+    // isLoaded branches
+    expect(translator.isLoaded("en", "common")).toBe(true);
+    expect(translator.isLoaded("en", "missingNs")).toBe(false);
+    expect(translator.isLoaded("en")).toBe(true);
+    expect(translator.isLoaded("fr")).toBe(false);
+
+    // Monolithic language load (no namespace)
+    await translator.loadLanguage("fr");
+    expect(translator.isLoaded("fr")).toBe(true);
+    translator.changeLanguage("fr" as any);
+    expect(translator.t("full" as any)).toBe("Full fr");
+
+    // Nested dot namespace load
+    await translator.loadNamespace("admin.settings");
+    expect(translator.t("admin.settings.val" as any)).toBe("admin.settings loaded");
+
+    // Calling load when already loaded returns immediately
+    const loadSpy = jest.fn();
+    await translator.load("en", "common", loadSpy);
+    expect(loadSpy).not.toHaveBeenCalled();
+
+    // Calling load without loader throws
+    const noLoaderT = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    await expect(noLoaderT.load("en", "test")).rejects.toThrow(/No loader configured/);
+
+    // Loader failure removes from in-flight cache and throws
+    await expect(translator.load("en", "failing")).rejects.toThrow("Load failed");
+    expect(translator.isLoaded("en", "failing")).toBe(false);
+
+    // Settled callback when in-flight promise was replaced in map
+    let resolvePending: any;
+    const pendingBundle = new Promise<any>((resolve) => {
+      resolvePending = resolve;
+    });
+    const loadTask = translator.load("en", "replacedTaskNs", () => pendingBundle);
+    (translator as any).loadingPromises.set("en::replacedTaskNs", Promise.resolve());
+    resolvePending({ data: "ok" });
+    await loadTask;
+  });
+
+  it("should catch errors in notifySubscribers", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => ({ val: "test" })
+    });
+
+    const errSpy = jest.spyOn(console, "error").mockImplementation();
+    translator.subscribe(() => {
+      throw new Error("Subscriber notify error");
+    });
+
+    await translator.load("en", "triggerNotify");
+
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[LocL] Error in subscriber:"),
+      expect.any(Error)
+    );
+    errSpy.mockRestore();
+  });
+
+  it("should cover addResource overwrite and isLoaded edge cases", async () => {
+    const translator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => ({ loaded: "yes" })
+    });
+
+    // 1. Initially "en" is empty, so isLoaded() with default lang is false
+    expect(translator.isLoaded()).toBe(false);
+
+    // 2. Load "en" using default lang argument
+    await translator.load();
+    expect(translator.isLoaded()).toBe(true);
+
+    // 3. Overwrite existing string primitive with a nested object path
+    translator.addResource("en", "nonObj", "stringValue");
+    translator.addResource("en", "nonObj.nested", "nestedValue");
+    //@ts-expect-error
+    expect(translator.t("nonObj.nested")).toBe("nestedValue");
+
+    // 4. isLoaded with non-existent language & dotted path
+    expect(translator.isLoaded("nonExistentLang", "someNs")).toBe(false);
+    expect(translator.isLoaded("nonExistentLang")).toBe(false);
+    expect(translator.isLoaded("en", "nonexistent.dotted.path")).toBe(false);
+
+    // 5. Monolithic load when already loaded returns immediately
+    const noopSpy = jest.fn();
+    await translator.load("en", undefined, noopSpy);
+    expect(noopSpy).not.toHaveBeenCalled();
+
+    // 6. Call load without namespace on translator with no loader (covers `: ""` branch)
+    const noLoaderT = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    await expect(noLoaderT.load("en")).rejects.toThrow(
+      '[LocL] No loader configured to load translations for "en".'
+    );
+
+    // 7. resolveBundle with named namespace having a primitive string
+    await translator.load("en", "primitiveNs", async () => ({ primitiveNs: "stringData" }));
+    expect(translator.isLoaded("en", "primitiveNs")).toBe(true);
   });
 });

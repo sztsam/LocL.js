@@ -33,18 +33,18 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.t("common.save")).toBe("Save");
   });
 
-  it("should support defaultValue fallback and 3-argument signature (Line 84 & 119)", () => {
+  it("should support defaultValue fallback and 3-argument signature", () => {
     const locl = initLocL({ resources, fallbackLanguage: "en" });
     const i18n = toI18next(locl);
 
     // Signature 1: t(key, defaultValue)
     expect(i18n.t("missing.key", "Default String")).toBe("Default String");
 
-    // Signature 2: t(key, defaultValue, options) -> exercises line 84 truthy branch
+    // Signature 2: t(key, defaultValue, options) -> exercises truthy branch
     expect(i18n.t("common:hello", "Default {name}", { name: "Maria" })).toBe("Hello, Maria!");
     expect(i18n.t("missing.key", "Default {name}", { name: "Maria" })).toBe("Default {name}");
 
-    // Signature 2 with non-object arg2 -> exercises line 84 fallback branch
+    // Signature 2 with non-object arg2 -> exercises fallback branch
     expect(i18n.t("missing.key", "Default String", null as any)).toBe("Default String");
 
     // Signature 3: t(key, { defaultValue })
@@ -124,7 +124,7 @@ describe("i18next Compatibility Adapter", () => {
     }
   };
 
-  it("should catch and log error when event listener throws (Line 66)", async () => {
+  it("should catch and log error when event listener throws", async () => {
     const translator = initLocL({ resources: extraResources, fallbackLanguage: "en" });
     const i18n = toI18next(translator);
     const errSpy = jest.spyOn(console, "error").mockImplementation();
@@ -217,10 +217,55 @@ describe("i18next Compatibility Adapter", () => {
     expect(compat2).toBeDefined();
   });
 
-  it("should cover missing resources fallback and undefined result fallback (Lines 119 and 144)", () => {
+  it("should cover compat async loading, changeLanguage failure, and loadNamespaces", async () => {
+    // 1. changeLanguage loading language when not loaded
+    const asyncTranslator = initLocL({
+      resources: { en: { hello: "Hello" } },
+      fallbackLanguage: "en",
+      loader: async (lang, ns) => (ns ? { msg: `${ns} loaded` } : { greeting: `Hola from ${lang}` })
+    });
+    const i18n = toI18next(asyncTranslator);
+
+    await i18n.changeLanguage("es");
+    expect(i18n.language).toBe("es");
+    expect(i18n.t("greeting" as any)).toBe("Hola from es");
+
+    // 2. loadNamespaces with single string and array
+    let singleLoaded = false;
+    await i18n.loadNamespaces("dashboard", () => {
+      singleLoaded = true;
+    });
+    expect(singleLoaded).toBe(true);
+    expect(i18n.t("dashboard:msg" as any)).toBe("dashboard loaded");
+
+    await i18n.loadNamespaces(["auth", "billing"]);
+    expect(i18n.t("auth:msg" as any)).toBe("auth loaded");
+
+    // 3. changeLanguage failure callback and catch block
+    const failingTranslator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => {
+        throw new Error("Network offline");
+      }
+    });
+    const failingI18n = toI18next(failingTranslator);
+
+    let caughtErr: any;
+    await expect(
+      failingI18n.changeLanguage("it", (err) => {
+        caughtErr = err;
+      })
+    ).rejects.toThrow("Network offline");
+
+    expect(caughtErr).toBeDefined();
+    expect(caughtErr.message).toBe("Network offline");
+  });
+
+  it("should cover missing resources fallback and undefined result fallback", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
 
-    // 1. Line 144: Exercise languages when translator.resources is undefined
+    // Exercise languages when translator.resources is undefined
     const dummyLocL = {
       ...translator,
       resources: undefined,
@@ -230,7 +275,7 @@ describe("i18next Compatibility Adapter", () => {
     const i18nWithoutRes = toI18next(dummyLocL as any);
     expect(i18nWithoutRes.languages).toEqual([]);
 
-    // 2. Line 119: Exercise return fallback when translator.t returns undefined
+    // Exercise return fallback when translator.t returns undefined
     const mockUndefinedT = {
       ...translator,
       t: () => undefined as any,
@@ -242,5 +287,29 @@ describe("i18next Compatibility Adapter", () => {
     // @ts-expect-error
     expect(i18nUndefined.t("someKey")).toBe("someKey");
     expect(i18nUndefined.t("someKey", "Custom Default")).toBe("Custom Default");
+  });
+
+  it("should cover loadNamespaces error handling with and without callback", async () => {
+    const failingTranslator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => {
+        throw new Error("Failed to load namespace");
+      }
+    });
+    const i18n = toI18next(failingTranslator);
+
+    // With callback (exercises callback?.(err) and re-throw)
+    let callbackErr: any;
+    await expect(
+      i18n.loadNamespaces("errorNs", (err) => {
+        callbackErr = err;
+      })
+    ).rejects.toThrow("Failed to load namespace");
+    expect(callbackErr).toBeDefined();
+    expect(callbackErr.message).toBe("Failed to load namespace");
+
+    // Without callback (exercises callback?.(err) when callback is undefined)
+    await expect(i18n.loadNamespaces("errorNs2")).rejects.toThrow("Failed to load namespace");
   });
 });

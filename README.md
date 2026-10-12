@@ -2,7 +2,7 @@
 
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sztsam/LocL.js) [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)](https://www.typescriptlang.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/locl-js)
 
-**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, backend services, and multi-framework setups, it provides compile-time type-safety, automatic pluralization, ICU-style select branching, built-in formatters, and reactive subscriptions with **zero external dependencies**.
+**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, backend services, and multi-framework setups, it provides compile-time type safety, automatic pluralization, ICU-style select branching, built-in formatters with pipeline chaining, and reactive subscriptions with **zero external dependencies**.
 
 It is inspired by libraries like `i18next` and `react-i18next`, but engineered with a focus on strict TypeScript type checking, sub-millisecond execution, clean APIs, and **100% test coverage across every statement, branch, and function**.
 
@@ -10,19 +10,22 @@ It is inspired by libraries like `i18next` and `react-i18next`, but engineered w
 
 ## Features ✨
 
-- **💪 Strict Compile-Time Safety**: Auto-extracts parameters (`{name}`, `{{name}}`, `{gender, select, ...}`) and enforces required arguments at compile time with IDE autocomplete.
-- **🏷️ `defineResources` Helper**: Preserves literal types automatically without having to append `as const` manually.
-- **⚛️ First-Class React Integration**: Official React bindings (`<LocLProvider>`, `useTranslation`, `useLocL`, `<Trans />`) via `locl-js/react` with two type-safe workflows:
+- **💪 Strict Compile-Time Safety**: Auto-extracts parameters (`{name}`, `{{name}}`, `{gender, select, ...}`) and enforces required arguments at compile time with full IDE autocomplete.
+- **🏷️ `defineResources` & `defineStrictResources`**: Preserves literal types without `as const` and enforces complete translation parity across all secondary languages at compile time.
+- **⚡ Lazy Loading & React `<Suspense>`**: Load monolithic language files (`de.json`) or modular namespaces (`de/dashboard.json`) asynchronously on demand with `<Suspense>` or non-suspense `ready` status.
+- **⚛️ First-Class React Integration**: Official React bindings (`<LocLProvider>`, `useTranslation`, `useLocL`, `<Trans />`) via `locl-js/react` with concurrent-safe `useSyncExternalStore` and store versioning:
   - **`createLocLReact` Hook Factory**: Zero-declaration, pre-bound React suite.
   - **`LocLRegister` Declaration Merging**: Ambient global autocomplete for standalone imports.
 - **📦 Zero Dependencies & Lightweight**: Pure TypeScript with no runtime dependencies.
-- **🔄 Drop-in i18next Compat**: Swap existing `i18next` codebases effortlessly using `locl-js/compat` without rewriting translation call sites. Supports colon namespaces (`auth:login`), strict parameter checking, default fallbacks, and event listener cleanup.
+- **🔄 Drop-in i18next Compat**: Swap existing `i18next` codebases effortlessly using `locl-js/compat` without rewriting call sites. Supports colon namespaces (`auth:login`), strict parameter checking, dynamic bundle preloading, default fallbacks, and event listener cleanup.
 - **🌐 Multi-Framework Reactive Store**: Implements the standard reactive store contract via `translator.subscribe()`, working out of the box in Svelte, Vue, Solid, and Node.js.
 - **🔢 Automatic Plurals**: Handles object plurals (`{ zero, one, other }`) and suffix plurals (`_zero`, `_one`, `_other`) directly via `t()` or dedicated `plural()`.
 - **🔀 ICU Select Support**: Conditional branching (`{gender, select, male {He} female {She} other {They}}`) with nested parameter interpolation (`{gender, select, male {He has {count} items}}`).
-- **🔧 Built-in & Custom Formatters**: Format dates, numbers, currencies, strings, and booleans inline via pipe syntax (`{val | number}`, `{date | date:short}`).
+- **🔧 Multi-Pipe Formatter Chaining**: Format dates, numbers, currencies, strings, and booleans inline via pipe syntax (`{val | number}`, `{date | date:short}`). Chain multiple formatters sequentially (`{val | trim | upper | truncate:10}`).
+- **🧪 Built-in Pseudo-Localization**: Enterprise QA mode to test layout expansion and unlocalized strings without third-party tooling, preserving tags and interpolation tokens.
+- **🌍 BCP 47 Language Negotiation**: Multi-tier locale fallback chains (`de-AT-Vienna` → `de-AT` → `de` → `en`).
 - **⚡ High Performance Caching**: Granular scope-based translation caching and multi-proxy instance reuse with zero proxy-of-proxy overhead.
-- **🛡️ Prototype-Safe Dynamic Resources**: Safely merge resources dynamically at runtime with built-in prototype pollution guards.
+- **🛡️ Prototype-Safe Dynamic Resources**: Safely merge resources dynamically at runtime with built-in prototype pollution guards and type-evolved translator instances.
 - **💯 100% Test Coverage**: Fully verified across every line, branch, function, and edge case.
 
 ---
@@ -48,6 +51,8 @@ const resources = defineResources({
       one: "You have one message.",
       other: "You have {count} messages.",
     },
+    auth: { login: "Log In", register: "Sign Up" },
+    dashboard: { welcome: "Welcome, {name}" },
   },
   fr: {
     hello: "Bonjour, {name}!",
@@ -55,7 +60,9 @@ const resources = defineResources({
       one: "Vous avez un message.",
       other: "Vous avez {count} messages.",
     },
-  },
+    auth: { login: "Se connecter", register: "S'inscrire" },
+    dashboard: { welcome: "Bienvenue, {name}" },
+  }
 });
 
 const translator = initLocL({
@@ -73,13 +80,21 @@ console.log(translator.plural("messages", { count: 5 })); // "You have 5 message
 // Switch language
 translator.changeLanguage("fr");
 console.log(translator.t("hello", { name: "Alice" })); // "Bonjour, Alice!"
+
+// Fixed-language proxy (pinned to French regardless of global language)
+const frDashboardT = translator.withConfig({ scope: "dashboard", language: "fr" });
+console.log(frDashboardT.t("welcome", { name: "Hans" })); // "Bienvenue, Hans"
+
+// String / Array scope (combines multiple namespaces)
+const multiT = translator.withConfig({ scope: ["auth", "dashboard"] });
+console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Bienvenue, Alice"
 ```
 
 ---
 
 ## Strict Parameter Type-Checking
 
-When defining resources with `defineResources` (or `as const`), `LocL` infers parameter names and types at compile time:
+When defining resources with `defineResources` (or `as const`), `LocL` automatically extracts template tokens and enforces parameter types:
 
 ```typescript
 import { defineResources, initLocL } from "locl-js";
@@ -105,6 +120,9 @@ translator.t("notification", { user: "Bob", count: 3 });
 // ✅ Static templates allow omitting options:
 translator.t("staticNotice");
 ```
+
+Compile-Time Translation Parity (`defineStrictResources`)
+Prevent missing translations from reaching production. `defineStrictResources` enforces at compile time that **every secondary language implements all keys present in the fallback language**
 
 ---
 
@@ -150,7 +168,7 @@ export function App() {
 }
 
 function Header() {
-  // 100% Autocomplete across root keys!
+  // Autocomplete across root keys!
   const { t, language, changeLanguage } = useTranslation();
 
   return (
@@ -195,7 +213,7 @@ declare module "locl-js/react" {
 }
 ```
 
-Now, standalone imports automatically have full autocomplete everywhere without passing any generic arguments:
+Standalone imports automatically have full autocomplete everywhere without passing any generic arguments:
 
 ```tsx
 import { useTranslation, Trans } from "locl-js/react";
@@ -210,15 +228,16 @@ function UserProfile() {
 
 ### The `<Trans />` Component
 
-Renders complex translations containing formatting tags (`<bold>read</bold>`, `<link>terms</link>`) into React elements safely without `dangerouslySetInnerHTML`:
+Renders translations containing formatting tags (`<bold>read</bold>`, `<link>terms</link>`) and self-closing elements (`<br />`) into React elements safely without `dangerouslySetInnerHTML`:
 
 ```tsx
 <Trans
-  i18nKey="notice" // "Please <bold>read</bold> our <link>terms</link>."
+  i18nKey="notice" // "Please <bold>read</bold> our <link>terms</link>.<br />Thank you!"
   values={{ name: "Alice" }}
   components={{
     bold: <strong className="text-primary font-bold" />,
     link: <a href="/terms" className="underline" target="_blank" rel="noopener noreferrer" />,
+    br: <br />,
   }}
   fallback="Please read our terms."
 />
@@ -228,18 +247,85 @@ Renders complex translations containing formatting tags (`<bold>read</bold>`, `<
 
 - **Strict Key Validation**: Autocompletes valid keys and flags typos at compile time.
 - **Strict Value Validation**: If the template contains `{name}`, `values={{ name: ... }}` is required at compile time.
-- **Dynamic Key Fallback**: Unregistered or dynamic keys are allowed whenever an explicit `fallback` string is provided (`fallback="Default string"`).
+- **Nested & Self-Closing Tags**: Supports self-closing tags (`<br />`, `<hr />`) and recursively parses nested elements (`<bold>Click <link>here</link></bold>`).
+- **Dynamic Key Fallback**: Dynamic keys are permitted whenever an explicit `fallback` prop is provided (`fallback="Default string"`).
 - **Scope Support**: Narrow keys using the `scope` prop: `<Trans scope="user" i18nKey="greeting" values={{ name: "Alice" }} />`.
-- **Standalone `translator` Prop**: When passing `translator={translator}`, `Trans` automatically infers the dictionary and provides autocomplete for that translator's keys.
-- **Tag Element Replacement**: Clones JSX elements (e.g. `<strong />`) while preserving inner text as children.
-- **Function Renderers**: Supports custom render functions: `(content) => <span style={{ fontWeight: "bold" }}>{content}</span>`.
-- **Reactive Updates**: Subscribes to `useSyncExternalStore` so language changes re-render smoothly.
+- **Standalone `translator` Prop**: Automatically infers dictionaries from custom translator instances passed via `translator={translator}`.
+- **Tag Element Replacement**: Clones JSX elements while preserving inner content as children.
+- **Function Renderers**: Supports custom render functions: `(content) => <span className="font-bold">{content}</span>`.
+- **Store-Versioned Reactive Updates**: Subscribes to `useSyncExternalStore` and internal store revisions so language and bundle updates trigger seamless re-renders.
+
+---
+
+## Lazy Loading & React `<Suspense>`
+
+Load translations dynamically on demand using bundler dynamic `import()` or browser `fetch()`. Supports both **monolithic bundles** (`de.json`) and **modular namespaces** (`de/dashboard.json`):
+
+### 1. Configuring the Loader
+
+```typescript
+import { initLocL } from "locl-js";
+
+const translator = initLocL({
+  resources: { en: {} },
+  fallbackLanguage: "en",
+  // Universal loader: supports JSON, TS/JS modules, default/named exports, or fetch() Responses
+  loader: (lang, ns) => ns 
+    ? import(`./locales/${lang}/${ns}.json`) // Modular namespace file
+    : import(`./locales/${lang}.json`)       // Full language file
+});
+
+// Imperative loading:
+await translator.loadLanguage("de");
+await translator.loadNamespace("dashboard");
+```
+
+### 2. React `<Suspense>` Mode
+
+Pass `{ suspense: true }` to `useTranslation()` to suspend component rendering until the bundle arrives:
+
+```tsx
+import React, { Suspense } from "react";
+import { useTranslation, LocLProvider } from "locl-js/react";
+
+function Dashboard() {
+  // Suspends component rendering until 'en/dashboard.json' finishes loading!
+  const { t } = useTranslation("dashboard", { suspense: true });
+  return <h1>{t("title")}</h1>;
+}
+
+export function App() {
+  return (
+    <LocLProvider translator={translator}>
+      <Suspense fallback={<div>Loading translations...</div>}>
+        <Dashboard />
+      </Suspense>
+    </LocLProvider>
+  );
+}
+```
+
+### 3. Non-Suspense Background Loading (`ready`)
+
+For non-suspense setups, inspect the reactive `ready: boolean` flag:
+
+```tsx
+function Profile() {
+  const { t, ready } = useTranslation("profile");
+
+  if (!ready) {
+    return <div>Loading profile translations...</div>;
+  }
+
+  return <h1>{t("heading")}</h1>;
+}
+```
 
 ---
 
 ## Drop-in `i18next` Compatibility (`locl-js/compat`)
 
-Migrate existing `i18next` codebases effortlessly without refactoring callsites. `locl-js/compat` preserves `i18next` runtime flexibility while offering full compile-time strict type checking:
+Migrate existing `i18next` codebases effortlessly without rewriting callsites. `locl-js/compat` preserves `i18next` runtime flexibility while offering full compile-time strict type checking:
 
 ```typescript
 import { initLocL, defineResources } from "locl-js";
@@ -277,12 +363,16 @@ i18n.addResourceBundle("en", "dynamic", { title: "Title" });
 i18n.hasResourceBundle("en", "dynamic"); // true
 i18n.getResourceBundle("en", "dynamic"); // { title: "Title" }
 
+// Asynchronous namespace loading:
+await i18n.loadNamespaces(["auth", "checkout"]);
+
 // Event listeners with cleanup callback:
 const unbind = i18n.on("languageChanged", (lng) => {
   console.log("Language changed to", lng);
 });
 unbind(); // Unsubscribes listener
 
+// Dynamic language switch with automatic missing-language preloading:
 await i18n.changeLanguage("es");
 ```
 
@@ -356,8 +446,26 @@ Use pipe syntax (`{variable | formatter[:args]}`) inside your translations:
 ```typescript
 const en = {
   profile: "Member since {joined | date:short}. Balance: {balance | currency:USD}.",
-  user: "Username: {name | upper | truncate:10, ...}",
+  user: "Username: {name | trim | upper | truncate:12, ...}",
+  dateRange: "Expires: {date | date:short}"
 };
+```
+
+### Multi-Pipe Formatter Chaining
+
+Chain multiple formatters sequentially from left to right using pipe (`|`) operators:
+
+```typescript
+const en = {
+  user: "User: {name | trim | upper | truncate:8, ...}",
+};
+
+// Input: "   alexander   "
+// Step 1: trim     -> "alexander"
+// Step 2: upper    -> "ALEXANDER"
+// Step 3: truncate -> "ALEXA..."
+translator.t("user", { name: "   alexander   " }); 
+// "User: ALEXA..."
 ```
 
 ### Built-in Formatters
@@ -413,13 +521,14 @@ unsubscribe();
 
 - **Svelte**: Reference directly as an auto-subscribing readable store (`$translator.t("key")`).
 - **Vue**: Bind to a `shallowRef` inside `translator.subscribe()`.
-- **Node.js**: Cleanly isolate translations per request or per guild.
+- **Solid**: Integrate with createSignal inside `translator.subscribe()`.
+- **Node.js**: Cleanly isolate translations per request or per session.
 
 ---
 
 ## Rich Tag Interpolation (`translator.rich`)
 
-Interpolate custom inline components, terminal styling, or HTML strings using `<tag>content</tag>`:
+Interpolate custom inline components, terminal styling, or HTML strings using `<tag>content</tag>` in vanilla and non-React environments:
 
 ```typescript
 const en = {
@@ -437,21 +546,79 @@ console.log(elements.join(""));
 
 ---
 
-## Dynamic Resources
+## Built-in Pseudo-Localization (Enterprise QA Mode)
 
-Add or deep-merge translation bundles at runtime safely with built-in prototype pollution guards:
+Catch unlocalized strings and layout overflow issues during enterprise QA testing:
+
+```typescript
+const translator = initLocL({
+  resources,
+  fallbackLanguage: "en",
+  pseudoLocalization: true // Replaces text: "[!!! Ḩéļļö Ŵöŕļđ !!!]"
+});
+
+// Or configure and toggle at runtime:
+translator.setPseudoLocalization({
+  enabled: true,
+  prefix: "« ",
+  suffix: " »",
+  accents: true
+});
+```
+
+* Preserves all HTML/JSX tags (`<bold>`, `<link>`) and interpolation tokens (`{name}`, `{{name}}`) completely intact.
+
+---
+
+## BCP 47 Language Fallback Chains
+
+LocL automatically negotiates regional language codes hierarchically:
+
+$$\text{de-AT-Vienna} \longrightarrow \text{de-AT} \longrightarrow \text{de} \longrightarrow \text{en}$$
+
+```typescript
+const translator = initLocL({
+  resources: {
+    en: { greeting: "Hello", word: "Potato" },
+    de: { greeting: "Hallo" },
+    "de-AT": { word: "Erdapfel" }
+  },
+  fallbackLanguage: "en",
+  language: "de-AT-Vienna"
+});
+
+// Found in regional de-AT
+translator.t("word"); // "Erdapfel"
+
+// Missing in de-AT, resolved from base "de"
+translator.t("greeting"); // "Hallo"
+
+// Inspect resolved fallback chain:
+console.log(translator.getFallbackChain());
+// ["de-AT-Vienna", "de-AT", "de", "en"]
+```
+
+---
+
+## Dynamic Resources & Type Evolution
+
+Add or deep-merge translation bundles at runtime safely with built-in prototype pollution guards. `addResources()` returns a type-evolved instance so new keys are immediately typed:
 
 ```typescript
 // Add a single dotted key
 translator.addResource("en", "dashboard.title", "Analytics Dashboard");
 
-// Deep-merge an entire namespace
+// Deep-merge an entire namespace (returns a type-evolved translator!)
+const updatedTranslator = translator.addResources("en", {
 translator.addResources("en", {
   checkout: {
     pay: "Pay Now",
     cancel: "Cancel",
   },
 });
+
+// TypeScript autocompletes "checkout.pay"!
+updatedTranslator.t("checkout.pay");
 ```
 
 ---
@@ -482,7 +649,7 @@ console.log(authT.t("login")); // "Log In"
 const deDashboardT = translator.withConfig({ scope: "dashboard", language: "de" });
 console.log(deDashboardT.t("welcome", { name: "Hans" })); // "Willkommen, Hans"
 
-// 3. Array scope (combines multiple namespaces)
+// 3. Combined array scopes (merges multiple namespaces)
 const multiT = translator.withConfig({ scope: ["auth", "dashboard"] });
 console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alice"
 ```
@@ -493,16 +660,18 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 ### Top-Level Exports (`locl-js`)
 
-- **`defineResources(resources)`**: Identity helper using `<const T>` to enforce compile-time literal types without writing `as const`.
 - **`initLocL(config)`**: Creates and returns a new `LocL` translator instance.
+- **`defineResources(resources)`**: Identity helper using `<const T>` to enforce compile-time literal types without `as const`.
+- **`defineStrictResources(resources)`**: Identity helper enforcing compile-time translation parity across all secondary languages against the fallback language.
+- **`LangWithPlurals<T>`**: Type utility to enforce plural structures on translation packs.
 
 ### React Exports (`locl-js/react`)
 
 - **`createLocLReact(translator)`**: Returns a pre-bound, zero-declaration React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`, `LocLContext`).
-- **`LocLProvider`**: React Context Provider for the active translator.
-- **`useTranslation(scope?, customTranslator?)`**: Translation hook with namespace scoping support.
-- **`useLocL(customTranslator?)`**: Hook returning translator instance and reactive language state.
-- **`<Trans />`**: Rich JSX component interpolation component supporting strict key/param checking, fallbacks, and scope narrowing.
+- **`LocLProvider`**: React Context Provider for managing the active translator.
+- **`useTranslation(scope?, options?, customTranslator?)`**: Translation hook with scope support, `<Suspense>` mode (`{ suspense: true }`), loader overrides, and `ready: boolean` status.
+- **`useLocL(customTranslator?)`**: Hook returning translator instance, active language, and bound translator APIs.
+- **`<Trans />`**: Rich JSX component interpolation component supporting strict key/param validation, paired/self-closing tags, nested elements, fallbacks, and scope narrowing.
 - **`LocLRegister`**: Ambient interface for global type registration.
 
 ### Compat Exports (`locl-js/compat`)
@@ -516,12 +685,19 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 - **`plural(key, values, format?)`**: Translates a key with pluralization.
 - **`rich(key, tagRenderers, values?)`**: Replaces `<tag>` wrappers using custom renderer functions.
 - **`changeLanguage(lang)`**: Updates current language and notifies all subscribers.
+- **`load(lang?, namespace?, loader?)`**: Asynchronously loads a monolithic language bundle or namespace.
+- **`loadLanguage(lang, loader?)`**: Asynchronously loads an entire language bundle.
+- **`loadNamespace(namespace, lang?, loader?)`**: Asynchronously loads a specific namespace.
+- **`isLoaded(lang?, namespace?)`**: Checks if a language or namespace is currently loaded in memory.
+- **`getFallbackChain(lang?)`**: Returns the BCP 47 hierarchical fallback chain for a locale.
+- **`setPseudoLocalization(options)`**: Toggles or configures pseudo-localization mode at runtime.
+- **`getVersion()`**: Returns the integer revision of the translator's state for external store syncing.
 - **`getLanguage()`**: Returns the currently active language code.
-- **`subscribe(listener)`**: Subscribes to language changes. Returns an unsubscribe function.
+- **`subscribe(listener)`**: Subscribes to language/resource changes. Returns an unsubscribe function.
 - **`withConfig(config)`**: Returns a cached proxy translator instance with scoped configuration.
 - **`clone(language?, scope?)`**: Clones the translator instance with optional language/scope overrides.
 - **`addResource(lang, key, value)`**: Adds or overrides a single translation key at runtime.
-- **`addResources(lang, bundle)`**: Deep-merges a dictionary into the target language.
+- **`addResources(lang, bundle)`**: Deep-merges a dictionary into the target language, returning a type-evolved instance.
 - **`format(value, formatterName, args?)`**: Executes a formatter function directly.
 - **`get(key?)`**: Returns the raw translation value or the entire active scoped dictionary.
 - **`getObj(key)`**: Returns a typed nested object from the translation tree.
