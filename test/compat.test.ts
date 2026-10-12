@@ -288,4 +288,28 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18nUndefined.t("someKey")).toBe("someKey");
     expect(i18nUndefined.t("someKey", "Custom Default")).toBe("Custom Default");
   });
+
+  it("should cover loadNamespaces error handling with and without callback", async () => {
+    const failingTranslator = initLocL({
+      resources: { en: {} },
+      fallbackLanguage: "en",
+      loader: async () => {
+        throw new Error("Failed to load namespace");
+      }
+    });
+    const i18n = toI18next(failingTranslator);
+
+    // With callback (exercises callback?.(err) and re-throw)
+    let callbackErr: any;
+    await expect(
+      i18n.loadNamespaces("errorNs", (err) => {
+        callbackErr = err;
+      })
+    ).rejects.toThrow("Failed to load namespace");
+    expect(callbackErr).toBeDefined();
+    expect(callbackErr.message).toBe("Failed to load namespace");
+
+    // Without callback (exercises callback?.(err) when callback is undefined)
+    await expect(i18n.loadNamespaces("errorNs2")).rejects.toThrow("Failed to load namespace");
+  });
 });

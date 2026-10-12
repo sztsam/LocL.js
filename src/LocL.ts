@@ -238,23 +238,26 @@ export class LocL<
   private async resolveBundle(raw: any, namespace?: string): Promise<Record<string, any>> {
     let data = raw;
 
-    // 1. Direct fetch() Response object: automatically call .json()
+    // Direct fetch() Response object: automatically call .json()
     if (typeof Response !== "undefined" && data instanceof Response) {
+      if (!data.ok) {
+        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
+      }
       data = await data.json();
     }
-    // 2. Raw JSON string: parse it
+    // Raw JSON string: parse it
     if (typeof data === "string") {
       try { data = JSON.parse(data); } catch { }
     }
-    // 3. ES Module default export (dynamic import('./file.ts') or import('./file.json'))
+    // ES Module default export (dynamic import('./file.ts') or import('./file.json'))
     if (data && typeof data === "object" && "default" in data) {
       data = data.default;
     }
-    // 4. Function / Factory export: export default () => ({ ... })
+    // Function / Factory export: export default () => ({ ... })
     if (typeof data === "function") {
       data = await data();
     }
-    // 5. Named export from a TS module: e.g. `export const user = { ... }` or `export const translations = { ... }`
+    // Named export from a TS module: e.g. `export const user = { ... }` or `export const translations = { ... }`
     if (data && typeof data === "object" && namespace && !(namespace in data)) {
       if (typeof data.translations === "object") {
         data = data.translations;
@@ -286,32 +289,33 @@ export class LocL<
     }
 
     const loadPromise = (async () => {
-      try {
-        const raw = await loader(lang, namespace);
-        const bundle = await this.resolveBundle(raw, namespace);
+      const raw = await loader(lang, namespace);
+      const bundle = await this.resolveBundle(raw, namespace);
 
-        if (namespace) {
-          // Namespaced file: nest under namespace path
-          const nested: Record<string, any> = {};
-          namespace.split(".").reduce((acc, k, i, arr) => {
-            acc[k] = (i === arr.length - 1) ? bundle : {};
-            return acc[k];
-          }, nested);
-          this.addResources(lang, nested);
-          this.loadedNamespaces.add(key);
-        }
-        else {
-          // Monolithic language file: merge directly at root of language!
-          this.addResources(lang, bundle);
-          this.loadedLanguages.add(lang);
-        }
+      if (namespace) {
+        // Namespaced file: nest under namespace path
+        const nested: Record<string, any> = {};
+        namespace.split(".").reduce((acc, k, i, arr) => {
+          acc[k] = (i === arr.length - 1) ? bundle : {};
+          return acc[k];
+        }, nested);
+        this.addResources(lang, nested);
+        this.loadedNamespaces.add(key);
       }
-      finally {
-        this.loadingPromises.delete(key);
+      else {
+        // Monolithic language file: merge directly at root of language!
+        this.addResources(lang, bundle);
+        this.loadedLanguages.add(lang);
       }
     })();
 
     this.loadingPromises.set(key, loadPromise);
+    const settled = () => {
+      if (this.loadingPromises.get(key) === loadPromise) {
+        this.loadingPromises.delete(key);
+      }
+    };
+    loadPromise.then(settled, settled);
     return loadPromise;
   }
   public loadLanguage(lang: string, loader?: ResourceLoader): Promise<void> {
@@ -415,9 +419,9 @@ export class LocL<
    * @returns The translated and formatted string, or the translation object.
    */
   public t<K extends (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string>(
-  key: K,
-  ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>
-): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
+    key: K,
+    ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>
+  ): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
   public t(key?: string, values?: any, format?: FormatOptions<F, UseDefaultFormatter>): any {
     if (!key) { return this.get(); }
     const pluralCheckResult = this.checkPlural(key, values);
@@ -493,7 +497,7 @@ export class LocL<
       return [rawStr as any];
     }
 
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
     const result: (string | TOutput)[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -502,13 +506,18 @@ export class LocL<
       if (match.index > lastIndex) {
         result.push(rawStr.slice(lastIndex, match.index));
       }
-      const tagName = match[1];
-      const content = match[2];
+      const isSelfClosing = match[3] !== undefined;
+      const tagName = isSelfClosing ? match[3] : match[1];
+      const content = isSelfClosing ? "" : match[2];
       const renderer = tags[tagName];
       
-      typeof renderer === "function"
-        ? result.push(renderer(content))
-        : result.push(match[0]);
+      if (typeof renderer === "function") {
+        result.push(renderer(content));
+      } else if (renderer !== undefined) {
+        result.push(String(renderer) as any);
+      } else {
+        result.push(match[0]);
+      }
       lastIndex = match.index + match[0].length;
     }
     if (lastIndex < rawStr.length) {
@@ -542,7 +551,7 @@ export class LocL<
    * @returns The nested translation object, or `undefined` if not found.
    */
   public getObj<K extends NestedKeyOfObj<TranslationObjectFor<S, T, Fallback>, false>>(key: K): PathValue<TranslationObjectFor<S, T, Fallback>, K> | undefined {
-    return this.get(key as never) as any
+    return this.get(key as never) as any;
   }
 
   /**
@@ -728,30 +737,19 @@ export class LocL<
     return undefined;
   }
 
-  private interpolate(result: any, values?: InterpolationOptions): string {
-    if (typeof result !== "string") { return result; }
-
-    // Apply pseudo-localization to the template string
-    result = this.pseudoOptions?.enabled
-      ? this.applyPseudoLocalization(result)
-      : result;
-
-    if (!values) { return result; }
-
-    // Searching for all balanced { ... } blocks
+  private getTokens(text: string): { raw: string; inner: string }[] {
     const tokens: { raw: string; inner: string }[] = [];
     let depth = 0, start = -1;
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] === "{") {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "{") {
         if (depth === 0) { start = i; }
         depth++;
       }
-      else if (result[i] === "}") {
+      else if (text[i] === "}") {
         depth--;
         if (depth === 0 && start >= 0) {
-          const raw = result.slice(start, i + 1);
+          const raw = text.slice(start, i + 1);
           let inner = raw.slice(1, -1);
-          // Support {{var}} double curly brackets seamlessly
           if (inner.startsWith("{") && inner.endsWith("}")) {
             inner = inner.slice(1, -1);
           }
@@ -760,7 +758,79 @@ export class LocL<
         }
       }
     }
+    return tokens;
+  }
 
+  private resolveIcuSelect(template: string, values?: InterpolationOptions): string {
+    let result = template;
+    let hasSelect = true;
+    let iterations = 0;
+
+    while (hasSelect && iterations < 10) {
+      iterations++;
+      hasSelect = false;
+      const tokens = this.getTokens(result);
+
+      for (const token of tokens) {
+        const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+        if (selectMatch) {
+          hasSelect = true;
+          const field = selectMatch[1].trim();
+          const casesBody = selectMatch[2];
+          const value = values ? String(values[field] ?? "other") : "other";
+
+          const caseMap: Record<string, string> = {};
+          let i = 0;
+          while (i < casesBody.length) {
+            while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
+            if (i >= casesBody.length) break;
+            let keyStart = i;
+            while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
+            const caseKey = casesBody.slice(keyStart, i).trim();
+            while (i < casesBody.length && casesBody[i] !== "{") i++;
+            if (casesBody[i] === "{") {
+              let bodyDepth = 1;
+              let bodyStart = i + 1;
+              i++;
+              while (i < casesBody.length && bodyDepth > 0) {
+                if (casesBody[i] === "{") bodyDepth++;
+                else if (casesBody[i] === "}") bodyDepth--;
+                i++;
+              }
+              const caseText = casesBody.slice(bodyStart, i - 1).trim();
+              if (caseKey) {
+                caseMap[caseKey] = caseText;
+              }
+            }
+          }
+
+          const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
+          result = result.split(token.raw).join(rawReplacement);
+          break; // Re-scan tokens on updated template
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private interpolate(result: any, values?: InterpolationOptions): string {
+    if (typeof result !== "string") { return result; }
+
+    // 1. Resolve ICU select expressions first
+    if (/,[\t ]*select[\t ]*,/.test(result)) {
+      result = this.resolveIcuSelect(result, values);
+    }
+
+    // 2. Apply pseudo-localization once to the assembled template
+    if (this.pseudoOptions?.enabled) {
+      result = this.applyPseudoLocalization(result);
+    }
+
+    if (!values) { return result; }
+
+    // 3. Interpolate remaining tokens (variables, dates, formatters)
+    const tokens = this.getTokens(result);
     let output = result;
     const processed = new Set<string>();
 
@@ -769,94 +839,56 @@ export class LocL<
       processed.add(token.raw);
 
       let replacement = "";
+      const pipeParts = token.inner.split("|").map(x => x.trim());
+      const fieldName = pipeParts[0];
+      const formattersList = pipeParts.slice(1);
+      const val = values[fieldName];
 
-      // 1. ICU select handling: {gender, select, male {He} female {She} other {They}}
-      const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
-      if (selectMatch) {
-        const field = selectMatch[1].trim();
-        const casesBody = selectMatch[2];
-        const value = String(values[field] ?? "other");
+      if (formattersList.length > 0) {
+        let currentVal = val;
+        let missingFormatter = false;
 
-        const caseMap: Record<string, string> = {};
-        let i = 0;
-        while (i < casesBody.length) {
-          while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
-          if (i >= casesBody.length) break;
-          let keyStart = i;
-          while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
-          const caseKey = casesBody.slice(keyStart, i).trim();
-          while (i < casesBody.length && casesBody[i] !== "{") i++;
-          if (casesBody[i] === "{") {
-            let bodyDepth = 1;
-            let bodyStart = i + 1;
-            i++;
-            while (i < casesBody.length && bodyDepth > 0) {
-              if (casesBody[i] === "{") bodyDepth++;
-              else if (casesBody[i] === "}") bodyDepth--;
-              i++;
+        for (const segment of formattersList) {
+          const colonIdx = segment.indexOf(":");
+          let formatterName = segment;
+          let args: string[] = [];
+
+          if (colonIdx !== -1) {
+            formatterName = segment.slice(0, colonIdx).trim();
+            args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
+          }
+          else {
+            formatterName = segment.trim();
+          }
+
+          const formatterFn = this.formatters?.[formatterName];
+          if (formatterFn) {
+            currentVal = formatterFn(currentVal, args);
+          }
+          else {
+            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
+            if (val === undefined) {
+              currentVal = token.raw;
+              missingFormatter = true;
+              break;
             }
-            const caseText = casesBody.slice(bodyStart, i - 1).trim();
-            if (caseKey) {
-              caseMap[caseKey] = caseText;
-            }
+            currentVal = currentVal !== undefined ? String(currentVal) : token.raw;
           }
         }
-
-        const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
-        replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
+        replacement = missingFormatter
+          ? String(currentVal)
+          : currentVal !== undefined ? String(currentVal) : token.raw;
+      }
+      else if (val instanceof Date) {
+        replacement = new Intl.DateTimeFormat(this.language).format(val);
+      }
+      else if (typeof val === "number") {
+        replacement = new Intl.NumberFormat(this.language).format(val);
       }
       else {
-        // 2. Interpolation and Multi-Pipe Formatter Pipeline handling: {count | number} or {date | date:YYYY-MM-DD}
-        const pipeParts = token.inner.split("|").map(x => x.trim());
-        const fieldName = pipeParts[0];
-        const formattersList = pipeParts.slice(1);
-        const val = values[fieldName];
-
-        if (formattersList.length > 0) {
-          let currentVal = val;
-          let missingFormatter = false;
-
-          for (const segment of formattersList) {
-            const colonIdx = segment.indexOf(":");
-            let formatterName = segment;
-            let args: string[] = [];
-
-            if (colonIdx !== -1) {
-              formatterName = segment.slice(0, colonIdx).trim();
-              args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
-            }
-            else {
-              formatterName = segment.trim();
-            }
-
-            const formatterFn = this.formatters?.[formatterName];
-            if (formatterFn) {
-              currentVal = formatterFn(currentVal, args);
-            }
-            else {
-              this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-              if (val === undefined) {
-                currentVal = token.raw;
-                missingFormatter = true;
-                break;
-              }
-              currentVal = currentVal !== undefined ? String(currentVal) : token.raw;
-            }
-          }
-          replacement = missingFormatter
-            ? String(currentVal)
-            : currentVal !== undefined ? String(currentVal) : token.raw;
-        }
-        else if (val instanceof Date) {
-          replacement = new Intl.DateTimeFormat(this.language).format(val);
-        }
-        else if (typeof val === "number") {
-          replacement = new Intl.NumberFormat(this.language).format(val);
-        }
-        else {
-          replacement = val !== undefined ? String(val) : token.raw;
-        }
+        replacement = val !== undefined ? String(val) : token.raw;
       }
+
       output = output.split(token.raw).join(replacement);
     }
     return output;
@@ -876,8 +908,8 @@ export class LocL<
     const suffix = this.pseudoOptions?.suffix ?? " !!!]";
     const useAccents = this.pseudoOptions?.accents !== false;
 
-    // Isolate <tags> and {tokens}
-    const tokenRegex = /(<[a-zA-Z0-9_-]+>[\s\S]*?<\/[a-zA-Z0-9_-]+>|{[^{}]+})/g;
+    // Isolate opening tags, closing tags, self-closing tags, and variable tokens
+    const tokenRegex = /(<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?>|<\/[a-zA-Z0-9_-]+>|<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?\/>|{{[^{}]+}}|{[^{}]+})/g;
     const parts = text.split(tokenRegex);
 
     const transformed = parts.map((part) => {

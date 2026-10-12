@@ -613,7 +613,9 @@ describe('initLocL', () => {
         en: {
           nested: { val: 123 },
           tagsWithUnmatched: "Click <custom>here</custom> to <bold>proceed</bold>.",
-          tagOnly: "<bold>ExactTag</bold>"
+          tagOnly: "<bold>ExactTag</bold>",
+          selfClosingTag: "Hello<br/>World",
+          nonFuncTag: "Hello <bold>World</bold>"
         }
       },
       fallbackLanguage: "en"
@@ -632,6 +634,18 @@ describe('initLocL', () => {
 
     // Tag covering entire string
     expect(translator.rich("tagOnly", { bold: (c) => `[${c}]` })).toEqual(["[ExactTag]"]);
+  
+    // Self-closing tag in rich() (exercises match[3], isSelfClosing, and content === "")
+    const scChunks = translator.rich("selfClosingTag", {
+      br: (c) => `[BR:${c}]`
+    });
+    expect(scChunks.join("")).toBe("Hello[BR:]World");
+
+    // Defined non-function renderer in rich() (exercises renderer !== undefined branch)
+    const nfChunks = translator.rich("nonFuncTag", {
+      bold: "BOLDED" as any
+    });
+    expect(nfChunks.join("")).toBe("Hello BOLDED");
   });
 
   it("should cover ICU select with nested parameters, no other case, and trailing whitespace in casesBody", () => {
@@ -653,6 +667,10 @@ describe('initLocL', () => {
     // select without passing field (falls back to 'other')
     // @ts-ignore
     expect(translator.t("selectNested", {})).toBe("They have {count} items");
+
+    // select with values === undefined (exercises values ? ... : "other" false branch)
+    // @ts-expect-error
+    expect(translator.t("selectNested", undefined)).toBe("They have {count} items");
 
     // select with no 'other' and unmatched value returns empty string
     expect(translator.t("selectNoOther", { gender: "female" })).toBe("");
@@ -877,6 +895,14 @@ describe("LocL Loader & Async Resolution", () => {
         async () => new Response(JSON.stringify({ text: "From Response" }))
       );
       expect(translator.tt("fromResponse.text")).toBe("From Response");
+
+      await expect(
+        translator.load(
+          "en",
+          "fromFailedResponse",
+          async () => new Response("Not Found", { status: 404, statusText: "Not Found" })
+        )
+      ).rejects.toThrow("[LocL] Failed to load resource: 404 Not Found");
     }
 
     // 2. Raw JSON string (valid and invalid fallback)
@@ -954,6 +980,16 @@ describe("LocL Loader & Async Resolution", () => {
     // Loader failure removes from in-flight cache and throws
     await expect(translator.load("en", "failing")).rejects.toThrow("Load failed");
     expect(translator.isLoaded("en", "failing")).toBe(false);
+
+    // Settled callback when in-flight promise was replaced in map
+    let resolvePending: any;
+    const pendingBundle = new Promise<any>((resolve) => {
+      resolvePending = resolve;
+    });
+    const loadTask = translator.load("en", "replacedTaskNs", () => pendingBundle);
+    (translator as any).loadingPromises.set("en::replacedTaskNs", Promise.resolve());
+    resolvePending({ data: "ok" });
+    await loadTask;
   });
 
   it("should catch errors in notifySubscribers", async () => {

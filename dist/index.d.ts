@@ -1,5 +1,5 @@
-import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-CwO1VWe5.js';
-export { b as LangWithPlurals } from './LocL-CwO1VWe5.js';
+import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-CywjdTt7.js';
+export { b as LangWithPlurals } from './LocL-CywjdTt7.js';
 
 /**
  * Initializes a new LocL instance.

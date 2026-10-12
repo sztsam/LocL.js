@@ -374,6 +374,18 @@ type PlainStringKeys<T> = {
  * Type utility to strictly type-check secondary translation files against a fallback language object.
  * Enforces `one` and `other` plurals, makes non-essential grammatical plurals (`zero`, `few`, `many`) optional,
  * and recursively validates namespace structures.
+ *
+ * @example
+ * ```ts
+ * import { LangWithPlurals } from "locl-js";
+ *
+ * const en: LangWithPlurals<typeof en> = {
+ *   messages: {
+ *     one: "You have one message.",
+ *     other: "You have {count} messages."
+ *   }
+ * };
+ * ```
  */
 export type LangWithPlurals<T> =
   // 1. If primitive → keep original type

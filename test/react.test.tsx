@@ -757,4 +757,354 @@ describe("React Integration", () => {
       errSpy.mockRestore();
     });
   });
+
+  describe("Suspense and useScopedTranslation full coverage", () => {
+    it("should cover suspense load failure, error caching, and re-throw within TTL", async () => {
+      let callCount = 0;
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async (_lang, ns) => {
+          callCount++;
+          throw new Error(`Suspense load failed for ${ns}`);
+        }
+      });
+
+      let thrownPromise: any;
+      function Comp() {
+        try {
+          useTranslation("failingScope" as any, { suspense: true });
+        } catch (e: any) {
+          if (e && typeof e.then === "function") {
+            thrownPromise = e;
+          } else {
+            throw e;
+          }
+        }
+        return <div>Loaded</div>;
+      }
+
+      // First render throws pending promise
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+      expect(thrownPromise).toBeDefined();
+
+      // Wait for the loader to fail and record the failure
+      await thrownPromise;
+
+      // Second render within TTL throws the cached error directly
+      expect(() =>
+        renderToStaticMarkup(
+          <LocLProvider translator={translator}>
+            <Comp />
+          </LocLProvider>
+        )
+      ).toThrow("Suspense load failed for failingScope");
+
+      // Verify loader was not called again
+      expect(callCount).toBe(1);
+    });
+
+    it("should cover TTL expiration on cached failure", async () => {
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async () => {
+          throw new Error("TTL Failure");
+        }
+      });
+
+      let thrownPromise: any;
+      function Comp() {
+        try {
+          useTranslation("ttlScope" as any, { suspense: true });
+        } catch (e: any) {
+          if (e && typeof e.then === "function") {
+            thrownPromise = e;
+          }
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+      await thrownPromise;
+
+      // Advance time past SUSPENSE_FAILURE_TTL_MS (2000ms)
+      const realNow = Date.now();
+      jest.spyOn(Date, "now").mockReturnValue(realNow + 2500);
+
+      let retriedPromise: any;
+      function RetryComp() {
+        try {
+          useTranslation("ttlScope" as any, { suspense: true });
+        } catch (e: any) {
+          if (e && typeof e.then === "function") {
+            retriedPromise = e;
+          }
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <RetryComp />
+        </LocLProvider>
+      );
+
+      expect(retriedPromise).toBeDefined();
+      expect(typeof retriedPromise.then).toBe("function");
+
+      (Date.now as any).mockRestore();
+      await retriedPromise;
+    });
+
+    it("should cover duplicate scope array in suspense (pending promise reuse)", async () => {
+      let loaderCalls = 0;
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async () => {
+          loaderCalls++;
+          return { val: "ok" };
+        }
+      });
+
+      let promise: any;
+      function Comp() {
+        try {
+          useTranslation(["dupNs", "dupNs"] as any, { suspense: true });
+        } catch (p) {
+          promise = p;
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+
+      expect(promise).toBeDefined();
+      await promise;
+      expect(loaderCalls).toBe(1);
+    });
+
+    it("should cover partially loaded array scope in suspense (continue branch)", async () => {
+      const translator = initLocL({
+        resources: {
+          en: {
+            preloadedNs: { title: "Preloaded" }
+          }
+        },
+        fallbackLanguage: "en",
+        loader: async () => ({ title: "Async" })
+      });
+
+      let promise: any;
+      function Comp() {
+        try {
+          useTranslation(["preloadedNs", "unloadedNs"] as any, { suspense: true });
+        } catch (p) {
+          promise = p;
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+
+      expect(promise).toBeDefined();
+      await promise;
+    });
+
+    it("should cover null rejection and undefined scope error formatting in suspense", async () => {
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async () => {
+          throw null;
+        }
+      });
+
+      // undefined scope with null rejection (re-throws non-promise error to outer test)
+      let rootPromise: any;
+      function NullRootComp() {
+        try {
+          useTranslation(undefined, { suspense: true });
+        } catch (p: any) {
+          if (p && typeof p.then === "function") {
+            rootPromise = p;
+          } else {
+            throw p;
+          }
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <NullRootComp />
+        </LocLProvider>
+      );
+      expect(rootPromise).toBeDefined();
+      await rootPromise;
+
+      expect(() =>
+        renderToStaticMarkup(
+          <LocLProvider translator={translator}>
+            <NullRootComp />
+          </LocLProvider>
+        )
+      ).toThrow('[LocL] Failed to load translations for "en".');
+
+      // named scope with null rejection (re-throws non-promise error to outer test)
+      let namedPromise: any;
+      function NullNamedComp() {
+        try {
+          useTranslation("nullScope" as any, { suspense: true });
+        } catch (p: any) {
+          if (p && typeof p.then === "function") {
+            namedPromise = p;
+          } else {
+            throw p;
+          }
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <NullNamedComp />
+        </LocLProvider>
+      );
+      expect(namedPromise).toBeDefined();
+      await namedPromise;
+
+      expect(() =>
+        renderToStaticMarkup(
+          <LocLProvider translator={translator}>
+            <NullNamedComp />
+          </LocLProvider>
+        )
+      ).toThrow('[LocL] Failed to load translations for "en" ("nullScope").');
+    });
+
+    it("should cover translator without rootInstance in suspendUntilLoaded", async () => {
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async () => ({ ok: true })
+      });
+
+      // Delete rootInstance so (translator as any).rootInstance is undefined,
+      // exercising the fallback `?? translator` branch in suspendUntilLoaded
+      delete (translator as any).rootInstance;
+      expect((translator as any).rootInstance).toBeUndefined();
+
+      let promise: any;
+      function Comp() {
+        try {
+          useTranslation("noRootScope" as any, { suspense: true });
+        } catch (p) {
+          promise = p;
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+
+      expect(promise).toBeDefined();
+      expect(typeof promise.then).toBe("function");
+      await promise;
+    });
+
+    it("should cover load promise settling when state is no longer pending in WeakMap", async () => {
+      const translator = initLocL({
+        resources: { en: {} },
+        fallbackLanguage: "en",
+        loader: async () => ({ text: "ok" })
+      });
+
+      let capturedLoads: Map<string, any> | undefined;
+      const originalGet = WeakMap.prototype.get;
+      const originalSet = WeakMap.prototype.set;
+      const getSpy = jest.spyOn(WeakMap.prototype, "get").mockImplementation(function (this: any, key: any) {
+        const result = originalGet.call(this, key);
+        if (result instanceof Map && (key === translator || key === (translator as any).rootInstance)) {
+          capturedLoads = result;
+        }
+        return result;
+      });
+      const setSpy = jest.spyOn(WeakMap.prototype, "set").mockImplementation(function (this: any, key: any, val: any) {
+        if (val instanceof Map && (key === translator || key === (translator as any).rootInstance)) {
+          capturedLoads = val;
+        }
+        return originalSet.call(this, key, val);
+      });
+
+      let promise: any;
+      function Comp() {
+        try {
+          useTranslation("interceptNs" as any, { suspense: true });
+        } catch (p) {
+          promise = p;
+        }
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+      getSpy.mockRestore();
+      setSpy.mockRestore();
+
+      expect(capturedLoads).toBeDefined();
+      // Change status from "pending" to "failed" so that when load resolves, it does not match "pending"
+      capturedLoads!.set("en::interceptNs", { status: "failed", error: new Error(), failedAt: Date.now() });
+
+      await promise;
+    });
+
+    it("should cover pendingScopes.length === 0 in useEffect when scopes are loaded before effect runs", () => {
+      const translator = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+      let isLoadedCallCount = 0;
+      jest.spyOn(translator, "isLoaded").mockImplementation(() => {
+        isLoadedCallCount++;
+        return isLoadedCallCount > 1;
+      });
+
+      jest.spyOn(React, "useEffect").mockImplementation((cb) => cb());
+
+      function Comp() {
+        useTranslation("syncLoadedScope" as any);
+        return null;
+      }
+
+      renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Comp />
+        </LocLProvider>
+      );
+
+      (translator.isLoaded as any).mockRestore();
+      (React.useEffect as any).mockRestore();
+    });
+  });
 });

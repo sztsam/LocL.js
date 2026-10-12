@@ -403,6 +403,9 @@ var LocL = class _LocL {
   async resolveBundle(raw, namespace) {
     let data = raw;
     if (typeof Response !== "undefined" && data instanceof Response) {
+      if (!data.ok) {
+        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
+      }
       data = await data.json();
     }
     if (typeof data === "string") {
@@ -446,26 +449,28 @@ var LocL = class _LocL {
       throw new Error(`[LocL] No loader configured to load translations for "${lang}"${namespace ? ` ("${namespace}")` : ""}.`);
     }
     const loadPromise = (async () => {
-      try {
-        const raw = await loader(lang, namespace);
-        const bundle = await this.resolveBundle(raw, namespace);
-        if (namespace) {
-          const nested = {};
-          namespace.split(".").reduce((acc, k, i, arr) => {
-            acc[k] = i === arr.length - 1 ? bundle : {};
-            return acc[k];
-          }, nested);
-          this.addResources(lang, nested);
-          this.loadedNamespaces.add(key);
-        } else {
-          this.addResources(lang, bundle);
-          this.loadedLanguages.add(lang);
-        }
-      } finally {
-        this.loadingPromises.delete(key);
+      const raw = await loader(lang, namespace);
+      const bundle = await this.resolveBundle(raw, namespace);
+      if (namespace) {
+        const nested = {};
+        namespace.split(".").reduce((acc, k, i, arr) => {
+          acc[k] = i === arr.length - 1 ? bundle : {};
+          return acc[k];
+        }, nested);
+        this.addResources(lang, nested);
+        this.loadedNamespaces.add(key);
+      } else {
+        this.addResources(lang, bundle);
+        this.loadedLanguages.add(lang);
       }
     })();
     this.loadingPromises.set(key, loadPromise);
+    const settled = () => {
+      if (this.loadingPromises.get(key) === loadPromise) {
+        this.loadingPromises.delete(key);
+      }
+    };
+    loadPromise.then(settled, settled);
     return loadPromise;
   }
   loadLanguage(lang, loader) {
@@ -619,7 +624,7 @@ var LocL = class _LocL {
     if (typeof rawStr !== "string") {
       return [rawStr];
     }
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
     const result = [];
     let lastIndex = 0;
     let match;
@@ -627,10 +632,17 @@ var LocL = class _LocL {
       if (match.index > lastIndex) {
         result.push(rawStr.slice(lastIndex, match.index));
       }
-      const tagName = match[1];
-      const content = match[2];
+      const isSelfClosing = match[3] !== void 0;
+      const tagName = isSelfClosing ? match[3] : match[1];
+      const content = isSelfClosing ? "" : match[2];
       const renderer = tags[tagName];
-      typeof renderer === "function" ? result.push(renderer(content)) : result.push(match[0]);
+      if (typeof renderer === "function") {
+        result.push(renderer(content));
+      } else if (renderer !== void 0) {
+        result.push(String(renderer));
+      } else {
+        result.push(match[0]);
+      }
       lastIndex = match.index + match[0].length;
     }
     if (lastIndex < rawStr.length) {
@@ -840,26 +852,19 @@ var LocL = class _LocL {
     }
     return void 0;
   }
-  interpolate(result, values) {
-    if (typeof result !== "string") {
-      return result;
-    }
-    result = this.pseudoOptions?.enabled ? this.applyPseudoLocalization(result) : result;
-    if (!values) {
-      return result;
-    }
+  getTokens(text) {
     const tokens = [];
     let depth = 0, start = -1;
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] === "{") {
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "{") {
         if (depth === 0) {
           start = i;
         }
         depth++;
-      } else if (result[i] === "}") {
+      } else if (text[i] === "}") {
         depth--;
         if (depth === 0 && start >= 0) {
-          const raw = result.slice(start, i + 1);
+          const raw = text.slice(start, i + 1);
           let inner = raw.slice(1, -1);
           if (inner.startsWith("{") && inner.endsWith("}")) {
             inner = inner.slice(1, -1);
@@ -869,6 +874,69 @@ var LocL = class _LocL {
         }
       }
     }
+    return tokens;
+  }
+  resolveIcuSelect(template, values) {
+    let result = template;
+    let hasSelect = true;
+    let iterations = 0;
+    while (hasSelect && iterations < 10) {
+      iterations++;
+      hasSelect = false;
+      const tokens = this.getTokens(result);
+      for (const token of tokens) {
+        const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+        if (selectMatch) {
+          hasSelect = true;
+          const field = selectMatch[1].trim();
+          const casesBody = selectMatch[2];
+          const value = values ? String(values[field] ?? "other") : "other";
+          const caseMap = {};
+          let i = 0;
+          while (i < casesBody.length) {
+            while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
+            if (i >= casesBody.length) break;
+            let keyStart = i;
+            while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
+            const caseKey = casesBody.slice(keyStart, i).trim();
+            while (i < casesBody.length && casesBody[i] !== "{") i++;
+            if (casesBody[i] === "{") {
+              let bodyDepth = 1;
+              let bodyStart = i + 1;
+              i++;
+              while (i < casesBody.length && bodyDepth > 0) {
+                if (casesBody[i] === "{") bodyDepth++;
+                else if (casesBody[i] === "}") bodyDepth--;
+                i++;
+              }
+              const caseText = casesBody.slice(bodyStart, i - 1).trim();
+              if (caseKey) {
+                caseMap[caseKey] = caseText;
+              }
+            }
+          }
+          const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
+          result = result.split(token.raw).join(rawReplacement);
+          break;
+        }
+      }
+    }
+    return result;
+  }
+  interpolate(result, values) {
+    if (typeof result !== "string") {
+      return result;
+    }
+    if (/,[\t ]*select[\t ]*,/.test(result)) {
+      result = this.resolveIcuSelect(result, values);
+    }
+    if (this.pseudoOptions?.enabled) {
+      result = this.applyPseudoLocalization(result);
+    }
+    if (!values) {
+      return result;
+    }
+    const tokens = this.getTokens(result);
     let output = result;
     const processed = /* @__PURE__ */ new Set();
     for (const token of tokens) {
@@ -877,76 +945,43 @@ var LocL = class _LocL {
       }
       processed.add(token.raw);
       let replacement = "";
-      const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
-      if (selectMatch) {
-        const field = selectMatch[1].trim();
-        const casesBody = selectMatch[2];
-        const value = String(values[field] ?? "other");
-        const caseMap = {};
-        let i = 0;
-        while (i < casesBody.length) {
-          while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
-          if (i >= casesBody.length) break;
-          let keyStart = i;
-          while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
-          const caseKey = casesBody.slice(keyStart, i).trim();
-          while (i < casesBody.length && casesBody[i] !== "{") i++;
-          if (casesBody[i] === "{") {
-            let bodyDepth = 1;
-            let bodyStart = i + 1;
-            i++;
-            while (i < casesBody.length && bodyDepth > 0) {
-              if (casesBody[i] === "{") bodyDepth++;
-              else if (casesBody[i] === "}") bodyDepth--;
-              i++;
+      const pipeParts = token.inner.split("|").map((x) => x.trim());
+      const fieldName = pipeParts[0];
+      const formattersList = pipeParts.slice(1);
+      const val = values[fieldName];
+      if (formattersList.length > 0) {
+        let currentVal = val;
+        let missingFormatter = false;
+        for (const segment of formattersList) {
+          const colonIdx = segment.indexOf(":");
+          let formatterName = segment;
+          let args = [];
+          if (colonIdx !== -1) {
+            formatterName = segment.slice(0, colonIdx).trim();
+            args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
+          } else {
+            formatterName = segment.trim();
+          }
+          const formatterFn = this.formatters?.[formatterName];
+          if (formatterFn) {
+            currentVal = formatterFn(currentVal, args);
+          } else {
+            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
+            if (val === void 0) {
+              currentVal = token.raw;
+              missingFormatter = true;
+              break;
             }
-            const caseText = casesBody.slice(bodyStart, i - 1).trim();
-            if (caseKey) {
-              caseMap[caseKey] = caseText;
-            }
+            currentVal = currentVal !== void 0 ? String(currentVal) : token.raw;
           }
         }
-        const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
-        replacement = rawReplacement.includes("{") ? this.interpolate(rawReplacement, values) : rawReplacement;
+        replacement = missingFormatter ? String(currentVal) : currentVal !== void 0 ? String(currentVal) : token.raw;
+      } else if (val instanceof Date) {
+        replacement = new Intl.DateTimeFormat(this.language).format(val);
+      } else if (typeof val === "number") {
+        replacement = new Intl.NumberFormat(this.language).format(val);
       } else {
-        const pipeParts = token.inner.split("|").map((x) => x.trim());
-        const fieldName = pipeParts[0];
-        const formattersList = pipeParts.slice(1);
-        const val = values[fieldName];
-        if (formattersList.length > 0) {
-          let currentVal = val;
-          let missingFormatter = false;
-          for (const segment of formattersList) {
-            const colonIdx = segment.indexOf(":");
-            let formatterName = segment;
-            let args = [];
-            if (colonIdx !== -1) {
-              formatterName = segment.slice(0, colonIdx).trim();
-              args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
-            } else {
-              formatterName = segment.trim();
-            }
-            const formatterFn = this.formatters?.[formatterName];
-            if (formatterFn) {
-              currentVal = formatterFn(currentVal, args);
-            } else {
-              this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-              if (val === void 0) {
-                currentVal = token.raw;
-                missingFormatter = true;
-                break;
-              }
-              currentVal = currentVal !== void 0 ? String(currentVal) : token.raw;
-            }
-          }
-          replacement = missingFormatter ? String(currentVal) : currentVal !== void 0 ? String(currentVal) : token.raw;
-        } else if (val instanceof Date) {
-          replacement = new Intl.DateTimeFormat(this.language).format(val);
-        } else if (typeof val === "number") {
-          replacement = new Intl.NumberFormat(this.language).format(val);
-        } else {
-          replacement = val !== void 0 ? String(val) : token.raw;
-        }
+        replacement = val !== void 0 ? String(val) : token.raw;
       }
       output = output.split(token.raw).join(replacement);
     }
@@ -964,7 +999,7 @@ var LocL = class _LocL {
     const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
     const suffix = this.pseudoOptions?.suffix ?? " !!!]";
     const useAccents = this.pseudoOptions?.accents !== false;
-    const tokenRegex = /(<[a-zA-Z0-9_-]+>[\s\S]*?<\/[a-zA-Z0-9_-]+>|{[^{}]+})/g;
+    const tokenRegex = /(<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?>|<\/[a-zA-Z0-9_-]+>|<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?\/>|{{[^{}]+}}|{[^{}]+})/g;
     const parts = text.split(tokenRegex);
     const transformed = parts.map((part) => {
       if (part.startsWith("<") || part.startsWith("{")) {

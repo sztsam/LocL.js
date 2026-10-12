@@ -41,7 +41,7 @@ export type DefaultFallback<T = DefaultResources> = LocLRegister extends { trans
 export const LocLContext = createContext<LocL<any, any, any, any, any> | null>(null);
 
 /* =========================================================================
- * Shared Internals
+ * Shared Internals & Suspense Cache
  * ========================================================================= */
 
 export type TranslatorApi<
@@ -93,6 +93,69 @@ function toResult<
   };
 }
 
+const SUSPENSE_FAILURE_TTL_MS = 2000;
+type SuspenseLoadState =
+  | { status: "pending"; promise: Promise<void> }
+  | { status: "failed"; error: unknown; failedAt: number };
+const suspenseLoads = new WeakMap<object, Map<string, SuspenseLoadState>>();
+
+function suspendUntilLoaded(
+  translator: LocL<any, any, any, any, any>,
+  language: string,
+  scopes: (string | undefined)[],
+  loader: ResourceLoader | undefined
+): never {
+  const root: object = (translator as any).rootInstance ?? translator;
+  let loads = suspenseLoads.get(root);
+  if (!loads) {
+    loads = new Map();
+    suspenseLoads.set(root, loads);
+  }
+
+  for (const s of scopes) {
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "failed") {
+      if (Date.now() - state.failedAt < SUSPENSE_FAILURE_TTL_MS) {
+        throw state.error;
+      }
+      loads.delete(key);
+    }
+  }
+
+  const promises: Promise<void>[] = [];
+  for (const s of scopes) {
+    if (translator.isLoaded(language, s)) { continue; }
+
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "pending") {
+      promises.push(state.promise);
+      continue;
+    }
+
+    const loadPromise = translator.load(language, s, loader).then(
+      () => {
+        if (loads!.get(key)?.status === "pending") {
+          loads!.delete(key);
+        }
+      },
+      (error: unknown) => {
+        loads!.set(key, {
+          status: "failed",
+          error: error ?? new Error(`[LocL] Failed to load translations for "${language}"${s ? ` ("${s}")` : ""}.`),
+          failedAt: Date.now()
+        });
+      }
+    );
+
+    loads.set(key, { status: "pending", promise: loadPromise });
+    promises.push(loadPromise);
+  }
+
+  throw Promise.all(promises);
+}
+
 function useScopedTranslation<
   T extends Record<string, any>,
   Fallback extends keyof T & string,
@@ -105,20 +168,26 @@ function useScopedTranslation<
   const { translator, language } = base;
 
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-  const scopeStr = typeof scope === "string" ? scope : undefined;
+  const scopes: (string | undefined)[] = Array.isArray(scope)
+    ? scope
+    : (typeof scope === "string" ? [scope] : [undefined]);
 
-  const isReady = translator.isLoaded(language, scopeStr);
+  const isReady = scopes.every((s) => translator.isLoaded(language, s));
+
   if (!isReady && options?.suspense) {
-    throw translator.load(language, scopeStr, options.loader);
+    suspendUntilLoaded(translator, language, scopes, options.loader);
   }
 
   useEffect(() => {
     if (!isReady && !options?.suspense) {
-      translator.load(language, scopeStr, options?.loader).catch((err: any) => {
-        console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
-      });
+      const pendingScopes = scopes.filter((s) => !translator.isLoaded(language, s));
+      if (pendingScopes.length > 0) {
+        Promise.all(pendingScopes.map((s) => translator.load(language, s, options?.loader))).catch((err: any) => {
+          console.error(`[LocL] Failed to load translations for "${scopeKey}":`, err);
+        });
+      }
     }
-  }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
+  }, [translator, language, scopeKey, isReady, options?.loader, options?.suspense]);
 
   const scopedTranslator = useMemo(() => {
     return (scope !== undefined ? translator.withConfig({ scope } as any) : translator) as LocL<T, Fallback, S, any, any>;

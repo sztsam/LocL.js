@@ -97,7 +97,7 @@ interface I18nextCompat<
   addResourceBundle(lng: string, ns: string, resources: any, deep?: boolean, overwrite?: boolean): void;
   hasResourceBundle(lng: string, ns: string): boolean;
   getResourceBundle(lng: string, ns: string): any;
-  loadNamespaces(ns: string | string[], callback?: () => void): Promise<void>;
+  loadNamespaces(ns: string | string[], callback?: (err?: any) => void): Promise<void>;
   translator: LocL<T, Fallback, any, any, any>;
 }
 
@@ -118,7 +118,9 @@ export function toI18next<
   };
 
   translator.subscribe((newLang, prevLang) => {
-    emit("languageChanged", newLang, prevLang);
+    if (newLang !== prevLang) {
+      emit("languageChanged", newLang, prevLang);
+    }
   });
 
   const tFunction = (key: string, arg1?: any, arg2?: any): string => {
@@ -246,11 +248,16 @@ export function toI18next<
       return langObj?.[ns];
     },
 
-    async loadNamespaces(ns: string | string[], callback?: () => void): Promise<void> {
+    async loadNamespaces(ns: string | string[], callback?: (err?: any) => void): Promise<void> {
       const list = Array.isArray(ns) ? ns : [ns];
       const currentLang = translator.getLanguage();
-      await Promise.all(list.map((n) => translator.load(currentLang, n)));
-      callback?.();
+      try {
+        await Promise.all(list.map((n) => translator.load(currentLang, n)));
+        callback?.(null);
+      } catch (err) {
+        callback?.(err);
+        throw err;
+      }
     }
   };
 

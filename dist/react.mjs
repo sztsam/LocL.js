@@ -124,21 +124,73 @@ function toResult(translator) {
     ...bindApi(translator)
   };
 }
+var SUSPENSE_FAILURE_TTL_MS = 2e3;
+var suspenseLoads = /* @__PURE__ */ new WeakMap();
+function suspendUntilLoaded(translator, language, scopes, loader) {
+  const root = translator.rootInstance ?? translator;
+  let loads = suspenseLoads.get(root);
+  if (!loads) {
+    loads = /* @__PURE__ */ new Map();
+    suspenseLoads.set(root, loads);
+  }
+  for (const s of scopes) {
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "failed") {
+      if (Date.now() - state.failedAt < SUSPENSE_FAILURE_TTL_MS) {
+        throw state.error;
+      }
+      loads.delete(key);
+    }
+  }
+  const promises = [];
+  for (const s of scopes) {
+    if (translator.isLoaded(language, s)) {
+      continue;
+    }
+    const key = `${language}::${s ?? "*"}`;
+    const state = loads.get(key);
+    if (state && state.status === "pending") {
+      promises.push(state.promise);
+      continue;
+    }
+    const loadPromise = translator.load(language, s, loader).then(
+      () => {
+        if (loads.get(key)?.status === "pending") {
+          loads.delete(key);
+        }
+      },
+      (error) => {
+        loads.set(key, {
+          status: "failed",
+          error: error ?? new Error(`[LocL] Failed to load translations for "${language}"${s ? ` ("${s}")` : ""}.`),
+          failedAt: Date.now()
+        });
+      }
+    );
+    loads.set(key, { status: "pending", promise: loadPromise });
+    promises.push(loadPromise);
+  }
+  throw Promise.all(promises);
+}
 function useScopedTranslation(base, scope, options) {
   const { translator, language } = base;
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-  const scopeStr = typeof scope === "string" ? scope : void 0;
-  const isReady = translator.isLoaded(language, scopeStr);
+  const scopes = Array.isArray(scope) ? scope : typeof scope === "string" ? [scope] : [void 0];
+  const isReady = scopes.every((s) => translator.isLoaded(language, s));
   if (!isReady && options?.suspense) {
-    throw translator.load(language, scopeStr, options.loader);
+    suspendUntilLoaded(translator, language, scopes, options.loader);
   }
   useEffect(() => {
     if (!isReady && !options?.suspense) {
-      translator.load(language, scopeStr, options?.loader).catch((err) => {
-        console.error(`[LocL] Failed to load translations for "${scopeStr}":`, err);
-      });
+      const pendingScopes = scopes.filter((s) => !translator.isLoaded(language, s));
+      if (pendingScopes.length > 0) {
+        Promise.all(pendingScopes.map((s) => translator.load(language, s, options?.loader))).catch((err) => {
+          console.error(`[LocL] Failed to load translations for "${scopeKey}":`, err);
+        });
+      }
     }
-  }, [translator, language, scopeStr, isReady, options?.loader, options?.suspense]);
+  }, [translator, language, scopeKey, isReady, options?.loader, options?.suspense]);
   const scopedTranslator = useMemo2(() => {
     return scope !== void 0 ? translator.withConfig({ scope }) : translator;
   }, [translator, scopeKey]);

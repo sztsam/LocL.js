@@ -7,7 +7,7 @@ import { ScopeType, Formatter, LangWithPlurals, EnforceParity } from "./types.js
  *
  * @example
  * ```ts
- * import { LangWithPlurals } from "lang-pack";
+ * import { LangWithPlurals } from "locl-js";
  *
  * const en: LangWithPlurals<typeof en> = {
  *   messages: {

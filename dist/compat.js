@@ -36,7 +36,9 @@ function toI18next(translator) {
     });
   };
   translator.subscribe((newLang, prevLang) => {
-    emit("languageChanged", newLang, prevLang);
+    if (newLang !== prevLang) {
+      emit("languageChanged", newLang, prevLang);
+    }
   });
   const tFunction = (key, arg1, arg2) => {
     let defaultValue;
@@ -134,8 +136,13 @@ function toI18next(translator) {
     async loadNamespaces(ns, callback) {
       const list = Array.isArray(ns) ? ns : [ns];
       const currentLang = translator.getLanguage();
-      await Promise.all(list.map((n) => translator.load(currentLang, n)));
-      callback?.();
+      try {
+        await Promise.all(list.map((n) => translator.load(currentLang, n)));
+        callback?.(null);
+      } catch (err) {
+        callback?.(err);
+        throw err;
+      }
     }
   };
   return compat;

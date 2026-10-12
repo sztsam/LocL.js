@@ -1,4 +1,4 @@
-import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as ParamsFor, d as PathValue, e as PluralParamsFor, f as InterpolationOptions } from './LocL-CwO1VWe5.mjs';
+import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as ParamsFor, d as PathValue, e as PluralParamsFor, f as InterpolationOptions } from './LocL-CywjdTt7.mjs';
 import { DefaultResources, DefaultFallback } from './react.mjs';
 import 'react';
 
@@ -45,7 +45,7 @@ interface I18nextCompat<T extends Record<string, any> = DefaultResources, Fallba
     addResourceBundle(lng: string, ns: string, resources: any, deep?: boolean, overwrite?: boolean): void;
     hasResourceBundle(lng: string, ns: string): boolean;
     getResourceBundle(lng: string, ns: string): any;
-    loadNamespaces(ns: string | string[], callback?: () => void): Promise<void>;
+    loadNamespaces(ns: string | string[], callback?: (err?: any) => void): Promise<void>;
     translator: LocL<T, Fallback, any, any, any>;
 }
 declare function toI18next<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>>(translator: LocL<T, Fallback, any, any, any>): I18nextCompat<T, Fallback>;
