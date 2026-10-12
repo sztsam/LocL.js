@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, e as PluralParamsFor, I as IsEmptyParams, c as ParamsFor, d as PathValue, f as InterpolationOptions, a as LocL, g as Language, R as ResourceLoader, h as Scope } from './LocL-CywjdTt7.mjs';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, e as PluralParamsFor, I as IsEmptyParams, c as ParamsFor, d as PathValue, f as InterpolationOptions, a as LocL, g as Language, R as ResourceLoader, h as Scope } from './LocL-CywjdTt7.cjs';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = K extends PluralKeys<S, T, Fallback> ? PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>> : IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;

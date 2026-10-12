@@ -1,5 +1,5 @@
-import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as ParamsFor, d as PathValue, e as PluralParamsFor, f as InterpolationOptions } from './LocL-CywjdTt7.mjs';
-import { DefaultResources, DefaultFallback } from './react.mjs';
+import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as ParamsFor, d as PathValue, e as PluralParamsFor, f as InterpolationOptions } from './LocL-CywjdTt7.cjs';
+import { DefaultResources, DefaultFallback } from './react.cjs';
 import 'react';
 
 type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}` ? `${NS}.${Rest}` : K;

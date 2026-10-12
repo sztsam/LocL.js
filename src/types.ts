@@ -1,4 +1,4 @@
-import type { DefaultFormatters } from "./formatters";
+import type { DefaultFormatters } from "./formatters.js";
 
 /* =========================================================================
  * Path & Key Resolution Types (Internal & Package Core)
