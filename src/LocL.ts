@@ -909,7 +909,7 @@ export class LocL<
     const useAccents = this.pseudoOptions?.accents !== false;
 
     // Isolate opening tags, closing tags, self-closing tags, and variable tokens
-    const tokenRegex = /(<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?>|<\/[a-zA-Z0-9_-]+>|<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?\/>|{{[^{}]+}}|{[^{}]+})/g;
+    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
     const parts = text.split(tokenRegex);
 
     const transformed = parts.map((part) => {

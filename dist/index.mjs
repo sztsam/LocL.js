@@ -970,7 +970,7 @@ var LocL = class _LocL {
     const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
     const suffix = this.pseudoOptions?.suffix ?? " !!!]";
     const useAccents = this.pseudoOptions?.accents !== false;
-    const tokenRegex = /(<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?>|<\/[a-zA-Z0-9_-]+>|<[a-zA-Z0-9_-]+(?:\s+[^>]*?)?\/>|{{[^{}]+}}|{[^{}]+})/g;
+    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
     const parts = text.split(tokenRegex);
     const transformed = parts.map((part) => {
       if (part.startsWith("<") || part.startsWith("{")) {
