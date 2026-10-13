@@ -58,6 +58,9 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.language).toBe("en");
     expect(i18n.languages).toEqual(["en", "es"]);
 
+    expect(i18n.dir()).toBe("ltr");
+    expect(i18n.dir("ar")).toBe("rtl");
+
     const events: string[] = [];
     const unsubscribe = i18n.on("languageChanged", (lang) => {
       events.push(lang);
@@ -228,7 +231,7 @@ describe("i18next Compatibility Adapter", () => {
 
     await i18n.changeLanguage("es");
     expect(i18n.language).toBe("es");
-    expect(i18n.t("greeting" as any)).toBe("Hola from es");
+    expect(i18n.t("greeting" as any,)).toBe("Hola from es");
 
     // 2. loadNamespaces with single string and array
     let singleLoaded = false;

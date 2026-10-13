@@ -143,7 +143,10 @@ function bindApi(translator) {
     rich: translator.rich.bind(translator),
     format: translator.format.bind(translator),
     get: translator.get.bind(translator),
-    getObj: translator.getObj.bind(translator)
+    getObj: translator.getObj.bind(translator),
+    getDirection: translator.getDirection.bind(translator),
+    isRTL: translator.isRTL.bind(translator),
+    getMetadata: translator.getMetadata.bind(translator)
   };
 }
 function useTranslatorSubscription(translator) {
@@ -160,6 +163,7 @@ function toResult(translator) {
     language: translator.getLanguage(),
     changeLanguage: (lang) => translator.changeLanguage(lang),
     getLanguage: () => translator.getLanguage(),
+    direction: translator.getDirection(),
     ...bindApi(translator)
   };
 }

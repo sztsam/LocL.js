@@ -16,7 +16,8 @@ const resources = defineResources({
     user: {
       greeting: "Greetings from user namespace!",
       same: "same"
-    }
+    },
+    other: {}
   },
   de: {
     title: "Hallo Welt",
@@ -29,7 +30,8 @@ const resources = defineResources({
     user: {
       greeting: "Grüße aus dem Benutzer-Namespace!",
       same: "same"
-    }
+    },
+    other: {}
   }
 });
 
@@ -235,7 +237,7 @@ describe("React Integration", () => {
         getLanguage: () => "en",
       });
       function CompWithLang() {
-        useLocL(mockWithLang as any);
+        useLocL(mockWithLang);
         return <span>lang</span>;
       }
       renderToStaticMarkup(<CompWithLang />);
@@ -246,7 +248,7 @@ describe("React Integration", () => {
         getLanguage: () => "",
       });
       function CompWithEmptyLang() {
-        useLocL(mockWithEmptyLang as any);
+        useLocL(mockWithEmptyLang);
         return <span>empty</span>;
       }
       renderToStaticMarkup(<CompWithEmptyLang />);
@@ -254,10 +256,10 @@ describe("React Integration", () => {
       // 3. getLanguage is undefined (evaluates optional chain undefined -> "")
       const mockWithUndefinedLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
-        getLanguage: () => undefined as any,
+        getLanguage: () => undefined,
       });
       function CompWithUndefinedLang() {
-        useLocL(mockWithUndefinedLang as any);
+        useLocL(mockWithUndefinedLang);
         return <span>no-lang</span>;
       }
       renderToStaticMarkup(<CompWithUndefinedLang />);
@@ -502,21 +504,21 @@ describe("React Integration", () => {
         getVersion: undefined,
         getLanguage: () => "en",
       });
-      renderToStaticMarkup(<Trans translator={mockWithLang as any} i18nKey="title" />);
+      renderToStaticMarkup(<Trans translator={mockWithLang} i18nKey="title" />);
 
       // 2. activeTranslator without getVersion, getLanguage returns ""
       const mockWithEmptyLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => "",
       });
-      renderToStaticMarkup(<Trans translator={mockWithEmptyLang as any} i18nKey="title" />);
+      renderToStaticMarkup(<Trans translator={mockWithEmptyLang} i18nKey="title" />);
 
       // 3. activeTranslator without getVersion, getLanguage undefined
       const mockWithoutGetLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: undefined,
       });
-      renderToStaticMarkup(<Trans translator={mockWithoutGetLang as any} i18nKey="title" />);
+      renderToStaticMarkup(<Trans translator={mockWithoutGetLang} i18nKey="title" />);
 
       expect(snapshots).toEqual(["en", "", ""]);
       (React.useSyncExternalStore as any).mockRestore();
@@ -533,7 +535,7 @@ describe("React Integration", () => {
 
       // Trans with array scope
       const htmlArrScope = renderToStaticMarkup(
-        <Trans translator={translator} scope={["other", "user"] as any} i18nKey="user.greeting" />
+        <Trans translator={translator} scope={["user", "other"]} i18nKey="user.greeting" />
       );
       expect(htmlArrScope).toBe("Greetings from user namespace!");
 
@@ -562,7 +564,7 @@ describe("React Integration", () => {
       // Test unsubscribe guard when subscribe returns a non-function
       const dummyTranslator = {
         ...translator,
-        subscribe: () => undefined as any,
+        subscribe: () => undefined,
         getLanguage: () => "en",
         t: () => "Test",
         get: () => "Test"

@@ -1,6 +1,6 @@
 {
   "name": "locl-js",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Modern TypeScript internationalization (i18n) library with type-safety, performance, and backend usability",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",
@@ -56,7 +56,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "jest"
+    "test": "jest --coverage"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
@@ -72,7 +72,8 @@
     "typescript": "^5.9.3"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "i18n",

@@ -67,10 +67,12 @@ describe('initLocL', () => {
     // Placeholder if value missing
     // @ts-expect-error
     expect(translator.t('greeting')).toBe('Hello, {name}!');
-    // Date interpolation
+    // Date interpolation (first call creates cache entry, second hits cache)
     expect(translator.t('date_fmt', { d: new Date() })).toContain('/');
-    // Number interpolation
+    expect(translator.t('date_fmt', { d: new Date() })).toContain('/');
+    // Number interpolation (first call creates cache entry, second hits cache)
     expect(translator.t('num_fmt', { n: 123 })).toContain('123');
+    expect(translator.t('num_fmt', { n: 456 })).toContain('456');
     // Formatter interpolation
     expect(translator.t('formatted', { v: 'world' })).toBe('Upper: WORLD');
   });
@@ -151,7 +153,7 @@ describe('initLocL', () => {
     expect(translator.t('greeting', { name: 'Welt' })).toBe('Hallo, Welt!');
   });
 
-  it('should handle scopes and buildTranslationObject variations', () => {
+  it('should handle scopes and buildScopedTranslationObject variations', () => {
     // Array scope
     const translator = initLocL({
       resources,
@@ -194,7 +196,7 @@ describe('initLocL', () => {
     warnSpy.mockRestore();
   });
 
-  it('should handle findTranslation and lookupWithFallback branches', () => {
+  it('should handle findNestedValue and lookupKeyWithFallback branches', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: 'en',
@@ -232,6 +234,19 @@ describe('initLocL', () => {
     // @ts-ignore
     expect((p1).getObj).toBeDefined();
 
+    // Proxy getDirection, isRTL, and getMetadata
+    expect(p1.getDirection()).toBe('ltr');
+    expect(p1.getDirection('ar')).toBe('rtl');
+    expect(p1.isRTL()).toBe(false);
+    expect(p1.isRTL('ar')).toBe(true);
+    expect(p1.getMetadata()).toEqual({ language: 'hu', direction: 'ltr', isRTL: false });
+    expect(p1.getMetadata('ar')).toEqual({ language: 'ar', direction: 'rtl', isRTL: true });
+
+    // Proxy WITHOUT language exercises `?? target.language` fallback
+    const pNoLang = translator.withConfig({ scope: 'nested' });
+    expect(pNoLang.isRTL()).toBe(false);
+    expect(pNoLang.getMetadata()).toEqual({ language: 'en', direction: 'ltr', isRTL: false });
+
     // makeReadOnly traps
     const res = translator.get();
     // @ts-ignore
@@ -250,7 +265,7 @@ describe('initLocL', () => {
       fallbackLanguage: 'en',
     });
 
-    const proxy = translator.withConfig({ scope: 'nested' as any });
+    const proxy = translator.withConfig({ scope: 'nested' });
     // Direct property access
     expect((proxy as any).rootInstance).toBe(translator);
     // Chained withConfig access (calls this.rootInstance internally)
@@ -266,7 +281,7 @@ describe('initLocL', () => {
     });
     expect(receivedLang).toBe('de');
     expect(typeof unsub).toBe('function');
-    unsub(); // calls the return () => {}
+    unsub();
 
     // catch block when fixed language subscriber throws
     const errSpy = jest.spyOn(console, 'error').mockImplementation();
@@ -280,20 +295,45 @@ describe('initLocL', () => {
     errSpy.mockRestore();
   });
 
-  it('should handle isLanguage and checkPlural branches', () => {
+  it('should handle validateSupportedLanguage and resolvePluralKey branches', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: 'en',
     });
     // @ts-ignore
-    expect(translator.isLanguage('en-US')).toBe('en');
+    expect(translator.validateSupportedLanguage('en-US')).toBe('en');
 
     // @ts-ignore
-    expect(translator.isLanguage('')).toBe(null);
+    expect(translator.validateSupportedLanguage('')).toBe(null);
 
-    // checkPlural trigger via t()
     // @ts-ignore
     expect(translator.t('apples', { count: 1 })).toBe('one apple');
+
+    // Direction & RTL utilities
+    expect(translator.getDirection()).toBe('ltr');
+    expect(translator.getDirection('')).toBe('ltr');
+    expect(translator.isRTL()).toBe(false);
+    expect(translator.isRTL('ar')).toBe(true);
+    expect(translator.getMetadata()).toEqual({ language: 'en', direction: 'ltr', isRTL: false });
+    expect(translator.getMetadata('ar')).toEqual({ language: 'ar', direction: 'rtl', isRTL: true });
+
+    // Fallback subtag and script heuristics when Intl.Locale is bypassed/throws
+    const mockLocale = jest.spyOn(Intl, 'Locale').mockImplementation((tag) => {
+      if (tag === 'ar') return { getTextInfo: () => ({ direction: 'rtl' }) } as any;
+      if (tag === 'en') return { textInfo: { direction: 'ltr' } } as any;
+      if (tag === 'und') return { textInfo: { direction: 'unknown' } } as any; // Exercises else path on if (info && ...)
+      throw new Error('Fallback to subtag parsing');
+    });
+
+    expect(translator.getDirection('ar')).toBe('rtl');
+    expect(translator.getDirection('en')).toBe('ltr');
+    expect(translator.getDirection('und')).toBe('ltr');
+    expect(translator.getDirection('az-Arab')).toBe('rtl');
+    expect(translator.getDirection('az-Latn')).toBe('ltr');
+    expect(translator.getDirection('fa')).toBe('rtl');
+    expect(translator.getDirection('fr')).toBe('ltr');
+
+    mockLocale.mockRestore();
   });
 
   it('should apply custom formatters and handle missing ones', () => {
@@ -323,27 +363,27 @@ describe('initLocL', () => {
     warnSpy.mockRestore();
   });
 
-  it('should cover findTranslation early returns', () => {
+  it('should cover findNestedValue early returns', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: 'en',
     });
 
     // @ts-ignore
-    expect(translator.findTranslation(['a'], null)).toBeUndefined();
+    expect(translator.findNestedValue(['a'], null)).toBeUndefined();
 
     // @ts-ignore
-    expect(translator.findTranslation(['a'], 'string')).toBeUndefined();
+    expect(translator.findNestedValue(['a'], 'string')).toBeUndefined();
 
     // @ts-ignore
-    expect(translator.findTranslation(['missing'], {})).toBeUndefined();
+    expect(translator.findNestedValue(['missing'], {})).toBeUndefined();
 
-    // findTranslation loops - reached via empty array
+    // findNestedValue loops - reached via empty array
     // @ts-ignore
-    expect(translator.findTranslation([], { a: 1 })).toEqual({ a: 1 });
+    expect(translator.findNestedValue([], { a: 1 })).toEqual({ a: 1 });
   });
 
-  it('should cover applyFormat missing formatter warning', () => {
+  it('should cover applyNamedFormatter missing formatter warning', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: 'en',
@@ -374,6 +414,13 @@ describe('initLocL', () => {
     expect(translator.t('select', { gender: 'female' })).toBe('She is a person.');
     expect(translator.t('select', { gender: 'other' })).toBe('They is a person.');
     expect(translator.t('select', { gender: 'unknown' })).toBe('They is a person.');
+  
+    // Unmatched closing brace (depth === 0)
+    const tUnmatched = initLocL({
+      resources: { en: { unmatched: 'Hello } World' } },
+      fallbackLanguage: 'en'
+    });
+    expect(tUnmatched.t('unmatched')).toBe('Hello } World');
   });
 
   it("should export LocL class", () => {
@@ -414,13 +461,13 @@ describe('initLocL', () => {
     // New language not previously present
     translator.addResource("fr", "welcome", "Bienvenue");
     expect(translator.tt("welcome")).toBe("welcome"); // in en
-    translator.changeLanguage("fr" as any);
+    translator.changeLanguage("fr");
     expect(translator.getLanguage()).toBe("fr");
     expect(translator.tt("welcome")).toBe("Bienvenue");
 
     // Deep dotted path creation in new language
     translator.addResource("it", "a.b.c", "Profondo");
-    translator.changeLanguage("it" as any);
+    translator.changeLanguage("it");
     expect(translator.tt("a.b.c")).toBe("Profondo");
 
     // Prototype pollution guards
@@ -489,26 +536,30 @@ describe('initLocL', () => {
     });
 
     // Array scope in withConfig
-    const proxy = translator.withConfig({ scope: ["nested.a"] as any, language: "de" });
+    const proxy = translator.withConfig({ scope: ["nested.a"], language: "de" });
     expect((proxy as any).language).toBe("de");
     expect((proxy as any).scope).toEqual(["nested.a"]);
 
     // withConfig with scope property access
-    const proxy2 = translator.withConfig({ scope: "nested" as any });
+    const proxy2 = translator.withConfig({ scope: "nested" });
     expect((proxy2 as any).scope).toBe("nested");
   });
 
   it("should cover clone with default language and custom scope", () => {
     const translator = initLocL({ resources: getResources(), fallbackLanguage: "en" });
-    const cloned = translator.clone(undefined, "nested" as any);
+    const cloned = translator.clone(undefined, "nested");
     expect(cloned.getLanguage()).toBe("en");
     expect(cloned.get("a.b")).toBe("Nested value");
+
+    // Default arguments
+    const clonedDefault = translator.clone();
+    expect(clonedDefault.getLanguage()).toBe("en");
   });
 
-  it("should cover isLanguage returning null for unrecognized language and prefix", () => {
+  it("should cover validateSupportedLanguage returning null for unrecognized language and prefix", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
     // @ts-ignore
-    expect(translator.isLanguage("xx-YY")).toBeNull();
+    expect(translator.validateSupportedLanguage("xx-YY")).toBeNull();
     // changeLanguage with invalid language does nothing
     // @ts-ignore
     translator.changeLanguage("xx-YY");
@@ -532,9 +583,28 @@ describe('initLocL', () => {
       }
     });
     expect(tCustomOnly.format("test", "custom")).toBe("custom:test");
+
+    // autoSyncDocument: false
+    const tNoSync = initLocL({
+      resources,
+      fallbackLanguage: "en",
+      autoSyncDocument: false
+    });
+    expect(tNoSync).toBeDefined();
+
+    // Browser document synchronization when document is defined
+    const mockElement = { setAttribute: jest.fn() };
+    (global as any).document = { documentElement: mockElement };
+    const tSync = initLocL({ resources, fallbackLanguage: "en" });
+    expect(mockElement.setAttribute).toHaveBeenCalledWith("dir", "ltr");
+    expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "en");
+
+    tSync.changeLanguage("de");
+    expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "de");
+    delete (global as any).document;
   });
 
-  it("should cover buildTranslationObject non-string non-array scope warning and caching", () => {
+  it("should cover buildScopedTranslationObject non-string non-array scope warning and caching", () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
     const translator = initLocL({
       resources,
@@ -565,7 +635,7 @@ describe('initLocL', () => {
     warnSpy.mockRestore();
   });
 
-  it("should cover buildTranslationObject array scope with empty or missing entries", () => {
+  it("should cover buildScopedTranslationObject array scope with empty or missing entries", () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: "en",
@@ -577,15 +647,19 @@ describe('initLocL', () => {
     expect(translator.get("nested.a.b")).toBe("Nested value");
   });
 
-  it("should cover zero plurals in checkPlural for both object and suffix plurals", () => {
+  it("should cover zero and exact plurals in resolvePluralKey for both object and suffix plurals", () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
     const translator = initLocL({
       resources: {
         en: {
           zeroObj: { zero: "No items", one: "1 item", other: "{count} items" },
+          exactObj: { "=0": "Zero exact items", "=1": "One exact item", other: "{count} items" },
           zeroSuffix_zero: "Zero apples",
           zeroSuffix_one: "1 apple",
           zeroSuffix_other: "{count} apples",
+          "exactSuffix_=0": "Zero exact suffix",
+          "exactSuffix_=1": "One exact suffix",
+          exactSuffix_other: "{count} suffix items",
           suffixOnlyOther_other: "{count} cars"
         }
       },
@@ -595,15 +669,25 @@ describe('initLocL', () => {
 
     // Object plural zero
     expect(translator.t("zeroObj", { count: 0 })).toBe("No items");
-    expect(translator.plural("zeroObj" as any, { count: 0 })).toBe("No items");
+    expect(translator.plural("zeroObj", { count: 0 })).toBe("No items");
+
+    // Object plural exact values (=0, =1)
+    expect(translator.t("exactObj", { count: 0 })).toBe("Zero exact items");
+    expect(translator.t("exactObj", { count: 1 })).toBe("One exact item");
+    expect(translator.plural("exactObj", { count: 0 })).toBe("Zero exact items");
 
     // Suffix plural zero (with explicit _zero)
     expect(translator.t("zeroSuffix", { count: 0 })).toBe("Zero apples");
-    expect(translator.plural("zeroSuffix" as any, { count: 0 })).toBe("Zero apples");
+    expect(translator.plural("zeroSuffix", { count: 0 })).toBe("Zero apples");
+
+    // Suffix plural exact values (_=0, _=1)
+    expect(translator.t("exactSuffix", { count: 0 })).toBe("Zero exact suffix");
+    expect(translator.t("exactSuffix", { count: 1 })).toBe("One exact suffix");
+    expect(translator.plural("exactSuffix", { count: 0 })).toBe("Zero exact suffix");
 
     // Suffix plural zero (without explicit _zero -> falls back to other)
     expect(translator.t("suffixOnlyOther", { count: 0 })).toBe("0 cars");
-    expect(translator.plural("suffixOnlyOther" as any, { count: 0 })).toBe("0 cars");
+    expect(translator.plural("suffixOnlyOther", { count: 0 })).toBe("0 cars");
     warnSpy.mockRestore();
   });
 
@@ -622,7 +706,7 @@ describe('initLocL', () => {
     });
 
     // Non-string key returns array with value
-    const nonStr = translator.rich("nested" as any, {});
+    const nonStr = translator.rich("nested", {});
     expect(nonStr).toHaveLength(1);
     expect(typeof nonStr[0]).toBe("object");
 
@@ -643,7 +727,7 @@ describe('initLocL', () => {
 
     // Defined non-function renderer in rich() (exercises renderer !== undefined branch)
     const nfChunks = translator.rich("nonFuncTag", {
-      bold: "BOLDED" as any
+      bold: "BOLDED"
     });
     expect(nfChunks.join("")).toBe("Hello BOLDED");
   });
@@ -713,7 +797,7 @@ describe('initLocL', () => {
     warnSpy.mockRestore();
   });
 
-  it("should cover findTranslation returning undefined when intermediate property is null", () => {
+  it("should cover findNestedValue returning undefined when intermediate property is null", () => {
     const translator = initLocL({
       resources: { en: { a: null, leaf: "val" } },
       fallbackLanguage: "en"
@@ -733,6 +817,10 @@ describe('initLocL', () => {
   it("should cover useCache: false with string scope and array scope", () => {
     const tStr = initLocL({ resources, fallbackLanguage: "en", useCache: false, scope: "nested" });
     expect(tStr.get("a.b")).toBe("Nested value");
+    
+    // Exercises evaluateTemplate when useCache: false
+    const tNoCache = initLocL({ resources, fallbackLanguage: "en", useCache: false });
+    expect(tNoCache.t("greeting", { name: "World" })).toBe("Hello, World!");
 
     const tArr = initLocL({ resources, fallbackLanguage: "en", useCache: false, scope: ["nested"] });
     expect(tArr.get("nested.a.b")).toBe("Nested value");
@@ -762,7 +850,7 @@ describe('initLocL', () => {
     ]);
 
     // 2-letter prefix fallback without hyphen/underscore
-    expect((translator as any).isLanguage("enUS")).toBe("en");
+    expect((translator as any).validateSupportedLanguage("enUS")).toBe("en");
   });
 
   it("should cover pseudo-localization constructor, toggling, and options", () => {
@@ -881,7 +969,7 @@ describe("defineResources / defineStrictResources", () => {
 });
 
 describe("LocL Loader & Async Resolution", () => {
-  it("should cover resolveBundle for all supported bundle types", async () => {
+  it("should cover resolveRawBundle for all supported bundle types", async () => {
     const translator = initLocL({
       resources: { en: {} },
       fallbackLanguage: "en"
@@ -934,7 +1022,7 @@ describe("LocL Loader & Async Resolution", () => {
     expect(translator.tt("fromRes.text")).toBe("From Resources");
 
     // 6. Non-object / array fallback
-    await translator.load("en", "fromArray", async () => [1, 2, 3] as any);
+    await translator.load("en", "fromArray", async () => [1, 2, 3]);
     expect(translator.isLoaded("en", "fromArray")).toBe(true);
   });
 

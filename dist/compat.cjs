@@ -93,6 +93,9 @@ function toI18next(translator) {
     get languages() {
       return Object.keys(translator.resources ?? {});
     },
+    dir(lng) {
+      return translator.getDirection(lng);
+    },
     async changeLanguage(lng, callback) {
       try {
         if (typeof translator.isLoaded === "function" && typeof translator.load === "function" && !translator.isLoaded(lng)) {
@@ -123,7 +126,7 @@ function toI18next(translator) {
     addResources(lng, ns, resources) {
       translator.addResources(lng, { [ns]: resources });
     },
-    addResourceBundle(lng, ns, resources) {
+    addResourceBundle(lng, ns, resources, deep, overwrite) {
       translator.addResources(lng, { [ns]: resources });
     },
     hasResourceBundle(lng, ns) {

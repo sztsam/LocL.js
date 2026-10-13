@@ -130,10 +130,10 @@ declare const defaultFormatters: {
 };
 
 type NestedKeyOf<ObjectType extends object, Depth extends number = 8, UsedDepth extends any[] = []> = UsedDepth['length'] extends Depth ? never : {
-    [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[] ? `${Key}` : ObjectType[Key] extends object ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key], Depth, [...UsedDepth, any]>}` : `${Key}`;
+    [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[] ? `${Key}` : ObjectType[Key] extends object ? IsPluralObject<ObjectType[Key]> extends true ? `${Key}` : `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key], Depth, [...UsedDepth, any]>}` : `${Key}`;
 }[keyof ObjectType & (string | number)];
 type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean = false, Depth extends number = 8, UsedDepth extends any[] = []> = UsedDepth['length'] extends Depth ? never : {
-    [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any> ? SkipArrays extends true ? never : `${Key}` | `${Key}.${number}` : ObjectType[Key] extends object ? `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays, Depth, [...UsedDepth, any]>}` : never;
+    [Key in keyof ObjectType & string]: ObjectType[Key] extends Array<any> ? SkipArrays extends true ? never : `${Key}` | `${Key}.${number}` : ObjectType[Key] extends object ? IsPluralObject<ObjectType[Key]> extends true ? never : `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays, Depth, [...UsedDepth, any]>}` : never;
 }[keyof ObjectType & string];
 type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}` ? Key extends keyof T ? PathValue<T[Key], Rest> : Key extends `${infer N extends number}` ? N extends keyof T ? PathValue<T[N], Rest> : never : never : P extends keyof T ? T[P] : P extends `${infer N extends number}` ? N extends keyof T ? T[N] : never : never;
 type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends ((k: infer I) => void) ? I : never;
@@ -170,25 +170,28 @@ type ExtractInterpolationParams<T extends string> = string extends T ? {
 type Simplify<T> = {
     [K in keyof T]: T[K];
 };
+type Direction = "ltr" | "rtl";
 type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
+type ExactPluralForms = `=${number}`;
+type PluralKeyForms = PluralForms | ExactPluralForms;
 type IsPluralObject<V> = [
     V
-] extends [object] ? [keyof V] extends [never] ? false : [keyof V] extends [PluralForms] ? true : false : false;
+] extends [object] ? [keyof V] extends [never] ? false : [keyof V] extends [PluralKeyForms] ? true : false : false;
+type ParamUnion<T> = [keyof T] extends [never] ? never : T;
+type ExtractPluralObjectParamsUnion<T> = {
+    [K in keyof T]: T[K] extends string ? ParamUnion<ExtractInterpolationParams<T[K]>> : never;
+}[keyof T];
 type ExtractPluralObjectParams<T> = [
     T
-] extends [never] ? never : T extends Partial<Record<PluralForms, string>> ? Simplify<{
+] extends [never] ? never : T extends Record<string, any> ? Simplify<{
     count: number;
-} & UnionToIntersection<{
-    [K in keyof T]: T[K] extends string ? ExtractInterpolationParams<T[K]> : {};
-}[keyof T]>> : never;
-type SuffixParam<T, P extends string> = [
-    PathValue<T, P>
-] extends [never] ? {} : PathValue<T, P> extends string ? ExtractInterpolationParams<PathValue<T, P>> : {};
+} & ([UnionToIntersection<ExtractPluralObjectParamsUnion<T>>] extends [never] ? {} : UnionToIntersection<ExtractPluralObjectParamsUnion<T>>)> : never;
+type ExtractSuffixParamsUnion<Base extends string, T> = {
+    [K in keyof T & string]: K extends `${Base}_${PluralKeyForms}` ? T[K] extends string ? ParamUnion<ExtractInterpolationParams<T[K]>> : never : never;
+}[keyof T & string];
 type ExtractSuffixPluralParams<Base extends string, T> = Simplify<{
     count: number;
-} & UnionToIntersection<{
-    [P in PluralForms]: SuffixParam<T, `${Base}_${P}`>;
-}[PluralForms]>>;
+} & ([UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>] extends [never] ? {} : UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>)>;
 type PluralParamsFor<K extends string, T> = string extends K ? {
     count: number;
 } & InterpolationOptions : string extends keyof T ? {
@@ -200,7 +203,7 @@ type IsEmptyParams<P> = [
 ] extends [never] ? true : string extends keyof P ? true : false;
 type PluralKeys<S extends ScopeType<T, F>, T extends Record<string, any>, F extends keyof T & string> = string extends keyof Translations<S, T, F> ? string : ExtractPluralKeys<Translations<S, T, F>>;
 type ExtractPluralKeys<T, Path extends string = "", Depth extends any[] = []> = Depth['length'] extends 16 ? never : T extends object ? {
-    [K in keyof T & string]: (K extends `${infer Base}_${PluralForms}` ? Path extends "" ? Base : `${Path}.${Base}` : never) | (T[K] extends object ? IsPluralObject<T[K]> extends true ? Path extends "" ? K : `${Path}.${K}` : ExtractPluralKeys<T[K], Path extends "" ? K : `${Path}.${K}`, [...Depth, 1]> : never);
+    [K in keyof T & string]: (K extends `${infer Base}_${PluralKeyForms}` ? Path extends "" ? Base : `${Path}.${Base}` : never) | (T[K] extends object ? IsPluralObject<T[K]> extends true ? Path extends "" ? K : `${Path}.${K}` : ExtractPluralKeys<T[K], Path extends "" ? K : `${Path}.${K}`, [...Depth, 1]> : never);
 }[keyof T & string] : never;
 interface InterpolationOptions {
     [key: string]: string | number | Date | boolean | undefined;
@@ -212,7 +215,12 @@ interface FormatOptions<F extends Record<string, Formatter>, UseDefaultFormatter
 }
 type Formatter<TArgs extends unknown[] = string[]> = (value: any, args?: TArgs) => string;
 type EffectiveFormatters<F extends Record<string, Formatter>, UseDefault extends boolean> = UseDefault extends true ? F & DefaultFormatters : F;
-type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>) => void;
+interface LocaleMetadata {
+    language: string;
+    direction: Direction;
+    isRTL: boolean;
+}
+type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>, metadata: LocaleMetadata) => void;
 type Unsubscribe = () => void;
 type TagFormatter<T = any> = (content: string) => T;
 type TagInterpolationOptions<T = any> = Record<string, TagFormatter<T> | string | number | Date | boolean | undefined>;
@@ -248,16 +256,16 @@ type RequiredPlural = "one" | "other";
 type OptionalPlural = Exclude<PluralForms, RequiredPlural>;
 type ObjectPlural = {
     [K in RequiredPlural]: string;
-} & Partial<Record<OptionalPlural, string>>;
+} & Partial<Record<OptionalPlural, string>> & Partial<Record<ExactPluralForms, string>>;
 type Primitive = string | number | boolean | null | undefined;
 type StrKey<T> = Extract<keyof T, string | number>;
 type PluralObjectKeys<T> = {
-    [K in StrKey<T>]: T[K] extends object ? Extract<keyof T[K], PluralForms> extends never ? never : K : never;
+    [K in StrKey<T>]: T[K] extends object ? Extract<keyof T[K], PluralKeyForms> extends never ? never : K : never;
 }[StrKey<T>];
-type SuffixKey<T> = Extract<StrKey<T>, `${string}_${PluralForms}`>;
-type SuffixBaseUnion<T> = SuffixKey<T> extends `${infer B}_${PluralForms}` ? B : never;
+type SuffixKey<T> = Extract<StrKey<T>, `${string}_${PluralKeyForms}`>;
+type SuffixBaseUnion<T> = SuffixKey<T> extends `${infer B}_${PluralKeyForms}` ? B : never;
 type NamespaceKeys<T> = {
-    [K in StrKey<T>]: T[K] extends object ? Extract<keyof T[K], PluralForms> extends never ? K : never : never;
+    [K in StrKey<T>]: T[K] extends object ? Extract<keyof T[K], PluralKeyForms> extends never ? K : never : never;
 }[StrKey<T>];
 type PlainStringKeys<T> = {
     [K in StrKey<T>]: K extends SuffixKey<T> ? never : T[K] extends string ? K : never;
@@ -288,6 +296,8 @@ type LangWithPlurals<T> = T extends Primitive ? T : T extends (infer U)[] ? Lang
 } & {
     [B in SuffixBaseUnion<T> as `${B}_${OptionalPlural}`]?: string;
 } & {
+    [B in SuffixBaseUnion<T> as `${B}_${ExactPluralForms}`]?: string;
+} & {
     [K in PlainStringKeys<T>]: T[K];
 } & {
     [K in Exclude<StrKey<T>, NamespaceKeys<T> | PluralObjectKeys<T> | PlainStringKeys<T> | SuffixKey<T>>]: T[K];
@@ -314,12 +324,14 @@ interface LocLConfig<T extends Record<string, any>, Fallback extends keyof T & s
     useDefaultFormatters?: boolean;
     /** Enables warnings for missing keys and scopes. Defaults to `false`. */
     devMode?: boolean;
-    /** Enables caching of scopes and proxies. Defaults to `true`. */
+    /** Enables caching of scopes, proxies, and compiled templates. Defaults to `true`. */
     useCache?: boolean;
     /** Default async loader function for lazy loading namespaces */
     loader?: ResourceLoader;
     /** Built-in Pseudo-Localization for enterprise layout & QA testing */
     pseudoLocalization?: boolean | PseudoLocalizationOptions;
+    /** Automatically syncs document.documentElement dir and lang attributes in browser environments. Defaults to `true`. */
+    autoSyncDocument?: boolean;
 }
 /**
  * The main class for handling translations.
@@ -339,8 +351,11 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private scope?;
     private formatters;
     private cache;
+    private templateCache;
     private proxyCache;
     private pluralRulesCache;
+    private dateTimeFormatCache;
+    private numberFormatCache;
     private subscribers;
     private loader?;
     private loadedNamespaces;
@@ -391,6 +406,9 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      */
     getLanguage(): Language<T>;
     getVersion(): number;
+    getDirection(lang?: string): Direction;
+    isRTL(lang?: string): boolean;
+    getMetadata(lang?: string): LocaleMetadata;
     /**
      * Generates a BCP 47 hierarchical fallback chain:
      * e.g. "de-AT-Vienna" -> ["de-AT-Vienna", "de-AT", "de", "en"]
@@ -400,10 +418,6 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * Checks if an entire language or specific namespace is loaded.
      */
     isLoaded(lang?: string, namespace?: string): boolean;
-    /**
-     * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
-     */
-    private resolveBundle;
     /**
      * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
      * Supports both monolithic files and modular namespaces.
@@ -499,22 +513,28 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * Configures or toggles pseudo-localization at runtime.
      */
     setPseudoLocalization(options: boolean | PseudoLocalizationOptions): void;
-    private isLanguage;
-    private getCacheKey;
-    private invalidateCacheForLang;
-    private lookupWithFallback;
-    private buildTranslationObject;
-    private findTranslation;
+    private evaluateTemplate;
+    private compileTemplateIntoChunks;
+    private evaluateVariableChunk;
+    private evaluateSelectChunk;
+    private parseSelectCases;
+    private resolvePluralKey;
+    private validateSupportedLanguage;
+    private buildLanguageScopeCacheKey;
+    private invalidateCacheForLanguage;
+    private lookupKeyWithFallback;
+    private buildScopedTranslationObject;
+    private findNestedValue;
     private getPluralRules;
-    private checkPlural;
-    private getTokens;
-    private resolveIcuSelect;
-    private interpolate;
-    private applyFormat;
+    private getDateTimeFormat;
+    private getNumberFormat;
+    private applyNamedFormatter;
     private applyPseudoLocalization;
-    private makeReadOnly;
+    private syncBrowserDocumentAttributes;
     private notifySubscribers;
+    private resolveRawBundle;
+    private makeReadOnly;
     private isUnsafeObjectKey;
 }
 
-export { type EnforceParity as E, type Formatter as F, type IsEmptyParams as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type ParamsFor as c, type PathValue as d, type PluralParamsFor as e, type InterpolationOptions as f, type Language as g, type Scope as h };
+export { type Direction as D, type EnforceParity as E, type Formatter as F, type IsEmptyParams as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type InterpolationOptions as c, type PluralParamsFor as d, type ParamsFor as e, type PathValue as f, type Language as g, type Scope as h };

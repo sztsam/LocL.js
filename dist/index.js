@@ -158,7 +158,7 @@ var defaultFormatters = {
 };
 
 // src/LocL.ts
-var PSEUDO_MAP = {
+var PSEUDO_ACCENT_MAP = {
   a: "\xE1",
   b: "\u1E05",
   c: "\xE7",
@@ -212,6 +212,42 @@ var PSEUDO_MAP = {
   Y: "\xDD",
   Z: "\u017D"
 };
+var RTL_SCRIPT_SUBTAGS = /* @__PURE__ */ new Set([
+  "arab",
+  "hebr",
+  "syrc",
+  "samr",
+  "mand",
+  "thaa",
+  "mend",
+  "nkoo",
+  "adlm",
+  "rohg",
+  "yezi"
+]);
+var RTL_PRIMARY_LANGUAGES = /* @__PURE__ */ new Set([
+  "ar",
+  "arc",
+  "bcc",
+  "bqi",
+  "ckb",
+  "dv",
+  "fa",
+  "glk",
+  "he",
+  "iw",
+  "khw",
+  "ks",
+  "ku",
+  "mzn",
+  "pnb",
+  "ps",
+  "sd",
+  "ug",
+  "ur",
+  "yi",
+  "ji"
+]);
 var LocL = class _LocL {
   /**
    * Creates a new LocL instance.
@@ -220,8 +256,11 @@ var LocL = class _LocL {
   constructor(config) {
     this.rootInstance = this;
     this.cache = /* @__PURE__ */ new Map();
+    this.templateCache = /* @__PURE__ */ new Map();
     this.proxyCache = /* @__PURE__ */ new WeakMap();
     this.pluralRulesCache = /* @__PURE__ */ new Map();
+    this.dateTimeFormatCache = /* @__PURE__ */ new Map();
+    this.numberFormatCache = /* @__PURE__ */ new Map();
     this.subscribers = /* @__PURE__ */ new Set();
     this.loadedNamespaces = /* @__PURE__ */ new Set();
     this.loadedLanguages = /* @__PURE__ */ new Set();
@@ -237,15 +276,17 @@ var LocL = class _LocL {
       useDefaultFormatters: true,
       devMode: false,
       useCache: true,
+      autoSyncDocument: true,
       ...config
     };
     this.resources = { ...config.resources };
-    this.language = this.isLanguage(config.language) ?? config.fallbackLanguage;
+    this.language = this.validateSupportedLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
     this.scope = config.scope;
     this.loader = config.loader;
     config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
     this.formatters = this.config.useDefaultFormatters ? { ...defaultFormatters, ...config.formatters ?? {} } : { ...config.formatters ?? {} };
+    this.syncBrowserDocumentAttributes();
   }
   /**
    * Creates a new proxy translator instance with a different configuration.
@@ -273,10 +314,22 @@ var LocL = class _LocL {
         if (prop === "rootInstance") {
           return target;
         }
+        if (prop === "getLanguage") {
+          return () => config.language ?? target.language;
+        }
+        if (prop === "getDirection") {
+          return (lang) => target.getDirection(lang ?? config.language ?? target.language);
+        }
+        if (prop === "isRTL") {
+          return (lang) => target.isRTL(lang ?? config.language ?? target.language);
+        }
+        if (prop === "getMetadata") {
+          return (lang) => target.getMetadata(lang ?? config.language ?? target.language);
+        }
         if (prop === "subscribe" && config.language !== void 0) {
           return (listener) => {
             try {
-              listener(config.language, config.language);
+              listener(config.language, config.language, target.getMetadata(config.language));
             } catch (err) {
               console.error("[LocL] Error in subscriber:", err);
             }
@@ -316,7 +369,7 @@ var LocL = class _LocL {
   subscribe(listener) {
     this.subscribers.add(listener);
     try {
-      listener(this.language, this.language);
+      listener(this.language, this.language, this.getMetadata());
     } catch (err) {
       console.error("[LocL] Error in initial subscriber call:", err);
     }
@@ -332,6 +385,38 @@ var LocL = class _LocL {
   }
   getVersion() {
     return this.version;
+  }
+  getDirection(lang = this.language) {
+    if (!lang) {
+      return "ltr";
+    }
+    try {
+      const locale = new Intl.Locale(lang);
+      const info = typeof locale.getTextInfo === "function" ? locale.getTextInfo() : locale.textInfo;
+      if (info && (info.direction === "rtl" || info.direction === "ltr")) {
+        return info.direction;
+      }
+    } catch {
+    }
+    const normalized = lang.toLowerCase().replace(/_/g, "-");
+    const parts = normalized.split("-");
+    const primary = parts[0];
+    const script = parts.find((p) => p.length === 4);
+    if (script) {
+      return RTL_SCRIPT_SUBTAGS.has(script) ? "rtl" : "ltr";
+    }
+    return RTL_PRIMARY_LANGUAGES.has(primary) ? "rtl" : "ltr";
+  }
+  isRTL(lang = this.language) {
+    return this.getDirection(lang) === "rtl";
+  }
+  getMetadata(lang = this.language) {
+    const dir = this.getDirection(lang);
+    return {
+      language: lang,
+      direction: dir,
+      isRTL: dir === "rtl"
+    };
   }
   /**
    * Generates a BCP 47 hierarchical fallback chain:
@@ -359,7 +444,9 @@ var LocL = class _LocL {
   isLoaded(lang = this.language, namespace) {
     if (namespace) {
       const key = `${lang}::${namespace}`;
-      if (this.loadedNamespaces.has(key)) return true;
+      if (this.loadedNamespaces.has(key)) {
+        return true;
+      }
       const langObj = this.resources[lang];
       if (langObj && typeof langObj === "object") {
         return namespace.split(".").reduce((acc, k) => acc?.[k], langObj) !== void 0;
@@ -367,42 +454,6 @@ var LocL = class _LocL {
       return false;
     }
     return this.loadedLanguages.has(lang) || Object.keys(this.resources[lang] ?? {}).length > 0;
-  }
-  /**
-   * Resolves raw data from JSON, TS/JS modules, functions, or fetch Responses into a clean dictionary object.
-   */
-  async resolveBundle(raw, namespace) {
-    let data = raw;
-    if (typeof Response !== "undefined" && data instanceof Response) {
-      if (!data.ok) {
-        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
-      }
-      data = await data.json();
-    }
-    if (typeof data === "string") {
-      try {
-        data = JSON.parse(data);
-      } catch {
-      }
-    }
-    if (data && typeof data === "object" && "default" in data) {
-      data = data.default;
-    }
-    if (typeof data === "function") {
-      data = await data();
-    }
-    if (data && typeof data === "object" && namespace && !(namespace in data)) {
-      if (typeof data.translations === "object") {
-        data = data.translations;
-      } else if (typeof data.messages === "object") {
-        data = data.messages;
-      } else if (typeof data.resources === "object") {
-        data = data.resources;
-      }
-    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
-      data = data[namespace];
-    }
-    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
   }
   /**
    * Loads a full language file (e.g. `de.json`) or a namespace (e.g. `de/dashboard.json`).
@@ -421,7 +472,7 @@ var LocL = class _LocL {
     }
     const loadPromise = (async () => {
       const raw = await loader(lang, namespace);
-      const bundle = await this.resolveBundle(raw, namespace);
+      const bundle = await this.resolveRawBundle(raw, namespace);
       if (namespace) {
         const nested = {};
         namespace.split(".").reduce((acc, k, i, arr) => {
@@ -477,7 +528,7 @@ var LocL = class _LocL {
     }
     const lastKey = keys[keys.length - 1];
     current[lastKey] = value;
-    this.invalidateCacheForLang(lang);
+    this.invalidateCacheForLanguage(lang);
     this.version++;
     this.notifySubscribers();
   }
@@ -510,7 +561,7 @@ var LocL = class _LocL {
       }
     };
     deepMerge(this.resources[lang], bundle);
-    this.invalidateCacheForLang(lang);
+    this.invalidateCacheForLanguage(lang);
     this.version++;
     this.notifySubscribers();
     return this;
@@ -520,14 +571,16 @@ var LocL = class _LocL {
    * @param lang - The new language to set.
    */
   changeLanguage(lang) {
-    const validated = this.isLanguage(lang);
+    const validated = this.validateSupportedLanguage(lang);
     if (validated && validated !== this.language) {
       const prev = this.language;
       this.language = validated;
       this.version++;
+      this.syncBrowserDocumentAttributes();
+      const meta = this.getMetadata(this.language);
       for (const sub of this.subscribers) {
         try {
-          sub(this.language, prev);
+          sub(this.language, prev, meta);
         } catch (err) {
           console.error("[LocL] Error in subscriber:", err);
         }
@@ -538,17 +591,17 @@ var LocL = class _LocL {
     if (!key) {
       return this.get();
     }
-    const pluralCheckResult = this.checkPlural(key, values);
-    if (pluralCheckResult !== void 0) {
+    const pluralResult = this.resolvePluralKey(key, values);
+    if (pluralResult !== void 0) {
       if (format && format.formatter) {
-        return this.applyFormat(pluralCheckResult, format.formatter, format.args);
+        return this.applyNamedFormatter(pluralResult, format.formatter, format.args);
       }
-      return pluralCheckResult;
+      return pluralResult;
     }
-    const result = this.lookupWithFallback(key);
-    const interpolated = this.interpolate(result, values) ?? key;
+    const rawTranslation = this.lookupKeyWithFallback(key);
+    const interpolated = this.evaluateTemplate(rawTranslation, values) ?? key;
     if (format && format.formatter) {
-      return this.applyFormat(interpolated, format.formatter, format.args);
+      return this.applyNamedFormatter(interpolated, format.formatter, format.args);
     }
     return interpolated;
   }
@@ -571,7 +624,7 @@ var LocL = class _LocL {
    * @returns The formatted string.
    */
   format(value, formatter, args) {
-    return this.applyFormat(value, formatter, args);
+    return this.applyNamedFormatter(value, formatter, args);
   }
   plural(key, values, format) {
     return this.t(key, values, format);
@@ -622,11 +675,11 @@ var LocL = class _LocL {
     return result;
   }
   get(key) {
-    const base = this.buildTranslationObject(this.language);
+    const base = this.buildScopedTranslationObject(this.language);
     if (!key) {
       return base ? this.makeReadOnly(base) : void 0;
     }
-    const val = this.lookupWithFallback(key, base);
+    const val = this.lookupKeyWithFallback(key, base);
     return val && typeof val === "object" ? this.makeReadOnly(val) : val;
   }
   /**
@@ -648,10 +701,216 @@ var LocL = class _LocL {
       this.pseudoOptions = options.enabled !== false ? { enabled: true, ...options } : void 0;
     }
     this.cache.clear();
+    this.templateCache.clear();
     this.version++;
     this.notifySubscribers();
   }
-  isLanguage(value) {
+  /* =========================================================================
+   * Fast Template Compilation & Evaluation Engine & Plural Resolution
+   * ========================================================================= */
+  evaluateTemplate(template, values) {
+    if (typeof template !== "string") {
+      return template;
+    }
+    const cacheKey = this.pseudoOptions?.enabled ? `pseudo::${template}` : `raw::${template}`;
+    let chunks = this.templateCache.get(cacheKey);
+    if (!chunks) {
+      chunks = this.compileTemplateIntoChunks(template);
+      if (this.config.useCache) {
+        this.templateCache.set(cacheKey, chunks);
+      }
+    }
+    if (chunks.length === 1 && chunks[0].type === "lit") {
+      return chunks[0].value;
+    }
+    let output = "";
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      if (chunk.type === "lit") {
+        output += chunk.value;
+      } else if (chunk.type === "var") {
+        output += this.evaluateVariableChunk(chunk, values);
+      } else if (chunk.type === "select") {
+        output += this.evaluateSelectChunk(chunk, values);
+      }
+    }
+    return output;
+  }
+  compileTemplateIntoChunks(template) {
+    let text = template;
+    if (this.pseudoOptions?.enabled) {
+      text = this.applyPseudoLocalization(text);
+    }
+    const chunks = [];
+    let lastIndex = 0;
+    let depth = 0;
+    let start = -1;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === "{") {
+        if (depth === 0) {
+          if (i > lastIndex) {
+            chunks.push({ type: "lit", value: text.slice(lastIndex, i) });
+          }
+          start = i;
+        }
+        depth++;
+      } else if (text[i] === "}") {
+        if (depth > 0) {
+          depth--;
+          if (depth === 0 && start >= 0) {
+            const raw = text.slice(start, i + 1);
+            let inner = raw.slice(1, -1);
+            if (inner.startsWith("{") && inner.endsWith("}")) {
+              inner = inner.slice(1, -1);
+            }
+            const selectMatch = inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
+            if (selectMatch) {
+              const field = selectMatch[1].trim();
+              const cases = this.parseSelectCases(selectMatch[2]);
+              chunks.push({ type: "select", field, cases });
+            } else {
+              const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
+              const formatters = pipeParts.map((segment) => {
+                const colonIdx = segment.indexOf(":");
+                return colonIdx === -1 ? { name: segment.trim(), args: [] } : { name: segment.slice(0, colonIdx).trim(), args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim()) };
+              });
+              chunks.push({ type: "var", name, raw, formatters });
+            }
+            lastIndex = i + 1;
+            start = -1;
+          }
+        }
+      }
+    }
+    if (lastIndex < text.length) {
+      chunks.push({ type: "lit", value: text.slice(lastIndex) });
+    }
+    return chunks;
+  }
+  evaluateVariableChunk(chunk, values) {
+    if (!values) {
+      return chunk.raw;
+    }
+    let val = values[chunk.name];
+    if (val === void 0) {
+      return chunk.raw;
+    }
+    if (chunk.formatters.length > 0) {
+      for (const fmt of chunk.formatters) {
+        const fn = this.formatters?.[fmt.name];
+        if (fn) {
+          val = fn(val, fmt.args);
+        } else {
+          this.config.devMode && console.warn(`[LocL] Formatter "${fmt.name}" not found.`);
+        }
+      }
+      return val !== void 0 ? String(val) : chunk.raw;
+    }
+    if (val instanceof Date) {
+      return this.getDateTimeFormat(this.language).format(val);
+    }
+    if (typeof val === "number") {
+      return this.getNumberFormat(this.language).format(val);
+    }
+    return String(val);
+  }
+  evaluateSelectChunk(chunk, values) {
+    const val = values ? String(values[chunk.field] ?? "other") : "other";
+    const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values) : caseText;
+  }
+  parseSelectCases(casesBody) {
+    const cases = {};
+    let i = 0;
+    while (i < casesBody.length) {
+      while (i < casesBody.length && /\s/.test(casesBody[i])) {
+        i++;
+      }
+      if (i >= casesBody.length) {
+        break;
+      }
+      let keyStart = i;
+      while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) {
+        i++;
+      }
+      const caseKey = casesBody.slice(keyStart, i).trim();
+      while (i < casesBody.length && casesBody[i] !== "{") {
+        i++;
+      }
+      if (casesBody[i] === "{") {
+        let depth = 1;
+        let bodyStart = i + 1;
+        i++;
+        while (i < casesBody.length && depth > 0) {
+          if (casesBody[i] === "{") {
+            depth++;
+          } else if (casesBody[i] === "}") {
+            depth--;
+          }
+          i++;
+        }
+        const caseText = casesBody.slice(bodyStart, i - 1).trim();
+        if (caseKey) {
+          cases[caseKey] = caseText;
+        }
+      }
+    }
+    return cases;
+  }
+  resolvePluralKey(key, values) {
+    if (values?.count !== void 0 && !key.match(/_(zero|one|two|few|many|other)$/)) {
+      const exactKey = `=${values.count}`;
+      const baseValue = this.lookupKeyWithFallback(key);
+      if (baseValue && typeof baseValue === "object") {
+        if (exactKey in baseValue) {
+          return this.evaluateTemplate(baseValue[exactKey], values);
+        }
+        if (values.count === 0 && "zero" in baseValue) {
+          return this.evaluateTemplate(baseValue.zero, values);
+        }
+        const category2 = this.getPluralRules(this.language).select(values.count);
+        if (category2 in baseValue) {
+          return this.evaluateTemplate(baseValue[category2], values);
+        }
+        if ("other" in baseValue) {
+          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+          return this.evaluateTemplate(baseValue.other, values);
+        }
+        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+        return key;
+      }
+      const exactSuffixValue = this.lookupKeyWithFallback(`${key}_${exactKey}`);
+      if (exactSuffixValue !== void 0) {
+        return this.evaluateTemplate(exactSuffixValue, values);
+      }
+      if (values.count === 0) {
+        const zeroSuffixValue = this.lookupKeyWithFallback(`${key}_zero`);
+        if (zeroSuffixValue !== void 0) {
+          return this.evaluateTemplate(zeroSuffixValue, values);
+        }
+      }
+      const category = this.getPluralRules(this.language).select(values.count);
+      const categorySuffixValue = this.lookupKeyWithFallback(`${key}_${category}`);
+      if (categorySuffixValue !== void 0) {
+        return this.evaluateTemplate(categorySuffixValue, values);
+      }
+      const otherSuffixValue = this.lookupKeyWithFallback(`${key}_other`);
+      if (otherSuffixValue !== void 0) {
+        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+        return this.evaluateTemplate(otherSuffixValue, values);
+      }
+      const anySuffixExists = ["zero", "one", "two", "few", "many"].some((cat) => this.lookupKeyWithFallback(`${key}_${cat}`) !== void 0);
+      if (anySuffixExists) {
+        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+        return key;
+      }
+    }
+    return void 0;
+  }
+  /* =========================================================================
+   * Internal Lookups, Formatters & DOM Helpers
+   * ========================================================================= */
+  validateSupportedLanguage(value) {
     if (!value) {
       return null;
     }
@@ -673,11 +932,11 @@ var LocL = class _LocL {
     }
     return null;
   }
-  getCacheKey(language) {
+  buildLanguageScopeCacheKey(language) {
     const scopeKey = Array.isArray(this.scope) ? this.scope.join("|") : this.scope;
     return `${language}::${scopeKey}`;
   }
-  invalidateCacheForLang(lang) {
+  invalidateCacheForLanguage(lang) {
     const prefix = `${lang}::`;
     for (const key of this.cache.keys()) {
       if (key.startsWith(prefix)) {
@@ -685,21 +944,21 @@ var LocL = class _LocL {
       }
     }
   }
-  lookupWithFallback(key, base) {
+  lookupKeyWithFallback(key, base) {
     const keys = key.split(".");
     if (base) {
-      const res = this.findTranslation(keys, base);
+      const res = this.findNestedValue(keys, base);
       if (res !== void 0) {
         return res;
       }
     }
     const chain = this.getFallbackChain(this.language);
     for (const lang of chain) {
-      const langObj = this.buildTranslationObject(lang);
+      const langObj = this.buildScopedTranslationObject(lang);
       if (!langObj) {
         continue;
       }
-      const res = this.findTranslation(keys, langObj);
+      const res = this.findNestedValue(keys, langObj);
       if (res !== void 0) {
         return res;
       }
@@ -709,12 +968,12 @@ var LocL = class _LocL {
     }
     return void 0;
   }
-  buildTranslationObject(language) {
+  buildScopedTranslationObject(language) {
     const langObject = this.resources[language];
     if (!this.scope) {
       return langObject;
     }
-    const cacheKey = this.getCacheKey(language);
+    const cacheKey = this.buildLanguageScopeCacheKey(language);
     if (this.config.useCache && this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
     }
@@ -752,11 +1011,11 @@ var LocL = class _LocL {
     this.config.devMode && console.warn(`[LocL] Missing namespace: "${this.scope}" in "${this.language}"`);
     return void 0;
   }
-  findTranslation(keys, translationObject) {
-    if (!translationObject || typeof translationObject !== "object") {
+  findNestedValue(keys, tree) {
+    if (!tree || typeof tree !== "object") {
       return void 0;
     }
-    let current = translationObject;
+    let current = tree;
     const keysCopy = [...keys];
     for (const key of keys) {
       if (current === null || typeof current !== "object") {
@@ -782,183 +1041,23 @@ var LocL = class _LocL {
     }
     return rules;
   }
-  checkPlural(key, values) {
-    if (values?.count !== void 0 && !key.match(/_(zero|one|two|few|many|other)$/)) {
-      const category = this.getPluralRules(this.language).select(values.count);
-      const baseValue = this.lookupWithFallback(key, void 0);
-      if (baseValue && typeof baseValue === "object") {
-        if (values.count === 0 && "zero" in baseValue) {
-          return this.interpolate(baseValue.zero, values);
-        }
-        if (category in baseValue) {
-          return this.interpolate(baseValue[category], values);
-        } else if ("other" in baseValue) {
-          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-          return this.interpolate(baseValue.other, values);
-        } else {
-          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-          return key;
-        }
-      }
-      if (values.count === 0) {
-        const zeroResult = this.lookupWithFallback(`${key}_zero`, void 0);
-        if (zeroResult !== void 0) {
-          return this.interpolate(zeroResult, values);
-        }
-      }
-      const categoryResult = this.lookupWithFallback(`${key}_${category}`, void 0);
-      if (categoryResult !== void 0) {
-        return this.interpolate(categoryResult, values);
-      }
-      const otherResult = this.lookupWithFallback(`${key}_other`, void 0);
-      if (otherResult !== void 0) {
-        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-        return this.interpolate(otherResult, values);
-      }
-      const anySuffixExists = ["zero", "one", "two", "few", "many"].some((cat) => this.lookupWithFallback(`${key}_${cat}`, void 0) !== void 0);
-      if (anySuffixExists) {
-        this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-        return key;
-      }
+  getDateTimeFormat(lang) {
+    let fmt = this.dateTimeFormatCache.get(lang);
+    if (!fmt) {
+      fmt = new Intl.DateTimeFormat(lang);
+      this.dateTimeFormatCache.set(lang, fmt);
     }
-    return void 0;
+    return fmt;
   }
-  getTokens(text) {
-    const tokens = [];
-    let depth = 0, start = -1;
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "{") {
-        if (depth === 0) {
-          start = i;
-        }
-        depth++;
-      } else if (text[i] === "}") {
-        depth--;
-        if (depth === 0 && start >= 0) {
-          const raw = text.slice(start, i + 1);
-          let inner = raw.slice(1, -1);
-          if (inner.startsWith("{") && inner.endsWith("}")) {
-            inner = inner.slice(1, -1);
-          }
-          tokens.push({ raw, inner });
-          start = -1;
-        }
-      }
+  getNumberFormat(lang) {
+    let fmt = this.numberFormatCache.get(lang);
+    if (!fmt) {
+      fmt = new Intl.NumberFormat(lang);
+      this.numberFormatCache.set(lang, fmt);
     }
-    return tokens;
+    return fmt;
   }
-  resolveIcuSelect(template, values) {
-    let result = template;
-    let hasSelect = true;
-    let iterations = 0;
-    while (hasSelect && iterations < 10) {
-      iterations++;
-      hasSelect = false;
-      const tokens = this.getTokens(result);
-      for (const token of tokens) {
-        const selectMatch = token.inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
-        if (selectMatch) {
-          hasSelect = true;
-          const field = selectMatch[1].trim();
-          const casesBody = selectMatch[2];
-          const value = values ? String(values[field] ?? "other") : "other";
-          const caseMap = {};
-          let i = 0;
-          while (i < casesBody.length) {
-            while (i < casesBody.length && /\s/.test(casesBody[i])) i++;
-            if (i >= casesBody.length) break;
-            let keyStart = i;
-            while (i < casesBody.length && casesBody[i] !== "{" && !/\s/.test(casesBody[i])) i++;
-            const caseKey = casesBody.slice(keyStart, i).trim();
-            while (i < casesBody.length && casesBody[i] !== "{") i++;
-            if (casesBody[i] === "{") {
-              let bodyDepth = 1;
-              let bodyStart = i + 1;
-              i++;
-              while (i < casesBody.length && bodyDepth > 0) {
-                if (casesBody[i] === "{") bodyDepth++;
-                else if (casesBody[i] === "}") bodyDepth--;
-                i++;
-              }
-              const caseText = casesBody.slice(bodyStart, i - 1).trim();
-              if (caseKey) {
-                caseMap[caseKey] = caseText;
-              }
-            }
-          }
-          const rawReplacement = caseMap[value] ?? caseMap.other ?? "";
-          result = result.split(token.raw).join(rawReplacement);
-          break;
-        }
-      }
-    }
-    return result;
-  }
-  interpolate(result, values) {
-    if (typeof result !== "string") {
-      return result;
-    }
-    if (/,[\t ]*select[\t ]*,/.test(result)) {
-      result = this.resolveIcuSelect(result, values);
-    }
-    if (this.pseudoOptions?.enabled) {
-      result = this.applyPseudoLocalization(result);
-    }
-    if (!values) {
-      return result;
-    }
-    const tokens = this.getTokens(result);
-    let output = result;
-    const processed = /* @__PURE__ */ new Set();
-    for (const token of tokens) {
-      if (processed.has(token.raw)) {
-        continue;
-      }
-      processed.add(token.raw);
-      let replacement = "";
-      const pipeParts = token.inner.split("|").map((x) => x.trim());
-      const fieldName = pipeParts[0];
-      const formattersList = pipeParts.slice(1);
-      const val = values[fieldName];
-      if (formattersList.length > 0) {
-        let currentVal = val;
-        let missingFormatter = false;
-        for (const segment of formattersList) {
-          const colonIdx = segment.indexOf(":");
-          let formatterName = segment;
-          let args = [];
-          if (colonIdx !== -1) {
-            formatterName = segment.slice(0, colonIdx).trim();
-            args = segment.slice(colonIdx + 1).split(",").map((a) => a.trim());
-          } else {
-            formatterName = segment.trim();
-          }
-          const formatterFn = this.formatters?.[formatterName];
-          if (formatterFn) {
-            currentVal = formatterFn(currentVal, args);
-          } else {
-            this.config.devMode && console.warn(`[LocL] Formatter "${formatterName}" not found.`);
-            if (val === void 0) {
-              currentVal = token.raw;
-              missingFormatter = true;
-              break;
-            }
-            currentVal = currentVal !== void 0 ? String(currentVal) : token.raw;
-          }
-        }
-        replacement = missingFormatter ? String(currentVal) : currentVal !== void 0 ? String(currentVal) : token.raw;
-      } else if (val instanceof Date) {
-        replacement = new Intl.DateTimeFormat(this.language).format(val);
-      } else if (typeof val === "number") {
-        replacement = new Intl.NumberFormat(this.language).format(val);
-      } else {
-        replacement = val !== void 0 ? String(val) : token.raw;
-      }
-      output = output.split(token.raw).join(replacement);
-    }
-    return output;
-  }
-  applyFormat(value, formatter, args) {
+  applyNamedFormatter(value, formatter, args) {
     const formatterFn = this.formatters?.[formatter];
     if (!formatterFn) {
       this.config.devMode && console.warn(`[LocL] Formatter "${formatter.toString()}" not found.`);
@@ -979,9 +1078,61 @@ var LocL = class _LocL {
       if (!useAccents) {
         return part;
       }
-      return part.split("").map((ch) => PSEUDO_MAP[ch] ?? ch).join("");
+      return part.split("").map((ch) => PSEUDO_ACCENT_MAP[ch] ?? ch).join("");
     }).join("");
     return `${prefix}${transformed}${suffix}`;
+  }
+  syncBrowserDocumentAttributes() {
+    if (this.config.autoSyncDocument === false) {
+      return;
+    }
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.setAttribute("dir", this.getDirection());
+      document.documentElement.setAttribute("lang", this.language);
+    }
+  }
+  notifySubscribers() {
+    const meta = this.getMetadata();
+    for (const sub of this.subscribers) {
+      try {
+        sub(this.language, this.language, meta);
+      } catch (err) {
+        console.error("[LocL] Error in subscriber:", err);
+      }
+    }
+  }
+  async resolveRawBundle(raw, namespace) {
+    let data = raw;
+    if (typeof Response !== "undefined" && data instanceof Response) {
+      if (!data.ok) {
+        throw new Error(`[LocL] Failed to load resource: ${data.status} ${data.statusText}`);
+      }
+      data = await data.json();
+    }
+    if (typeof data === "string") {
+      try {
+        data = JSON.parse(data);
+      } catch {
+      }
+    }
+    if (data && typeof data === "object" && "default" in data) {
+      data = data.default;
+    }
+    if (typeof data === "function") {
+      data = await data();
+    }
+    if (data && typeof data === "object" && namespace && !(namespace in data)) {
+      if (typeof data.translations === "object") {
+        data = data.translations;
+      } else if (typeof data.messages === "object") {
+        data = data.messages;
+      } else if (typeof data.resources === "object") {
+        data = data.resources;
+      }
+    } else if (data && typeof data === "object" && namespace && typeof data[namespace] === "object") {
+      data = data[namespace];
+    }
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
   }
   makeReadOnly(obj) {
     const self = this;
@@ -1000,15 +1151,6 @@ var LocL = class _LocL {
     });
     this.proxyCache.set(obj, proxy);
     return proxy;
-  }
-  notifySubscribers() {
-    for (const sub of this.subscribers) {
-      try {
-        sub(this.language, this.language);
-      } catch (err) {
-        console.error("[LocL] Error in subscriber:", err);
-      }
-    }
   }
   isUnsafeObjectKey(key) {
     return key === "__proto__" || key === "constructor" || key === "prototype";
