@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useSyncExternalStore, ReactNode, ReactElement, useMemo, useEffect } from "react";
 import { LocL } from "../LocL.js";
-import { ScopeType, Language, Scope, ResourceLoader } from "../types.js";
+import { ScopeType, Language, Scope, ResourceLoader, Direction } from "../types.js";
 import { Trans, type TransProps, type TransKey, type TransValues } from "./Trans.js";
 
 export { Trans, type TransProps, type TransKey, type TransValues };
@@ -48,7 +48,7 @@ export type TranslatorApi<
   T extends Record<string, any>,
   Fallback extends keyof T & string,
   S extends ScopeType<T, Fallback>
-> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj">;
+> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
 
 function bindApi<
   T extends Record<string, any>,
@@ -62,7 +62,10 @@ function bindApi<
     rich: translator.rich.bind(translator) as LocL<T, Fallback, S>["rich"],
     format: translator.format.bind(translator) as LocL<T, Fallback, S>["format"],
     get: translator.get.bind(translator) as LocL<T, Fallback, S>["get"],
-    getObj: translator.getObj.bind(translator) as LocL<T, Fallback, S>["getObj"]
+    getObj: translator.getObj.bind(translator) as LocL<T, Fallback, S>["getObj"],
+    getDirection: translator.getDirection.bind(translator) as LocL<T, Fallback, S>["getDirection"],
+    isRTL: translator.isRTL.bind(translator) as LocL<T, Fallback, S>["isRTL"],
+    getMetadata: translator.getMetadata.bind(translator) as LocL<T, Fallback, S>["getMetadata"]
   };
 }
 
@@ -89,6 +92,7 @@ function toResult<
     language: translator.getLanguage() as Language<T>,
     changeLanguage: (lang: Language<T>) => translator.changeLanguage(lang),
     getLanguage: () => translator.getLanguage() as Language<T>,
+    direction: translator.getDirection(),
     ...bindApi<T, Fallback, S>(translator)
   };
 }
@@ -232,6 +236,7 @@ export interface UseLocLResult<
   language: Language<T>;
   changeLanguage: (lang: Language<T>) => void;
   getLanguage: () => Language<T>;
+  direction: Direction;
 }
 
 export function useLocL<

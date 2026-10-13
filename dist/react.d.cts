@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, e as PluralParamsFor, I as IsEmptyParams, c as ParamsFor, d as PathValue, f as InterpolationOptions, a as LocL, g as Language, R as ResourceLoader, h as Scope } from './LocL-CywjdTt7.mjs';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, d as PluralParamsFor, I as IsEmptyParams, e as ParamsFor, f as PathValue, c as InterpolationOptions, a as LocL, g as Language, D as Direction, R as ResourceLoader, h as Scope } from './LocL-CdVQzKGp.cjs';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = K extends PluralKeys<S, T, Fallback> ? PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>> : IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
@@ -66,7 +66,7 @@ type DefaultFallback<T = DefaultResources> = LocLRegister extends {
     fallbackLanguage: infer FB extends string;
 } ? FB : [keyof T & string] extends [never] ? string : keyof T & string;
 declare const LocLContext: React.Context<LocL<any, any, any, any, any> | null>;
-type TranslatorApi<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj">;
+type TranslatorApi<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
 interface LocLProviderProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> {
     translator: LocL<T, Fallback, S, any, any>;
     children: ReactNode;
@@ -77,6 +77,7 @@ interface UseLocLResult<T extends Record<string, any> = DefaultResources, Fallba
     language: Language<T>;
     changeLanguage: (lang: Language<T>) => void;
     getLanguage: () => Language<T>;
+    direction: Direction;
 }
 declare function useLocL<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined>(customTranslator?: LocL<T, Fallback, S, any, any> | LocL<any, any, any, any, any>): UseLocLResult<T, Fallback, S>;
 interface UseTranslationOptions {

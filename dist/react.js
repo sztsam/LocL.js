@@ -1,48 +1,9 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
 // src/react/index.tsx
-var react_exports = {};
-__export(react_exports, {
-  LocLContext: () => LocLContext,
-  LocLProvider: () => LocLProvider,
-  Trans: () => Trans,
-  createLocLReact: () => createLocLReact,
-  useLocL: () => useLocL,
-  useTranslation: () => useTranslation
-});
-module.exports = __toCommonJS(react_exports);
-var import_react2 = require("react");
+import { createContext, useContext as useContext2, useSyncExternalStore as useSyncExternalStore2, useMemo as useMemo2, useEffect } from "react";
 
 // src/react/Trans.tsx
-var import_react = __toESM(require("react"));
-var import_jsx_runtime = require("react/jsx-runtime");
+import React, { isValidElement, cloneElement, useContext, useMemo, useSyncExternalStore } from "react";
+import { Fragment, jsx } from "react/jsx-runtime";
 function renderNodes(rawText, components = {}) {
   const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
   const nodes = [];
@@ -60,13 +21,13 @@ function renderNodes(rawText, components = {}) {
     const key = `trans-${tagName}-${counter++}`;
     if (component !== void 0) {
       const children = rawContent !== void 0 ? rawContent.includes("<") ? renderNodes(rawContent, components) : rawContent : void 0;
-      if ((0, import_react.isValidElement)(component)) {
+      if (isValidElement(component)) {
         nodes.push(
-          children !== void 0 ? (0, import_react.cloneElement)(component, { key }, children) : (0, import_react.cloneElement)(component, { key })
+          children !== void 0 ? cloneElement(component, { key }, children) : cloneElement(component, { key })
         );
       } else if (typeof component === "function") {
         nodes.push(
-          /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_react.default.Fragment, { children: component(children ?? "") }, key)
+          /* @__PURE__ */ jsx(React.Fragment, { children: component(children ?? "") }, key)
         );
       } else {
         nodes.push(match[0]);
@@ -90,7 +51,7 @@ function Trans(props) {
     scope,
     fallback
   } = props;
-  const contextTranslator = (0, import_react.useContext)(LocLContext);
+  const contextTranslator = useContext(LocLContext);
   const activeTranslator = customTranslator ?? contextTranslator;
   const getSnapshot = () => {
     if (!activeTranslator) {
@@ -98,20 +59,20 @@ function Trans(props) {
     }
     return typeof activeTranslator.getVersion === "function" ? activeTranslator.getVersion() : activeTranslator.getLanguage?.() || "";
   };
-  const version = (0, import_react.useSyncExternalStore)(
+  const version = useSyncExternalStore(
     (onStoreChange) => activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => {
     },
     getSnapshot,
     getSnapshot
   );
   const scopeKey = Array.isArray(scope) ? scope.join("|") : scope;
-  const scopedTranslator = (0, import_react.useMemo)(() => {
+  const scopedTranslator = useMemo(() => {
     if (!activeTranslator) {
       return null;
     }
     return scope !== void 0 ? activeTranslator.withConfig({ scope }) : activeTranslator;
   }, [activeTranslator, scopeKey]);
-  const raw = (0, import_react.useMemo)(() => {
+  const raw = useMemo(() => {
     if (!scopedTranslator) {
       return String(fallback ?? i18nKey);
     }
@@ -126,15 +87,15 @@ function Trans(props) {
     }
     return String(fallback ?? i18nKey);
   }, [scopedTranslator, i18nKey, values, fallback, version]);
-  const nodes = (0, import_react.useMemo)(() => {
+  const nodes = useMemo(() => {
     return renderNodes(raw, components);
   }, [raw, components]);
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children: nodes });
+  return /* @__PURE__ */ jsx(Fragment, { children: nodes });
 }
 
 // src/react/index.tsx
-var import_jsx_runtime2 = require("react/jsx-runtime");
-var LocLContext = (0, import_react2.createContext)(null);
+import { jsx as jsx2 } from "react/jsx-runtime";
+var LocLContext = createContext(null);
 function bindApi(translator) {
   return {
     t: translator.t.bind(translator),
@@ -143,12 +104,15 @@ function bindApi(translator) {
     rich: translator.rich.bind(translator),
     format: translator.format.bind(translator),
     get: translator.get.bind(translator),
-    getObj: translator.getObj.bind(translator)
+    getObj: translator.getObj.bind(translator),
+    getDirection: translator.getDirection.bind(translator),
+    isRTL: translator.isRTL.bind(translator),
+    getMetadata: translator.getMetadata.bind(translator)
   };
 }
 function useTranslatorSubscription(translator) {
   const getSnapshot = () => typeof translator.getVersion === "function" ? translator.getVersion() : translator.getLanguage?.() || "";
-  (0, import_react2.useSyncExternalStore)(
+  useSyncExternalStore2(
     (onStoreChange) => translator.subscribe(onStoreChange),
     getSnapshot,
     getSnapshot
@@ -160,6 +124,7 @@ function toResult(translator) {
     language: translator.getLanguage(),
     changeLanguage: (lang) => translator.changeLanguage(lang),
     getLanguage: () => translator.getLanguage(),
+    direction: translator.getDirection(),
     ...bindApi(translator)
   };
 }
@@ -220,7 +185,7 @@ function useScopedTranslation(base, scope, options) {
   if (!isReady && options?.suspense) {
     suspendUntilLoaded(translator, language, scopes, options.loader);
   }
-  (0, import_react2.useEffect)(() => {
+  useEffect(() => {
     if (!isReady && !options?.suspense) {
       const pendingScopes = scopes.filter((s) => !translator.isLoaded(language, s));
       if (pendingScopes.length > 0) {
@@ -230,7 +195,7 @@ function useScopedTranslation(base, scope, options) {
       }
     }
   }, [translator, language, scopeKey, isReady, options?.loader, options?.suspense]);
-  const scopedTranslator = (0, import_react2.useMemo)(() => {
+  const scopedTranslator = useMemo2(() => {
     return scope !== void 0 ? translator.withConfig({ scope }) : translator;
   }, [translator, scopeKey]);
   return {
@@ -239,10 +204,10 @@ function useScopedTranslation(base, scope, options) {
   };
 }
 function LocLProvider({ translator, children }) {
-  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(LocLContext.Provider, { value: translator, children });
+  return /* @__PURE__ */ jsx2(LocLContext.Provider, { value: translator, children });
 }
 function useLocL(customTranslator) {
-  const contextTranslator = (0, import_react2.useContext)(LocLContext);
+  const contextTranslator = useContext2(LocLContext);
   const translator = customTranslator ?? contextTranslator;
   if (!translator) {
     throw new Error("[LocL] `useLocL` must be used within a `<LocLProvider>`.");
@@ -255,15 +220,15 @@ function useTranslation(scope, options, customTranslator) {
   return useScopedTranslation(base, scope, options);
 }
 function createLocLReact(defaultTranslator) {
-  const BoundContext = (0, import_react2.createContext)(null);
+  const BoundContext = createContext(null);
   function BoundLocLProvider({
     translator = defaultTranslator,
     children
   }) {
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(LocLContext.Provider, { value: translator, children: /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(BoundContext.Provider, { value: translator, children }) });
+    return /* @__PURE__ */ jsx2(LocLContext.Provider, { value: translator, children: /* @__PURE__ */ jsx2(BoundContext.Provider, { value: translator, children }) });
   }
   function useBoundLocL(customTranslator) {
-    const contextTranslator = (0, import_react2.useContext)(BoundContext);
+    const contextTranslator = useContext2(BoundContext);
     const translator = customTranslator ?? contextTranslator ?? defaultTranslator;
     useTranslatorSubscription(translator);
     return toResult(translator);
@@ -273,9 +238,9 @@ function createLocLReact(defaultTranslator) {
     return useScopedTranslation(base, scope, options);
   }
   function BoundTrans(props) {
-    const contextTranslator = (0, import_react2.useContext)(BoundContext);
+    const contextTranslator = useContext2(BoundContext);
     const activeTranslator = props.translator ?? contextTranslator ?? defaultTranslator;
-    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+    return /* @__PURE__ */ jsx2(
       Trans,
       {
         ...props,
@@ -292,12 +257,11 @@ function createLocLReact(defaultTranslator) {
     translator: defaultTranslator
   };
 }
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
+export {
   LocLContext,
   LocLProvider,
   Trans,
   createLocLReact,
   useLocL,
   useTranslation
-});
+};

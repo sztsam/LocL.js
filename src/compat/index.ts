@@ -1,5 +1,5 @@
 import { LocL } from "../LocL.js";
-import { NestedKeyOf, InterpolationOptions, PathValue, ParamsFor, IsEmptyParams, PluralParamsFor, PluralKeys, TranslationObjectFor } from "../types.js";
+import { NestedKeyOf, InterpolationOptions, PathValue, ParamsFor, IsEmptyParams, PluralParamsFor, PluralKeys, TranslationObjectFor, Direction } from "../types.js";
 import { DefaultResources, DefaultFallback } from "../react/index.js";
 
 type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}`
@@ -20,16 +20,20 @@ interface I18nextOptions extends InterpolationOptions {
 }
 
 type I18nextParamsFor<K extends string, Tr, PK extends string> =
-  NormalizeKey<K> extends PK
-    ? PluralParamsFor<NormalizeKey<K>, Tr>
-    : ParamsFor<PathValue<Tr, NormalizeKey<K>>>;
+  unknown extends K
+    ? InterpolationOptions
+    : NormalizeKey<K> extends PK
+      ? PluralParamsFor<NormalizeKey<K>, Tr>
+      : ParamsFor<K extends keyof Tr ? Tr[K] : PathValue<Tr, NormalizeKey<K>>>;
 
 type I18nextHasParams<K extends string, Tr, PK extends string> =
-  NormalizeKey<K> extends PK
-    ? true
-    : IsEmptyParams<ParamsFor<PathValue<Tr, NormalizeKey<K>>>> extends true
-      ? false
-      : true;
+  unknown extends K
+    ? false
+    : NormalizeKey<K> extends PK
+      ? true
+      : IsEmptyParams<I18nextParamsFor<K, Tr, PK>> extends true
+        ? false
+        : true;
 
 type I18nextOptionsFor<K extends string, Tr, PK extends string> =
   I18nextParamsFor<K, Tr, PK> & I18nextOptions;
@@ -49,26 +53,34 @@ interface I18nextTranslation<
       : [options?: I18nextOptions]
   ): string;
 
-  // 2. Known key with defaultValue string argument
-  <K extends I18nextKey<Tr, PK>>(
+  // 2. Known key with defaultValue string argument: combines params from key and/or defaultValue
+  <K extends I18nextKey<Tr, PK>, D extends string = string>(
     key: K,
-    defaultValue: string,
-    ...args: I18nextHasParams<K, Tr, PK> extends true
-      ? [options: I18nextOptionsFor<K, Tr, PK>]
+    defaultValue: D,
+    ...args: (I18nextHasParams<K, Tr, PK> extends true
+      ? true
+      : IsEmptyParams<ParamsFor<D>> extends false
+        ? true
+        : false) extends true
+      ? [options: I18nextOptionsFor<K, Tr, PK> & ParamsFor<D>]
       : [options?: I18nextOptions]
   ): string;
 
-  // 3. Fallback signature for dynamic keys ONLY when defaultValue string is provided
-  (
+  // 3. Fallback signature for dynamic keys with defaultValue string argument
+  <D extends string>(
     key: string,
-    defaultValue: string,
-    options?: I18nextOptions
+    defaultValue: D,
+    ...args: IsEmptyParams<ParamsFor<D>> extends false
+      ? [options: ParamsFor<D> & I18nextOptions]
+      : [options?: I18nextOptions]
   ): string;
 
-  // 4. Fallback signature for dynamic keys ONLY when defaultValue is in options
-  (
+  // 4. Fallback signature for dynamic keys when defaultValue is in options
+  <D extends string>(
     key: string,
-    options: { defaultValue: string } & I18nextOptions
+    options: { defaultValue: D } & (IsEmptyParams<ParamsFor<D>> extends false
+      ? ParamsFor<D>
+      : {}) & I18nextOptions
   ): string;
 
   // 5. Dynamic key with explicit ns option
@@ -84,12 +96,13 @@ interface I18nextCompat<
   Tr = TranslationObjectFor<undefined, T, Fallback>,
   PK extends string = PluralKeys<undefined, T, Fallback>
 > {
-  t: I18nextTranslation<T, Fallback>;
+  t: I18nextTranslation<T, Fallback, Tr, PK>;
   exists<K extends I18nextKey<Tr, PK>>(key: K, options?: { ns?: string; [key: string]: any }): boolean;
   exists(key: string, options?: { ns?: string; [key: string]: any }): boolean;
   get language(): string;
   get languages(): string[];
   changeLanguage(lng: string, callback?: (err: any, t: any) => void): Promise<string>;
+  dir(lng?: string): Direction;
   on(event: string, listener: (...args: any[]) => void): () => void;
   off(event: string, listener: (...args: any[]) => void): void;
   addResource(lng: string, ns: string, key: string, value: any): void;
@@ -194,6 +207,10 @@ export function toI18next<
       return Object.keys((translator as any).resources ?? {});
     },
 
+    dir(lng?: string): Direction {
+      return translator.getDirection(lng);
+    },
+
     async changeLanguage(lng: string, callback?: (err: any, t: any) => void): Promise<string> {
       try {
         if (
@@ -235,7 +252,7 @@ export function toI18next<
       translator.addResources(lng, { [ns]: resources });
     },
 
-    addResourceBundle(lng: string, ns: string, resources: any): void {
+    addResourceBundle(lng: string, ns: string, resources: any, deep?: boolean, overwrite?: boolean): void {
       translator.addResources(lng, { [ns]: resources });
     },
 

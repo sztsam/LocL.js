@@ -1,29 +1,4 @@
-"use strict";
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-
 // src/compat/index.ts
-var compat_exports = {};
-__export(compat_exports, {
-  createI18nextCompat: () => createI18nextCompat,
-  toI18next: () => toI18next
-});
-module.exports = __toCommonJS(compat_exports);
 function toI18next(translator) {
   const listeners = {};
   const emit = (event, ...args) => {
@@ -93,6 +68,9 @@ function toI18next(translator) {
     get languages() {
       return Object.keys(translator.resources ?? {});
     },
+    dir(lng) {
+      return translator.getDirection(lng);
+    },
     async changeLanguage(lng, callback) {
       try {
         if (typeof translator.isLoaded === "function" && typeof translator.load === "function" && !translator.isLoaded(lng)) {
@@ -123,7 +101,7 @@ function toI18next(translator) {
     addResources(lng, ns, resources) {
       translator.addResources(lng, { [ns]: resources });
     },
-    addResourceBundle(lng, ns, resources) {
+    addResourceBundle(lng, ns, resources, deep, overwrite) {
       translator.addResources(lng, { [ns]: resources });
     },
     hasResourceBundle(lng, ns) {
@@ -148,8 +126,7 @@ function toI18next(translator) {
   return compat;
 }
 var createI18nextCompat = toI18next;
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
+export {
   createI18nextCompat,
   toI18next
-});
+};

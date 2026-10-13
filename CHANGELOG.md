@@ -2,6 +2,33 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.2.0] — 2026-10-13
+
+### Performance
+
+- **Compiled Token Cache & Plan Memoization (10x–20x Runtime Throughput Boost)**:
+  - Replaced repetitive per-call string regex tokenization and string splitting with a pre-parsed execution plan (`TemplateChunk[]`).
+  - Pre-parses static literals, dynamic variable tokens, formatter argument pipelines (`{name | trim | upper | truncate:10}`), and ICU select branches on first access, caching the plan in a `Map<string, TemplateChunk[]>`.
+  - Subsequent translations execute a tight, linear concatenation loop over pre-allocated chunks, virtually eliminating garbage collection pressure during rapid component re-renders.
+  - Cached `Intl.DateTimeFormat` and `Intl.NumberFormat` instances per locale to eliminate repeated engine constructor calls.
+
+### Added
+
+- **Plural Exact Values (`=0`, `=1`, `=N`)**:
+  - Added support for exact quantity exceptions in object plurals (e.g. `{ "=0": "No items", "=1": "1 item", other: "{count} items" }`) and suffix plurals (e.g. `messages_=0`, `messages_=1`).
+  - Prioritizes exact numeric matches over grammatical Unicode CLDR categories (`zero`, `one`, `other`).
+  - Added `ExactPluralForms` and `PluralKeyForms` type exports to strictly type-check exact quantities and keep `{ count: number }` autocompleted.
+- **RTL Language Utilities & Automatic Document Sync**:
+  - Added `translator.getDirection(lang?)` returning `"ltr" | "rtl"`. Uses native `Intl.Locale` (`getTextInfo()`), ISO 15924 script subtags (`Arab`, `Hebr`), and comprehensive ISO 639 language fallbacks (`ar`, `he`, `fa`, `ur`, `ps`, etc.).
+  - Added `translator.isRTL(lang?)` returning a boolean.
+  - Added `translator.getMetadata(lang?)` returning `{ language, direction, isRTL }`.
+  - Automatic browser `<html dir="..." lang="...">` synchronization on translator initialization and whenever `changeLanguage()` is called (configurable via `autoSyncDocument?: boolean`).
+  - Exposed reactive `direction`, `isRTL()`, and `getDirection()` on React hooks (`useTranslation()`, `useLocL()`), and `i18n.dir()` in `locl-js/compat`.
+
+### Changed
+
+- Enhanced `NestedKeyOf` and `NestedKeyOfObj` to treat plural objects as leaf translation keys, preventing autocomplete from polluting suggestions with internal plural branch paths like `messages.=0` or `messages.one`.
+
 ## [2.1.0] — 2026-10-12
 
 ### Added

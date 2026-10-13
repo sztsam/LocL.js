@@ -1,4 +1,4 @@
-import type { DefaultFormatters } from "./formatters";
+import type { DefaultFormatters } from "./formatters.js";
 
 /* =========================================================================
  * Path & Key Resolution Types (Internal & Package Core)
@@ -6,7 +6,7 @@ import type { DefaultFormatters } from "./formatters";
 
 type DeepPartial<T> = {
   [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
-}
+};
 
 export type NestedKeyOf<ObjectType extends object, Depth extends number = 8, UsedDepth extends any[] = []> =
   UsedDepth['length'] extends Depth
@@ -15,7 +15,9 @@ export type NestedKeyOf<ObjectType extends object, Depth extends number = 8, Use
       [Key in keyof ObjectType & (string | number)]: ObjectType[Key] extends any[]
         ? `${Key}`
         : ObjectType[Key] extends object
-          ? `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key], Depth, [...UsedDepth, any]>}`
+          ? IsPluralObject<ObjectType[Key]> extends true
+            ? `${Key}`
+            : `${Key}` | `${Key}.${NestedKeyOf<ObjectType[Key], Depth, [...UsedDepth, any]>}`
           : `${Key}`;
     }[keyof ObjectType & (string | number)];
 
@@ -28,7 +30,9 @@ export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean
           ? never
           : `${Key}` | `${Key}.${number}`
         : ObjectType[Key] extends object
-          ? `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays, Depth, [...UsedDepth, any]>}`
+          ? IsPluralObject<ObjectType[Key]> extends true
+            ? never
+            : `${Key}` | `${Key}.${NestedKeyOfObj<ObjectType[Key], SkipArrays, Depth, [...UsedDepth, any]>}`
           : never
     }[keyof ObjectType & string];
 
@@ -159,40 +163,68 @@ export type ExtractInterpolationParams<T extends string> =
     ? { [key: string]: string | number | boolean | Date | undefined }
     : ScanParams<T>;
 
-type Simplify<T> = { [K in keyof T]: T[K] };
-type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
+export type Simplify<T> = { [K in keyof T]: T[K] };
+export type Direction = "ltr" | "rtl";
+export type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
+export type ExactPluralForms = `=${number}`;
+export type PluralKeyForms = PluralForms | ExactPluralForms;
 
 type IsPluralObject<V> =
   [V] extends [object]
     ? [keyof V] extends [never]
       ? false
-      : [keyof V] extends [PluralForms] ? true : false
+      : [keyof V] extends [PluralKeyForms] ? true : false
     : false;
+
+type ParamUnion<T> = [keyof T] extends [never] ? never : T;
+type ExtractPluralObjectParamsUnion<T> = {
+  [K in keyof T]: T[K] extends string
+    ? ParamUnion<ExtractInterpolationParams<T[K]>>
+    : never;
+}[keyof T];
+
 export type ExtractPluralObjectParams<T> =
   [T] extends [never]
     ? never
-    : T extends Partial<Record<PluralForms, string>>
-      ? Simplify<{ count: number } & UnionToIntersection<{
-          [K in keyof T]: T[K] extends string ? ExtractInterpolationParams<T[K]> : {}
-        }[keyof T]>>
+    : T extends Record<string, any>
+      ? Simplify<{ count: number } &
+          ([UnionToIntersection<ExtractPluralObjectParamsUnion<T>>] extends [never]
+            ? {}
+            : UnionToIntersection<ExtractPluralObjectParamsUnion<T>>)
+        >
       : never;
 
-type SuffixParam<T, P extends string> =
-  [PathValue<T, P>] extends [never]
-    ? {}
-    : PathValue<T, P> extends string
-      ? ExtractInterpolationParams<PathValue<T, P>>
-      : {};
+type ExtractSuffixParamsUnion<Base extends string, T> = {
+  [K in keyof T & string]: K extends `${Base}_${PluralKeyForms}`
+    ? T[K] extends string
+      ? ParamUnion<ExtractInterpolationParams<T[K]>>
+      : never
+    : never;
+}[keyof T & string];
 
 type ExtractSuffixPluralParams<Base extends string, T> =
   Simplify<{ count: number } &
-    UnionToIntersection<{
-      [P in PluralForms]: SuffixParam<T, `${Base}_${P}`>
-    }[PluralForms]>
+    ([UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>] extends [never]
+      ? {}
+      : UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>)
   >;
 
 
-  /* =========================================================================
+/* =========================================================================
+ * Compiled Template Chunks (Execution Plan)
+ * ========================================================================= */
+
+export type FormatterCall = {
+  name: string;
+  args: string[];
+};
+export type TemplateChunk =
+  | { type: "lit"; value: string }
+  | { type: "var"; name: string; raw: string; formatters: FormatterCall[] }
+  | { type: "select"; field: string; cases: Record<string, string> };
+
+
+/* =========================================================================
  * Params & Plural Key Resolution Types (Package Core)
  * ========================================================================= */
 
@@ -232,7 +264,7 @@ type ExtractPluralKeys<T, Path extends string = "", Depth extends any[] = []> =
   Depth['length'] extends 16 ? never :
   T extends object ? {
     [K in keyof T & string]:
-      (K extends `${infer Base}_${PluralForms}`
+      (K extends `${infer Base}_${PluralKeyForms}`
         ? Path extends "" ? Base : `${Path}.${Base}`
         : never)
       |
@@ -262,7 +294,13 @@ export interface FormatOptions<F extends Record<string, Formatter>, UseDefaultFo
 export type Formatter<TArgs extends unknown[] = string[]> = (value: any, args?: TArgs) => string;
 export type EffectiveFormatters<F extends Record<string, Formatter>, UseDefault extends boolean> = UseDefault extends true ? F & DefaultFormatters : F;
 
-export type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>) => void;
+export interface LocaleMetadata {
+  language: string;
+  direction: Direction;
+  isRTL: boolean;
+}
+
+export type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLanguage: Language<T>, metadata: LocaleMetadata) => void;
 export type Unsubscribe = () => void;
 
 type TagFormatter<T = any> = (content: string) => T;
@@ -342,23 +380,25 @@ export type EnforceParity<T, Fallback extends keyof T> = {
 
 // - Language file typings
 //type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
+//type ExactPluralForms = `=${number}`;
+//type PluralKeyForms = PluralForms | ExactPluralForms;
 type RequiredPlural = "one" | "other";
 type OptionalPlural = Exclude<PluralForms, RequiredPlural>;
 type ObjectPlural = {
   [K in RequiredPlural]: string;
-} & Partial<Record<OptionalPlural, string>>;
+} & Partial<Record<OptionalPlural, string>> & Partial<Record<ExactPluralForms, string>>;
 type Primitive = string | number | boolean | null | undefined;
 type StrKey<T> = Extract<keyof T, string | number>;
 type PluralObjectKeys<T> = {
   [K in StrKey<T>]: T[K] extends object
-    ? Extract<keyof T[K], PluralForms> extends never ? never : K
+    ? Extract<keyof T[K], PluralKeyForms> extends never ? never : K
     : never;
 }[StrKey<T>];
-type SuffixKey<T> = Extract<StrKey<T>, `${string}_${PluralForms}`>;
-type SuffixBaseUnion<T> = SuffixKey<T> extends `${infer B}_${PluralForms}` ? B : never;
+type SuffixKey<T> = Extract<StrKey<T>, `${string}_${PluralKeyForms}`>;
+type SuffixBaseUnion<T> = SuffixKey<T> extends `${infer B}_${PluralKeyForms}` ? B : never;
 type NamespaceKeys<T> = {
   [K in StrKey<T>]: T[K] extends object
-    ? Extract<keyof T[K], PluralForms> extends never ? K : never
+    ? Extract<keyof T[K], PluralKeyForms> extends never ? K : never
     : never;
 }[StrKey<T>];
 type PlainStringKeys<T> = {
@@ -401,6 +441,8 @@ export type LangWithPlurals<T> =
     [B in SuffixBaseUnion<T> as `${B}_${RequiredPlural}`]: string;
   } & {
     [B in SuffixBaseUnion<T> as `${B}_${OptionalPlural}`]?: string;
+  } & {
+    [B in SuffixBaseUnion<T> as `${B}_${ExactPluralForms}`]?: string;
   } & {
     [K in PlainStringKeys<T>]: T[K];
   } & {
