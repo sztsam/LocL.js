@@ -2,15 +2,16 @@
 
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sztsam/LocL.js) [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)](https://www.typescriptlang.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/locl-js)
 
-**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, backend services, and multi-framework setups, it provides compile-time type safety, pre-compiled template execution, automatic pluralization with exact quantities, RTL script detection, built-in formatters with pipeline chaining, and reactive subscriptions with **zero external dependencies**.
-
-It is inspired by libraries like `i18next` and `react-i18next`, but engineered with a focus on strict TypeScript type checking, sub-millisecond execution, clean APIs, and **100% test coverage across every statement, branch, and function**.
+**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, server environments, and full-stack frameworks, it provides compile-time type safety, pre-compiled template execution, automatic pluralization with exact quantities, RTL script detection, built-in formatters with pipeline chaining, and reactive subscriptions with **zero external dependencies**.
 
 ---
 
 ## Features ✨
 
 - **🚀 10x–20x Execution Throughput**: Compiled token cache memoizes template execution plans on first lookup, eliminating regex scanning and string splitting in the hot path.
+- **🖥️ React Server Components & Full-Stack (`locl-js/server`)**: Headless async request isolation via Node's `AsyncLocalStorage` for React Server Components, Next.js App Router (no `"use client"`!), Astro, Remix, and backend routes.
+- **🏎️ Safe Type Mode for Huge Dictionaries (`strictParams: false`)**: Disable recursive template-literal parsing for codebases with 10,000+ keys to maximize `tsc` speed while retaining 100% key autocompletion and path validation.
+- **📑 Pre-Flattened Dictionary Utilities**: `FlattenKeys<T>`, `PreFlattened<T>`, and `flattenDictionary()` for compile-time and runtime optimization across enterprise setups.
 - **💪 Strict Compile-Time Safety**: Auto-extracts parameters (`{name}`, `{{name}}`, `{gender, select, ...}`) and enforces required arguments at compile time with full IDE autocomplete.
 - **🏷️ `defineResources` & `defineStrictResources`**: Preserves literal types without `as const` and enforces complete translation parity across all secondary languages at compile time.
 - **🔢 Plural Exact Quantities (`=0`, `=1`, `=N`)**: Define exact numeric exceptions alongside standard CLDR categories (`zero`, `one`, `other`) across both object and suffix plurals.
@@ -131,6 +132,61 @@ translator.t("staticNotice");
 
 Compile-Time Translation Parity (`defineStrictResources`)
 Prevent missing translations from reaching production. `defineStrictResources` enforces at compile time that **every secondary language implements all keys present in the fallback language**
+
+---
+
+## Safe Type Mode for Huge Dictionaries
+
+When translation files grow past 10,000+ keys, recursive template-literal parsing (`ExtractInterpolationParams`) can slow down TypeScript compilation (`tsc`).
+
+Set `strictParams: false` to disable template parsing while **retaining 100% key autocompletion and path validation**:
+
+```typescript
+import { initLocL, defineResources } from "locl-js";
+
+const resources = defineResources({
+  en: {
+    welcome: "Welcome, {name}!",
+    dashboard: {
+      profile: "User profile",
+      settings: "Account settings"
+    }
+  }
+});
+
+const translator = initLocL({
+  resources,
+  fallbackLanguage: "en",
+  strictParams: false // ⚡ Maximizes tsc performance for huge dictionaries
+});
+
+// ✅ Keys are STILL strictly autocompleted and validated:
+translator.t("dashboard.profile");
+translator.t("welcome", { name: "Alice" });
+
+// ❌ Typos are STILL caught at compile time:
+// translator.t("dashboard.nonExistent"); // Error: Key does not exist
+```
+
+### Pre-Flattened Utilities
+
+Flatten nested dictionaries at type level and runtime for build-time optimizations:
+
+```typescript
+import { flattenDictionary, type FlattenKeys, type PreFlattened } from "locl-js";
+
+// Type-level dot notation union
+type Keys = FlattenKeys<typeof resources.en>;
+// "welcome" | "dashboard" | "dashboard.profile" | "dashboard.settings"
+
+// Runtime dictionary flattener (preserves plural objects like { one, other })
+const flat = flattenDictionary(resources.en);
+// {
+//   "welcome": "Welcome, {name}!",
+//   "dashboard.profile": "User profile",
+//   "dashboard.settings": "Account settings"
+// }
+```
 
 ---
 
@@ -381,6 +437,115 @@ unbind(); // Unsubscribes listener
 
 // Dynamic language switch with automatic missing-language preloading:
 await i18n.changeLanguage("es");
+```
+
+---
+
+## Server Components & Full-Stack (`locl-js/server`)
+
+`LocL` provides headless request isolation using Node's native `AsyncLocalStorage`. Designed specifically for **React Server Components (RSC)**, **Next.js App Router**, **Remix**, and **Astro**, you get strictly typed translations on the server without client-side React Context or `"use client"` directives.
+
+### 1. Set Up Server Suite (`src/i18n-server.ts`)
+
+```typescript
+import { initLocL, defineResources } from "locl-js";
+import { createLocLServer } from "locl-js/server";
+
+export const translator = initLocL({
+  resources: defineResources({
+    en: {
+      title: "Dashboard",
+      welcome: "Welcome back, {name}!",
+      analytics: { views: "{count} views" }
+    },
+    de: {
+      title: "Übersicht",
+      welcome: "Willkommen zurück, {name}!",
+      analytics: { views: "{count} Aufrufe" }
+    }
+  }),
+  fallbackLanguage: "en"
+});
+
+export const {
+  getTranslator,
+  getTranslations,
+  getSyncTranslator,
+  runWithLocale,
+  runWithTranslator,
+  getLocale,
+  setLocale
+} = createLocLServer(translator);
+```
+
+### 2. Use in React Server Components (Next.js App Router)
+
+```tsx
+// app/[locale]/page.tsx (Server Component — no "use client"!)
+import { getTranslator } from "@/i18n-server";
+
+export default async function Page() {
+  const t = await getTranslator();
+
+  return (
+    <main>
+      <h1>{t("title")}</h1>
+      <p>{t("welcome", { name: "Alice" })}</p>
+    </main>
+  );
+}
+```
+
+### 3. Scoped Translations on the Server
+
+```tsx
+// app/[locale]/analytics/page.tsx
+import { getTranslator } from "@/i18n-server";
+
+export default async function AnalyticsPage() {
+  // Scopes are autocompleted and restrict keys to the "analytics" namespace!
+  const t = await getTranslator("analytics");
+
+  return <div>{t("views", { count: 1200 })}</div>;
+}
+```
+
+### 4. Middleware & Request Isolation
+
+Wrap incoming requests or layouts in `runWithLocale()` to automatically bind the active language to the asynchronous execution tree:
+
+```typescript
+// middleware.ts or Express/Fastify request handler
+import { runWithLocale } from "@/i18n-server";
+
+export async function handleRequest(request: Request, next: () => Promise<Response>) {
+  const locale = request.headers.get("x-locale") || "en";
+
+  return runWithLocale(locale, () => {
+    return next(); // Any downstream server components will automatically use `locale`!
+  });
+}
+```
+
+#### Capabilities of `ServerTranslator`
+
+The returned `t` from `await getTranslator()` is both a callable function and an object with attached utilities:
+
+```typescript
+const t = await getTranslator();
+
+// Callable function:
+t("title");
+t("welcome", { name: "Alice" });
+
+// Attached utilities:
+t.plural("cart", { count: 3 });
+t.language;       // "en"
+t.direction;      // "ltr"
+t.isRTL();        // false
+t.getMetadata();  // { language: "en", direction: "ltr", isRTL: false }
+t.format("100", "currency", ["USD"]);
+t.translator;     // Access to underlying LocL instance
 ```
 
 ---
@@ -711,10 +876,12 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 ### Top-Level Exports (`locl-js`)
 
-- **`initLocL(config)`**: Creates and returns a new `LocL` translator instance.
+- **`initLocL(config)`**: Creates and returns a new `LocL` translator instance. Supports `strictParams: false` for large dictionaries.
 - **`defineResources(resources)`**: Identity helper using `<const T>` to enforce compile-time literal types without `as const`.
 - **`defineStrictResources(resources)`**: Identity helper enforcing compile-time translation parity across all secondary languages against the fallback language.
-- **`LangWithPlurals<T>`**: Type utility to enforce plural structures on translation packs.
+- **`defineFastResources(resources)`**: Identity helper for large dictionaries.
+- **`flattenDictionary(obj)`**: Runtime utility flattening nested dictionary objects into single-level dot-notated objects while preserving plural objects.
+- **`LangWithPlurals<T>`**: Type utility enforcing plural structures on translation packs.
 
 ### React Exports (`locl-js/react`)
 
@@ -729,6 +896,20 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 - **`toI18next(translator)`**: Wraps a LocL instance into an `i18next`-compatible API with strict parameter checking.
 - **`createI18nextCompat(translator)`**: Alias of `toI18next`.
+
+### Server Exports (`locl-js/server`)
+
+- **`createLocLServer(translator, options?)`**: Factory returning an isolated request suite (`getTranslator`, `getTranslations`, `getSyncTranslator`, `runWithLocale`, `runWithTranslator`, `getLocale`, `setLocale`).
+- **`getTranslator(scope?, options?)`**: Asynchronous request-scoped translator resolver for Server Components.
+- **`getTranslations(scope?, options?)`**: Alias of `getTranslator`.
+- **`getSyncTranslator(scope?, options?)`**: Synchronous request-scoped translator resolver.
+- **`runWithLocale(locale, fn)`**: Runs an asynchronous request tree with an isolated locale.
+- **`runWithTranslator(translator, fn)`**: Runs an asynchronous request tree with an isolated translator.
+- **`getLocale()`**: Returns the active locale from the current asynchronous request context.
+- **`setLocale(locale)`**: Updates the active locale in the current asynchronous request context.
+- **`setServerTranslator(translator)`**: Configures the global default server translator instance.
+- **`getServerTranslator()`**: Returns the global default server translator instance.
+- **`serverStorage`**: Direct access to the underlying `AsyncLocalStorage` instance.
 
 ### `LocL` Instance Methods
 

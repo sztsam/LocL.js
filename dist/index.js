@@ -1167,9 +1167,37 @@ function defineResources(resources) {
 function defineStrictResources(resources) {
   return resources;
 }
+function defineFastResources(resources) {
+  return resources;
+}
+function flattenDictionary(obj, prefix = "") {
+  const result = {};
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return result;
+  }
+  for (const [key, val] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const keys = Object.keys(val);
+      const isPlural = keys.length > 0 && keys.every(
+        (k) => ["zero", "one", "two", "few", "many", "other"].includes(k) || k.startsWith("=")
+      );
+      if (isPlural) {
+        result[fullKey] = val;
+      } else {
+        Object.assign(result, flattenDictionary(val, fullKey));
+      }
+    } else {
+      result[fullKey] = val;
+    }
+  }
+  return result;
+}
 export {
   LocL,
+  defineFastResources,
   defineResources,
   defineStrictResources,
+  flattenDictionary,
   initLocL
 };

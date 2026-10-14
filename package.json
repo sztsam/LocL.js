@@ -1,7 +1,7 @@
 {
   "name": "locl-js",
-  "version": "2.2.0",
-  "description": "Modern TypeScript internationalization (i18n) library with type-safety, performance, and backend usability",
+  "version": "2.3.0",
+  "description": "Ultra-fast, lightweight TypeScript internationalization (i18n) library with React bindings, React Server Components (RSC) support, and drop-in i18next compatibility.",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",
   "type": "module",
@@ -27,6 +27,16 @@
       "require": {
         "types": "./dist/react.d.cts",
         "default": "./dist/react.cjs"
+      }
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
       }
     },
     "./compat": {
@@ -60,7 +70,7 @@
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.5.2",
+    "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "jest": "^30.2.0",

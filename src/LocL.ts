@@ -51,6 +51,8 @@ export interface LocLConfig<T extends Record<string, any>, Fallback extends keyo
   pseudoLocalization?: boolean | PseudoLocalizationOptions;
   /** Automatically syncs document.documentElement dir and lang attributes in browser environments. Defaults to `true`. */
   autoSyncDocument?: boolean;
+  /** When false, disables recursive template-literal parsing for large dictionaries to maximize tsc performance */
+  strictParams?: boolean;
 }
 
 /**
@@ -67,16 +69,17 @@ export class LocL<
   Fallback extends keyof T & string,
   S extends ScopeType<T, Fallback> = undefined,
   F extends Record<string, Formatter> = {},
-  UseDefaultFormatter extends boolean = true
+  UseDefaultFormatter extends boolean = true,
+  StrictParams extends boolean = true
 > {
-  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter> = this;
-  private config: LocLConfig<T, Fallback>;
+  private readonly rootInstance: LocL<T, Fallback, any, F, UseDefaultFormatter, StrictParams> = this;
+  private config: LocLConfig<T, Fallback, F>;
   private resources: T & Record<string, any>;
   private language: Language<T>;
   private fallbackLanguage: Language<T>;
   private scope?: S;
   private formatters: EffectiveFormatters<F, UseDefaultFormatter>;
-  private cache: Map<string, object | LocL<T, Fallback, any> | undefined> = new Map();
+  private cache: Map<string, object | LocL<T, Fallback, any, any, any, any> | undefined> = new Map();
   private templateCache: Map<string, TemplateChunk[]> = new Map();
   private proxyCache = new WeakMap<object, any>();
   private pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -94,7 +97,7 @@ export class LocL<
    * Creates a new LocL instance.
    * @param config - The configuration object.
    */
-  constructor(config: LocLConfig<T, Fallback> & { fallbackLanguage: Fallback, formatters?: F, useDefaultFormatters?: UseDefaultFormatter, scope?: S }) {
+  constructor(config: LocLConfig<T, Fallback, F> & { fallbackLanguage: Fallback; formatters?: F; useDefaultFormatters?: UseDefaultFormatter; scope?: S; strictParams?: StrictParams }) {
     if (!config.resources) { throw new Error("[LocL] `resources` is required"); }
     if (!config.fallbackLanguage) { throw new Error("[LocL] `fallbackLanguage` is required"); }
     this.config = {
@@ -126,11 +129,11 @@ export class LocL<
    * @param {Language<T>} [config.language] - The language to use.
    * @returns A new proxy `LocL` instance.
    */
-  public withConfig<N extends ScopeType<T, Fallback>>(config: { scope?: N, language?: Language<T> }): LocL<T, Fallback, N> {
+  public withConfig<N extends ScopeType<T, Fallback>>(config: { scope?: N, language?: Language<T> }): LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams> {
     const root = this.rootInstance;
     const cacheKey = `proxy::${config.language ?? this.language}::${Array.isArray(config.scope) ? config.scope.join("|") : config.scope ?? "*"}`;
     if (root.cache.has(cacheKey)) {
-      return root.cache.get(cacheKey) as LocL<T, Fallback, N>;
+      return root.cache.get(cacheKey) as LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams>;
     }
 
     const result = new Proxy(root, {
@@ -169,7 +172,7 @@ export class LocL<
         }
         return Reflect.get(target, prop, receiver);
       }
-    }) as unknown as LocL<T, Fallback, N>;
+    }) as unknown as LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams>;
 
     if (root.config.useCache) {
       root.cache.set(cacheKey, result);
@@ -184,7 +187,7 @@ export class LocL<
    * @param scope - The scope to use for the new instance.
    * @returns A new `LocL` instance.
    */
-  public clone<N extends ScopeType<T, Fallback> = undefined>(language: Language<T> = this.language, scope?: N): LocL<T, Fallback, N> {
+  public clone<N extends ScopeType<T, Fallback> = undefined>(language: Language<T> = this.language, scope?: N): LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams> {
     return new LocL({
       ...this.config,
       resources: this.resources as T,
@@ -383,7 +386,7 @@ export class LocL<
    * @param bundle - Object of translations to merge.
    * @returns DeepMergedResource LocL type
    */
-  public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter> {
+  public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter, StrictParams> {
     if (this.isUnsafeObjectKey(lang)) { return this as any; }
     if (!this.resources[lang]) {
       this.resources[lang] = Object.create(null);
@@ -442,8 +445,8 @@ export class LocL<
    */
   public t<K extends (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string>(
     key: K,
-    ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>
-  ): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
+    ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter, StrictParams>
+  ): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, StrictParams>;
   public t(key?: string, values?: any, format?: FormatOptions<F, UseDefaultFormatter>): any {
     if (!key) { return this.get(); }
     const pluralResult = this.resolvePluralKey(key, values);
@@ -494,7 +497,13 @@ export class LocL<
    * @param format - An object with formatting options.
    * @returns The translated, pluralized, and formatted string.
    */
-  public plural<K extends PluralKeys<S, T, Fallback>>(key: K, values: PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>, format?: FormatOptions<F, UseDefaultFormatter>): string;
+  public plural<K extends PluralKeys<S, T, Fallback>>(
+    key: K,
+    values: StrictParams extends false
+      ? { count: number } & InterpolationOptions
+      : PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>,
+    format?: FormatOptions<F, UseDefaultFormatter>
+  ): string;
   public plural(key: any, values: any, format?: any): string {
     return this.t(key as any, values as any, format as any) as string;
   }

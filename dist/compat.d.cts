@@ -1,4 +1,4 @@
-import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, I as IsEmptyParams, c as InterpolationOptions, d as PluralParamsFor, e as ParamsFor, f as PathValue, D as Direction } from './LocL-CdVQzKGp.cjs';
+import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, g as IsEmptyParams, I as InterpolationOptions, h as PluralParamsFor, i as ParamsFor, j as PathValue, D as Direction } from './LocL-DJ5CfHdW.cjs';
 import { DefaultResources, DefaultFallback } from './react.cjs';
 import 'react';
 

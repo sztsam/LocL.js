@@ -277,6 +277,32 @@ type ExtractPluralKeys<T, Path extends string = "", Depth extends any[] = []> =
 
 
 /* =========================================================================
+ * Pre-Flattened Utilities for Large Dictionaries
+ * ========================================================================= */
+
+export type FlattenKeys<T, Depth extends number = 8, UsedDepth extends any[] = []> =
+  UsedDepth['length'] extends Depth
+    ? never
+    : T extends object
+      ? {
+          [K in keyof T & (string | number)]: T[K] extends any[]
+            ? `${K}`
+            : T[K] extends object
+              ? IsPluralObject<T[K]> extends true
+                ? `${K}`
+                : `${K}` | `${K}.${FlattenKeys<T[K], Depth, [...UsedDepth, any]>}`
+              : `${K}`;
+        }[keyof T & (string | number)]
+      : never;
+
+export type FlattenDictionary<T> = {
+  [K in FlattenKeys<T>]: string;
+};
+
+export type PreFlattened<T> = FlattenDictionary<T>;
+
+
+/* =========================================================================
  * Options & Function Signatures
  * ========================================================================= */
 
@@ -306,20 +332,25 @@ export type Unsubscribe = () => void;
 type TagFormatter<T = any> = (content: string) => T;
 export type TagInterpolationOptions<T = any> = Record<string, TagFormatter<T> | string | number | Date | boolean | undefined>;
 
-export type TArgs<K extends string, Tr, PK extends string, F extends Record<string, Formatter>, U extends boolean> =
-  unknown extends K
+export type TArgs<K extends string, Tr, PK extends string, F extends Record<string, Formatter>, U extends boolean, StrictParams extends boolean = true> =
+  StrictParams extends false
     ? [values?: InterpolationOptions, format?: FormatOptions<F, U>]
-    : string extends PK
+    : unknown extends K
       ? [values?: InterpolationOptions, format?: FormatOptions<F, U>]
-      : K extends PK
-        ? [values: PluralParamsFor<K, Tr>, format?: FormatOptions<F, U>]
-        : IsEmptyParams<ParamsFor<PathValue<Tr, K>>> extends true
-          ? [values?: InterpolationOptions, format?: FormatOptions<F, U>]
-          : [values: ParamsFor<PathValue<Tr, K>> & InterpolationOptions, format?: FormatOptions<F, U>];
-export type TResult<K extends string, Tr, PK extends string> =
-  string extends PK
-    ? PathValue<Tr, K>
-    : K extends PK ? string : PathValue<Tr, K>;
+      : string extends PK
+        ? [values?: InterpolationOptions, format?: FormatOptions<F, U>]
+        : K extends PK
+          ? [values: PluralParamsFor<K, Tr>, format?: FormatOptions<F, U>]
+          : IsEmptyParams<ParamsFor<PathValue<Tr, K>>> extends true
+            ? [values?: InterpolationOptions, format?: FormatOptions<F, U>]
+            : [values: ParamsFor<PathValue<Tr, K>> & InterpolationOptions, format?: FormatOptions<F, U>];
+
+export type TResult<K extends string, Tr, PK extends string, StrictParams extends boolean = true> =
+  StrictParams extends false
+    ? string
+    : string extends PK
+      ? PathValue<Tr, K>
+      : K extends PK ? string : PathValue<Tr, K>;
 
 type DeepMerge<T, U> = T extends object
   ? U extends object

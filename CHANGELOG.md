@@ -2,6 +2,29 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.3.0] — 2026-10-14
+
+### Added
+
+- **Headless Async Request Isolation (`locl-js/server`)**:
+  - Full support for React Server Components (RSC), Next.js App Router, Astro, Remix, and Express/Fastify powered by Node's native `AsyncLocalStorage`.
+  - Zero client-side React Context overhead; enables direct translation execution in async server components without `"use client"`.
+  - `createLocLServer(translator, options?)` factory returning an isolated server suite:
+    - `getTranslator(scope?, options?)`: Asynchronously resolves request-scoped translations, auto-loads missing namespaces via `translator.load()`, and invokes optional custom `getLocale()` resolvers (e.g., reading headers/cookies).
+    - `getTranslations(scope?, options?)`: Convenient alias for `getTranslator()` matching modern Next.js conventions.
+    - `getSyncTranslator(scope?, options?)`: Synchronous translator for in-memory server contexts.
+    - `runWithLocale(locale, fn)`: Runs synchronous or asynchronous request subtrees with isolated locale bindings.
+    - `runWithTranslator(translator, fn)`: Binds an isolated custom `LocL` translator instance to the current asynchronous execution context.
+    - `getLocale()` & `setLocale(locale)`: Request-scoped locale getters and setters.
+  - Multi-purpose `ServerTranslator`: Callable directly as `t("key", values)` while providing attached helper methods and reactive getters (`t.t`, `t.plural`, `t.rich`, `t.format`, `t.get`, `t.language`, `t.direction`, `t.isRTL()`, `t.translator`).
+  - Standalone module-level server exports (`getTranslator`, `getTranslations`, `runWithLocale`, `setServerTranslator`, etc.) with `LocLServerRegister` ambient interface support for zero-boilerplate server typing.
+- **Safe Type Mode for Large Dictionaries (`strictParams: false`)**:
+  - Added `strictParams?: boolean` option to `initLocL()`: setting `strictParams: false` instructs the TypeScript compiler to bypass recursive template-literal parsing (`ExtractInterpolationParams`, `ScanParams`, `ReadBalanced`) across large dictionaries.
+  - Retains 100% compile-time key autocompletion and path validation while eliminating `tsc` instantiation depth slowdowns.
+- **Pre-Flattened Dictionary Utilities**:
+  - `flattenDictionary(obj)`: Runtime utility that flattens nested dictionaries into dot-notated objects while preserving plural objects for build-time and startup optimizations.
+  - `defineFastResources(resources)`: Identity helper for lightweight dictionary declarations.
+
 ## [2.2.0] — 2026-10-13
 
 ### Performance

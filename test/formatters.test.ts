@@ -134,8 +134,10 @@ describe('defaultFormatters', () => {
     it('should handle fallback branches and partial/null args', () => {
       expect(defaultFormatters.yesNo(false, ["Y"])).toBe("No");
       expect(defaultFormatters.yesNo(true, ["", "N"])).toBe("Yes");
-      expect(defaultFormatters.yesNo(true, null as any)).toBe("Yes");
-      expect(defaultFormatters.yesNo(false, null as any)).toBe("No");
+      // @ts-expect-error
+      expect(defaultFormatters.yesNo(true, null)).toBe("Yes");
+      // @ts-expect-error
+      expect(defaultFormatters.yesNo(false, null)).toBe("No");
     });
   });
 
@@ -153,8 +155,10 @@ describe('defaultFormatters', () => {
     it('should handle fallback branches and partial/null args', () => {
       expect(defaultFormatters.boolean(false, ["trueVal"])).toBe("false");
       expect(defaultFormatters.boolean(true, ["", "falseVal"])).toBe("true");
-      expect(defaultFormatters.boolean(true, null as any)).toBe("true");
-      expect(defaultFormatters.boolean(false, null as any)).toBe("false");
+      // @ts-expect-error
+      expect(defaultFormatters.boolean(true, null)).toBe("true");
+      // @ts-expect-error
+      expect(defaultFormatters.boolean(false, null)).toBe("false");
     });
   });
 

@@ -1,5 +1,5 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, d as PluralParamsFor, I as IsEmptyParams, e as ParamsFor, f as PathValue, c as InterpolationOptions, a as LocL, g as Language, D as Direction, R as ResourceLoader, h as Scope } from './LocL-CdVQzKGp.cjs';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, h as PluralParamsFor, g as IsEmptyParams, i as ParamsFor, j as PathValue, I as InterpolationOptions, a as LocL, e as Language, D as Direction, R as ResourceLoader, k as Scope } from './LocL-DJ5CfHdW.cjs';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = K extends PluralKeys<S, T, Fallback> ? PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>> : IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
@@ -65,7 +65,7 @@ type DefaultFallback<T = DefaultResources> = LocLRegister extends {
 } ? FB : LocLRegister extends {
     fallbackLanguage: infer FB extends string;
 } ? FB : [keyof T & string] extends [never] ? string : keyof T & string;
-declare const LocLContext: React.Context<LocL<any, any, any, any, any> | null>;
+declare const LocLContext: React.Context<LocL<any, any, any, any, any, true> | null>;
 type TranslatorApi<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
 interface LocLProviderProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> {
     translator: LocL<T, Fallback, S, any, any>;

@@ -1,22 +1,6 @@
 import { LocL, LocLConfig } from "./LocL.js";
 import { ScopeType, Formatter, LangWithPlurals, EnforceParity } from "./types.js";
 
-/**
- * A helper type that provides strong typing for your language resources,
- * ensuring that pluralization keys are correctly defined.
- *
- * @example
- * ```ts
- * import { LangWithPlurals } from "locl-js";
- *
- * const en: LangWithPlurals<typeof en> = {
- *   messages: {
- *     one: "You have one message.",
- *     other: "You have {count} messages."
- *   }
- * };
- * ```
- */
 export { LocL, type LocLConfig, type LangWithPlurals };
 
 /**
@@ -52,6 +36,7 @@ export { LocL, type LocLConfig, type LangWithPlurals };
  * @param {boolean} [config.useCache=true] - Enables caching of scopes and proxies.
  * @param {ResourceLoader} [config.loader] - Default async loader function for lazy loading namespaces
  * @param {PseudoLocalizationOptions} [config.pseudoLocalization] - Built-in Pseudo-Localization for enterprise layout & QA testing
+ * @param {StrictParams} [config.strictParams] - eliminate recursive template-literal parsing for large codebases while retaining autocomplete
  *
  * @returns A new `LocL` instance configured with the provided options.
  */
@@ -60,9 +45,17 @@ export function initLocL<
   Fallback extends keyof T & string,
   S extends ScopeType<T, Fallback> = undefined,
   F extends Record<string, Formatter> = {},
-  UseDefaultFormatter extends boolean = true
->(config: LocLConfig<T, Fallback> & { scope?: S, formatters?: F, useDefaultFormatters?: UseDefaultFormatter }) {
-  return new LocL<T, Fallback, S, F, UseDefaultFormatter>(config);
+  UseDefaultFormatter extends boolean = true,
+  StrictParams extends boolean = true
+>(
+  config: LocLConfig<T, Fallback, F> & {
+    scope?: S;
+    formatters?: F;
+    useDefaultFormatters?: UseDefaultFormatter;
+    strictParams?: StrictParams;
+  }
+): LocL<T, Fallback, S, F, UseDefaultFormatter, StrictParams> {
+  return new LocL<T, Fallback, S, F, UseDefaultFormatter, StrictParams>(config);
 }
 
 /**
@@ -101,4 +94,60 @@ export function defineStrictResources<
   Fallback extends keyof T & string = "en" extends keyof T ? "en" : keyof T & string
 >(resources: EnforceParity<T, Fallback>): T {
   return resources as T;
+}
+
+/**
+ * Declares translation resources for enterprise large dictionaries without requiring
+ * recursive template-literal parsing.
+ */
+export function defineFastResources<const T extends Record<string, any>>(resources: T): T {
+  return resources;
+}
+
+
+/**
+ * Flattens a deeply nested translation dictionary object into a single-level object
+ * with dot-separated keys at runtime. Plural form objects (e.g. `{ one: "...", other: "..." }`)
+ * are preserved as objects for proper pluralization support.
+ *
+ * Useful for build-time or startup optimization in codebases with 10,000+ keys.
+ *
+ * @example
+ * ```ts
+ * const flat = flattenDictionary({
+ *   auth: { login: "Log in", welcome: "Hello {name}" },
+ *   items: { one: "1 item", other: "{count} items" }
+ * });
+ * // Result:
+ * // {
+ * //   "auth.login": "Log in",
+ * //   "auth.welcome": "Hello {name}",
+ * //   "items": { one: "1 item", other: "{count} items" }
+ * // }
+ * ```
+ */
+export function flattenDictionary(obj: Record<string, any>, prefix = ""): Record<string, any> {
+  const result: Record<string, any> = {};
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return result;
+  }
+
+  for (const [key, val] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const keys = Object.keys(val);
+      const isPlural = keys.length > 0 && keys.every(k =>
+        ["zero", "one", "two", "few", "many", "other"].includes(k) || k.startsWith("=")
+      );
+      if (isPlural) {
+        result[fullKey] = val;
+      } else {
+        Object.assign(result, flattenDictionary(val, fullKey));
+      }
+    } else {
+      result[fullKey] = val;
+    }
+  }
+
+  return result;
 }
