@@ -158,7 +158,7 @@ export function Trans<
   const scopedTranslator = useMemo<LocL<T, Fallback, S> | null>(() => {
     if (!activeTranslator) { return null; }
     return (scope !== undefined
-      ? activeTranslator.withConfig({ scope } as any)
+      ? activeTranslator.withConfig({ scope })
       : activeTranslator) as LocL<T, Fallback, S>;
   }, [activeTranslator, scopeKey]);
 

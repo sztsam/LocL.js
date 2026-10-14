@@ -21,8 +21,10 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var src_exports = {};
 __export(src_exports, {
   LocL: () => LocL,
+  defineFastResources: () => defineFastResources,
   defineResources: () => defineResources,
   defineStrictResources: () => defineStrictResources,
+  flattenDictionary: () => flattenDictionary,
   initLocL: () => initLocL
 });
 module.exports = __toCommonJS(src_exports);
@@ -1196,10 +1198,38 @@ function defineResources(resources) {
 function defineStrictResources(resources) {
   return resources;
 }
+function defineFastResources(resources) {
+  return resources;
+}
+function flattenDictionary(obj, prefix = "") {
+  const result = {};
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
+    return result;
+  }
+  for (const [key, val] of Object.entries(obj)) {
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    if (val && typeof val === "object" && !Array.isArray(val)) {
+      const keys = Object.keys(val);
+      const isPlural = keys.length > 0 && keys.every(
+        (k) => ["zero", "one", "two", "few", "many", "other"].includes(k) || k.startsWith("=")
+      );
+      if (isPlural) {
+        result[fullKey] = val;
+      } else {
+        Object.assign(result, flattenDictionary(val, fullKey));
+      }
+    } else {
+      result[fullKey] = val;
+    }
+  }
+  return result;
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   LocL,
+  defineFastResources,
   defineResources,
   defineStrictResources,
+  flattenDictionary,
   initLocL
 });

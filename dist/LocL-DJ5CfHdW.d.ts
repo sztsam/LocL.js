@@ -224,8 +224,8 @@ type Subscriber<T extends Record<string, any>> = (language: Language<T>, prevLan
 type Unsubscribe = () => void;
 type TagFormatter<T = any> = (content: string) => T;
 type TagInterpolationOptions<T = any> = Record<string, TagFormatter<T> | string | number | Date | boolean | undefined>;
-type TArgs<K extends string, Tr, PK extends string, F extends Record<string, Formatter>, U extends boolean> = unknown extends K ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : string extends PK ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : K extends PK ? [values: PluralParamsFor<K, Tr>, format?: FormatOptions<F, U>] : IsEmptyParams<ParamsFor<PathValue<Tr, K>>> extends true ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : [values: ParamsFor<PathValue<Tr, K>> & InterpolationOptions, format?: FormatOptions<F, U>];
-type TResult<K extends string, Tr, PK extends string> = string extends PK ? PathValue<Tr, K> : K extends PK ? string : PathValue<Tr, K>;
+type TArgs<K extends string, Tr, PK extends string, F extends Record<string, Formatter>, U extends boolean, StrictParams extends boolean = true> = StrictParams extends false ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : unknown extends K ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : string extends PK ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : K extends PK ? [values: PluralParamsFor<K, Tr>, format?: FormatOptions<F, U>] : IsEmptyParams<ParamsFor<PathValue<Tr, K>>> extends true ? [values?: InterpolationOptions, format?: FormatOptions<F, U>] : [values: ParamsFor<PathValue<Tr, K>> & InterpolationOptions, format?: FormatOptions<F, U>];
+type TResult<K extends string, Tr, PK extends string, StrictParams extends boolean = true> = StrictParams extends false ? string : string extends PK ? PathValue<Tr, K> : K extends PK ? string : PathValue<Tr, K>;
 type DeepMerge<T, U> = T extends object ? U extends object ? {
     [K in keyof T | keyof U]: K extends keyof U ? K extends keyof T ? DeepMerge<T[K], U[K]> : U[K] : K extends keyof T ? T[K] : never;
 } : U : U;
@@ -332,6 +332,8 @@ interface LocLConfig<T extends Record<string, any>, Fallback extends keyof T & s
     pseudoLocalization?: boolean | PseudoLocalizationOptions;
     /** Automatically syncs document.documentElement dir and lang attributes in browser environments. Defaults to `true`. */
     autoSyncDocument?: boolean;
+    /** When false, disables recursive template-literal parsing for large dictionaries to maximize tsc performance */
+    strictParams?: boolean;
 }
 /**
  * The main class for handling translations.
@@ -342,7 +344,7 @@ interface LocLConfig<T extends Record<string, any>, Fallback extends keyof T & s
  * @template F - The type of the custom formatters.
  * @template UseDefaultFormatter - Whether to use the default formatters.
  */
-declare class LocL<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true> {
+declare class LocL<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true, StrictParams extends boolean = true> {
     private readonly rootInstance;
     private config;
     private resources;
@@ -367,11 +369,12 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * Creates a new LocL instance.
      * @param config - The configuration object.
      */
-    constructor(config: LocLConfig<T, Fallback> & {
+    constructor(config: LocLConfig<T, Fallback, F> & {
         fallbackLanguage: Fallback;
         formatters?: F;
         useDefaultFormatters?: UseDefaultFormatter;
         scope?: S;
+        strictParams?: StrictParams;
     });
     /**
      * Creates a new proxy translator instance with a different configuration.
@@ -385,14 +388,14 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     withConfig<N extends ScopeType<T, Fallback>>(config: {
         scope?: N;
         language?: Language<T>;
-    }): LocL<T, Fallback, N>;
+    }): LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams>;
     /**
      * Creates a new `LocL` instance with a different language or scope.
      * @param language - The language to use for the new instance. Defaults to the current language.
      * @param scope - The scope to use for the new instance.
      * @returns A new `LocL` instance.
      */
-    clone<N extends ScopeType<T, Fallback> = undefined>(language?: Language<T>, scope?: N): LocL<T, Fallback, N>;
+    clone<N extends ScopeType<T, Fallback> = undefined>(language?: Language<T>, scope?: N): LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams>;
     /**
      * Subscribes a listener to language changes.
      * Conforms to the standard reactive store contract (e.g. Svelte stores).
@@ -438,7 +441,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * @param bundle - Object of translations to merge.
      * @returns DeepMergedResource LocL type
      */
-    addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter>;
+    addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter, StrictParams>;
     /**
      * Changes the current language of the translator.
      * @param lang - The new language to set.
@@ -452,7 +455,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * @param format - An object with formatting options.
      * @returns The translated and formatted string, or the translation object.
      */
-    t<K extends (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string>(key: K, ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter>): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>>;
+    t<K extends (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string>(key: K, ...args: TArgs<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, F, UseDefaultFormatter, StrictParams>): TResult<K, TranslationObjectFor<S, T, Fallback>, PluralKeys<S, T, Fallback>, StrictParams>;
     /**
      * Translates a key without strict type checking.
      * This is useful for compatibility with other i18n libraries or dynamic keys.
@@ -478,7 +481,9 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
      * @param format - An object with formatting options.
      * @returns The translated, pluralized, and formatted string.
      */
-    plural<K extends PluralKeys<S, T, Fallback>>(key: K, values: PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>, format?: FormatOptions<F, UseDefaultFormatter>): string;
+    plural<K extends PluralKeys<S, T, Fallback>>(key: K, values: StrictParams extends false ? {
+        count: number;
+    } & InterpolationOptions : PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>, format?: FormatOptions<F, UseDefaultFormatter>): string;
     /**
      * Translates a key and interpolates rich elements using tag functions.
      * Matches `<tag>content</tag>` in translation templates.
@@ -537,4 +542,4 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private isUnsafeObjectKey;
 }
 
-export { type Direction as D, type EnforceParity as E, type Formatter as F, type IsEmptyParams as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type InterpolationOptions as c, type PluralParamsFor as d, type ParamsFor as e, type PathValue as f, type Language as g, type Scope as h };
+export { type Direction as D, type EnforceParity as E, type Formatter as F, type InterpolationOptions as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type TArgs as c, type TResult as d, type Language as e, type LocaleMetadata as f, type IsEmptyParams as g, type PluralParamsFor as h, type ParamsFor as i, type PathValue as j, type Scope as k };

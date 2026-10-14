@@ -1,5 +1,5 @@
-import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-CdVQzKGp.js';
-export { b as LangWithPlurals } from './LocL-CdVQzKGp.js';
+import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-DJ5CfHdW.js';
+export { b as LangWithPlurals } from './LocL-DJ5CfHdW.js';
 
 /**
  * Initializes a new LocL instance.
@@ -34,14 +34,16 @@ export { b as LangWithPlurals } from './LocL-CdVQzKGp.js';
  * @param {boolean} [config.useCache=true] - Enables caching of scopes and proxies.
  * @param {ResourceLoader} [config.loader] - Default async loader function for lazy loading namespaces
  * @param {PseudoLocalizationOptions} [config.pseudoLocalization] - Built-in Pseudo-Localization for enterprise layout & QA testing
+ * @param {StrictParams} [config.strictParams] - eliminate recursive template-literal parsing for large codebases while retaining autocomplete
  *
  * @returns A new `LocL` instance configured with the provided options.
  */
-declare function initLocL<const T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true>(config: LocLConfig<T, Fallback> & {
+declare function initLocL<const T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback> = undefined, F extends Record<string, Formatter> = {}, UseDefaultFormatter extends boolean = true, StrictParams extends boolean = true>(config: LocLConfig<T, Fallback, F> & {
     scope?: S;
     formatters?: F;
     useDefaultFormatters?: UseDefaultFormatter;
-}): LocL<T, Fallback, S, F, UseDefaultFormatter>;
+    strictParams?: StrictParams;
+}): LocL<T, Fallback, S, F, UseDefaultFormatter, StrictParams>;
 /**
  * Declares translation resources while keeping their literal types, so that
  * `t()` knows which keys and `{params}` exist. Same effect as `as const`, without writing it.
@@ -71,5 +73,32 @@ declare function defineResources<const T extends Record<string, any>>(resources:
  * ```
  */
 declare function defineStrictResources<const T extends Record<string, any>, Fallback extends keyof T & string = "en" extends keyof T ? "en" : keyof T & string>(resources: EnforceParity<T, Fallback>): T;
+/**
+ * Declares translation resources for enterprise large dictionaries without requiring
+ * recursive template-literal parsing.
+ */
+declare function defineFastResources<const T extends Record<string, any>>(resources: T): T;
+/**
+ * Flattens a deeply nested translation dictionary object into a single-level object
+ * with dot-separated keys at runtime. Plural form objects (e.g. `{ one: "...", other: "..." }`)
+ * are preserved as objects for proper pluralization support.
+ *
+ * Useful for build-time or startup optimization in codebases with 10,000+ keys.
+ *
+ * @example
+ * ```ts
+ * const flat = flattenDictionary({
+ *   auth: { login: "Log in", welcome: "Hello {name}" },
+ *   items: { one: "1 item", other: "{count} items" }
+ * });
+ * // Result:
+ * // {
+ * //   "auth.login": "Log in",
+ * //   "auth.welcome": "Hello {name}",
+ * //   "items": { one: "1 item", other: "{count} items" }
+ * // }
+ * ```
+ */
+declare function flattenDictionary(obj: Record<string, any>, prefix?: string): Record<string, any>;
 
-export { LocL, LocLConfig, defineResources, defineStrictResources, initLocL };
+export { LocL, LocLConfig, defineFastResources, defineResources, defineStrictResources, flattenDictionary, initLocL };

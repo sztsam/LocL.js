@@ -227,7 +227,8 @@ describe("React Integration", () => {
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
         subscribe(() => {});
         const val = getSnapshot();
-        snapshots.push(val as any);
+        // @ts-expect-error
+        snapshots.push(val);
         return getServerSnapshot ? getServerSnapshot() : val;
       });
 
@@ -495,7 +496,8 @@ describe("React Integration", () => {
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
         subscribe(() => {});
         const val = getSnapshot();
-        snapshots.push(val as any);
+        // @ts-expect-error
+        snapshots.push(val);
         return getServerSnapshot ? getServerSnapshot() : val;
       });
 
@@ -570,7 +572,8 @@ describe("React Integration", () => {
         get: () => "Test"
       };
       let unsub2: any;
-      renderToStaticMarkup(<Trans translator={dummyTranslator as any} i18nKey="title" />);
+      // @ts-expect-error
+      renderToStaticMarkup(<Trans translator={dummyTranslator} i18nKey="title" />);
       expect(typeof unsub2).toBe("undefined");
       (React.useSyncExternalStore as any).mockRestore();
     });
@@ -620,7 +623,8 @@ describe("React Integration", () => {
           translator={translator}
           i18nKey="notice"
           components={{
-            bold: "not-a-component" as any
+            // @ts-expect-error
+            bold: "not-a-component"
           }}
         />
       );
@@ -663,7 +667,8 @@ describe("React Integration", () => {
       let rootPromise: any;
       function SuspenseRootComp() {
         try {
-          useTranslation("asyncNs" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("asyncNs", { suspense: true });
         } catch (p) {
           rootPromise = p;
         }
@@ -683,7 +688,8 @@ describe("React Integration", () => {
       let boundPromise: any;
       function SuspenseBoundComp() {
         try {
-          suite.useTranslation("asyncNsBound" as any, { suspense: true });
+          // @ts-expect-error
+          suite.useTranslation("asyncNsBound", { suspense: true });
         } catch (p) {
           boundPromise = p;
         }
@@ -704,7 +710,8 @@ describe("React Integration", () => {
       const errSpy = jest.spyOn(console, "error").mockImplementation();
 
       function FailingRootComp() {
-        useTranslation("failing" as any);
+        // @ts-expect-error
+        useTranslation("failing");
         return <span>failing</span>;
       }
 
@@ -716,7 +723,8 @@ describe("React Integration", () => {
 
       // --- 4. useEffect catch block in Suite useBoundTranslation ---
       function FailingBoundComp() {
-        suite.useTranslation("failing" as any);
+        // @ts-expect-error
+        suite.useTranslation("failing");
         return <span>failing</span>;
       }
 
@@ -775,7 +783,8 @@ describe("React Integration", () => {
       let thrownPromise: any;
       function Comp() {
         try {
-          useTranslation("failingScope" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("failingScope", { suspense: true });
         } catch (e: any) {
           if (e && typeof e.then === "function") {
             thrownPromise = e;
@@ -822,7 +831,8 @@ describe("React Integration", () => {
       let thrownPromise: any;
       function Comp() {
         try {
-          useTranslation("ttlScope" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("ttlScope", { suspense: true });
         } catch (e: any) {
           if (e && typeof e.then === "function") {
             thrownPromise = e;
@@ -845,7 +855,8 @@ describe("React Integration", () => {
       let retriedPromise: any;
       function RetryComp() {
         try {
-          useTranslation("ttlScope" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("ttlScope", { suspense: true });
         } catch (e: any) {
           if (e && typeof e.then === "function") {
             retriedPromise = e;
@@ -881,7 +892,8 @@ describe("React Integration", () => {
       let promise: any;
       function Comp() {
         try {
-          useTranslation(["dupNs", "dupNs"] as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation(["dupNs", "dupNs"], { suspense: true });
         } catch (p) {
           promise = p;
         }
@@ -913,7 +925,8 @@ describe("React Integration", () => {
       let promise: any;
       function Comp() {
         try {
-          useTranslation(["preloadedNs", "unloadedNs"] as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation(["preloadedNs", "unloadedNs"], { suspense: true });
         } catch (p) {
           promise = p;
         }
@@ -974,7 +987,8 @@ describe("React Integration", () => {
       let namedPromise: any;
       function NullNamedComp() {
         try {
-          useTranslation("nullScope" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("nullScope", { suspense: true });
         } catch (p: any) {
           if (p && typeof p.then === "function") {
             namedPromise = p;
@@ -1009,15 +1023,18 @@ describe("React Integration", () => {
         loader: async () => ({ ok: true })
       });
 
-      // Delete rootInstance so (translator as any).rootInstance is undefined,
+      // Delete rootInstance so translator.rootInstance is undefined,
       // exercising the fallback `?? translator` branch in suspendUntilLoaded
-      delete (translator as any).rootInstance;
-      expect((translator as any).rootInstance).toBeUndefined();
+      // @ts-expect-error
+      delete translator.rootInstance;
+      // @ts-expect-error
+      expect(translator.rootInstance).toBeUndefined();
 
       let promise: any;
       function Comp() {
         try {
-          useTranslation("noRootScope" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("noRootScope", { suspense: true });
         } catch (p) {
           promise = p;
         }
@@ -1047,13 +1064,15 @@ describe("React Integration", () => {
       const originalSet = WeakMap.prototype.set;
       const getSpy = jest.spyOn(WeakMap.prototype, "get").mockImplementation(function (this: any, key: any) {
         const result = originalGet.call(this, key);
-        if (result instanceof Map && (key === translator || key === (translator as any).rootInstance)) {
+        // @ts-expect-error
+        if (result instanceof Map && (key === translator || key === translator.rootInstance)) {
           capturedLoads = result;
         }
         return result;
       });
       const setSpy = jest.spyOn(WeakMap.prototype, "set").mockImplementation(function (this: any, key: any, val: any) {
-        if (val instanceof Map && (key === translator || key === (translator as any).rootInstance)) {
+        // @ts-expect-error
+        if (val instanceof Map && (key === translator || key === translator.rootInstance)) {
           capturedLoads = val;
         }
         return originalSet.call(this, key, val);
@@ -1062,7 +1081,8 @@ describe("React Integration", () => {
       let promise: any;
       function Comp() {
         try {
-          useTranslation("interceptNs" as any, { suspense: true });
+          // @ts-expect-error
+          useTranslation("interceptNs", { suspense: true });
         } catch (p) {
           promise = p;
         }
@@ -1095,7 +1115,8 @@ describe("React Integration", () => {
       jest.spyOn(React, "useEffect").mockImplementation((cb) => cb());
 
       function Comp() {
-        useTranslation("syncLoadedScope" as any);
+        // @ts-expect-error
+        useTranslation("syncLoadedScope");
         return null;
       }
 
@@ -1105,7 +1126,8 @@ describe("React Integration", () => {
         </LocLProvider>
       );
 
-      (translator.isLoaded as any).mockRestore();
+      // @ts-expect-error
+      translator.isLoaded.mockRestore();
       (React.useEffect as any).mockRestore();
     });
   });

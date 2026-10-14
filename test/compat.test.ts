@@ -231,7 +231,8 @@ describe("i18next Compatibility Adapter", () => {
 
     await i18n.changeLanguage("es");
     expect(i18n.language).toBe("es");
-    expect(i18n.t("greeting" as any,)).toBe("Hola from es");
+    // @ts-expect-error
+    expect(i18n.t("greeting",)).toBe("Hola from es");
 
     // 2. loadNamespaces with single string and array
     let singleLoaded = false;
@@ -239,10 +240,12 @@ describe("i18next Compatibility Adapter", () => {
       singleLoaded = true;
     });
     expect(singleLoaded).toBe(true);
-    expect(i18n.t("dashboard:msg" as any)).toBe("dashboard loaded");
+    // @ts-expect-error
+    expect(i18n.t("dashboard:msg")).toBe("dashboard loaded");
 
     await i18n.loadNamespaces(["auth", "billing"]);
-    expect(i18n.t("auth:msg" as any)).toBe("auth loaded");
+    // @ts-expect-error
+    expect(i18n.t("auth:msg")).toBe("auth loaded");
 
     // 3. changeLanguage failure callback and catch block
     const failingTranslator = initLocL({
@@ -275,18 +278,20 @@ describe("i18next Compatibility Adapter", () => {
       getLanguage: () => "en",
       subscribe: () => () => {}
     };
-    const i18nWithoutRes = toI18next(dummyLocL as any);
+    // @ts-expect-error
+    const i18nWithoutRes = toI18next(dummyLocL);
     expect(i18nWithoutRes.languages).toEqual([]);
 
     // Exercise return fallback when translator.t returns undefined
     const mockUndefinedT = {
       ...translator,
-      t: () => undefined as any,
+      t: () => undefined,
       get: () => undefined,
       getLanguage: () => "en",
       subscribe: () => () => {}
     };
-    const i18nUndefined = toI18next(mockUndefinedT as any);
+    // @ts-expect-error
+    const i18nUndefined = toI18next(mockUndefinedT);
     // @ts-expect-error
     expect(i18nUndefined.t("someKey")).toBe("someKey");
     expect(i18nUndefined.t("someKey", "Custom Default")).toBe("Custom Default");

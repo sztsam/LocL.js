@@ -1,4 +1,5 @@
-import { initLocL, LocL, defineResources, defineStrictResources } from '../src/index';
+import { initLocL, LocL, defineResources, defineStrictResources, flattenDictionary, defineFastResources } from '../src/index';
+import { FlattenKeys, PreFlattened } from "../src/types";
 
 describe('initLocL', () => {
   const resources = {
@@ -52,9 +53,9 @@ describe('initLocL', () => {
     });
     expect(translator).toBeDefined();
 
-    // @ts-ignore
+    // @ts-expect-error
     expect(() => initLocL({})).toThrow('[LocL] `resources` is required');
-    // @ts-ignore
+    // @ts-expect-error
     expect(() => initLocL({ resources })).toThrow('[LocL] `fallbackLanguage` is required');
   });
 
@@ -99,39 +100,31 @@ describe('initLocL', () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
 
     // category "one"
-    // @ts-ignore
     expect(translator.plural('pluralObj', { count: 1 })).toBe('One item');
 
     // category missing, other present
-    // @ts-ignore
     expect(translator.plural('pluralObjOnlyOther', { count: 1 })).toBe('Something else');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural'));
 
     // everything missing
-    // @ts-ignore
     expect(translator.plural('pluralObjNoOther', { count: 5 })).toBe('pluralObjNoOther');
 
     // non-object plural
-    // @ts-ignore
     expect(translator.plural('apples', { count: 1 })).toBe('one apple');
 
     // suffix plural: category missing, other present
-    // @ts-ignore
     expect(translator.plural('suffixOnlyOther', { count: 1 })).toBe('other items');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "suffixOnlyOther" in "en"'));
 
     // suffix plural: category missing, other present via t()
-    // @ts-ignore
     expect(translator.t('suffixOnlyOther', { count: 1 })).toBe('other items');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "suffixOnlyOther" in "en"'));
 
     // suffix plural: other missing
-    // @ts-ignore
     expect(translator.plural('suffixNoOther', { count: 5 })).toBe('suffixNoOther');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "suffixNoOther" in "en"'));
 
     // formatting in plural
-    // @ts-ignore
     expect(translator.plural('apples', { count: 1 }, { formatter: 'upper' })).toBe('ONE APPLE');
 
     warnSpy.mockRestore();
@@ -142,13 +135,12 @@ describe('initLocL', () => {
       resources,
       fallbackLanguage: 'en',
     });
-    // @ts-ignore
     const cloned = translator.clone('de');
     expect(cloned.t('greeting', { name: 'Welt' })).toBe('Hallo, Welt!');
 
     translator.changeLanguage('de');
 
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.language).toBe('de');
     expect(translator.t('greeting', { name: 'Welt' })).toBe('Hallo, Welt!');
   });
@@ -158,10 +150,9 @@ describe('initLocL', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: 'en',
-      // @ts-ignore
+      // @ts-expect-error
       scope: ['a.b.c']
     });
-    // @ts-ignore
     expect(translator.get('a.b.c')).toBe('Nested Key');
 
     // Cache hit
@@ -182,7 +173,7 @@ describe('initLocL', () => {
     const translatorInvalid = initLocL({
       resources,
       fallbackLanguage: 'en',
-      // @ts-ignore
+      // @ts-expect-error
       scope: 'nonexistent',
       devMode: true,
       useCache: true
@@ -208,7 +199,7 @@ describe('initLocL', () => {
     expect(translator.t('a.b.c')).toBe('Dotted Key');
 
     // Missing key warning
-    // @ts-ignore
+    // @ts-expect-error
     translator.t('missing');
     expect(warnSpy).toHaveBeenCalled();
 
@@ -225,14 +216,13 @@ describe('initLocL', () => {
     const p1 = translator.withConfig({ language: 'hu' });
     const p2 = translator.withConfig({ language: 'hu' });
     expect(p1).toBe(p2);
-    // @ts-ignore
+    // @ts-expect-error
     expect(p1.language).toBe('hu');
-    // @ts-ignore
+    // @ts-expect-error
     expect(p1.scope).toBeUndefined();
 
     // Trigger (target[prop])
-    // @ts-ignore
-    expect((p1).getObj).toBeDefined();
+    expect(p1.getObj).toBeDefined();
 
     // Proxy getDirection, isRTL, and getMetadata
     expect(p1.getDirection()).toBe('ltr');
@@ -249,13 +239,11 @@ describe('initLocL', () => {
 
     // makeReadOnly traps
     const res = translator.get();
-    // @ts-ignore
-    expect(() => { (res).greeting = 'new'; }).toThrow();
-    // @ts-ignore
-    expect(() => { delete (res).greeting; }).toThrow();
-    // @ts-ignore
+    // @ts-expect-error
+    expect(() => { res.greeting = 'new'; }).toThrow();
+    // @ts-expect-error
+    expect(() => { delete res.greeting; }).toThrow();
     expect(() => Object.defineProperty(res, 'newProp', { value: 1 })).toThrow();
-    // @ts-ignore
     expect(() => Object.setPrototypeOf(res, {})).toThrow();
   });
 
@@ -267,11 +255,14 @@ describe('initLocL', () => {
 
     const proxy = translator.withConfig({ scope: 'nested' });
     // Direct property access
-    expect((proxy as any).rootInstance).toBe(translator);
+    // @ts-expect-error
+    expect((proxy).rootInstance).toBe(translator);
     // Chained withConfig access (calls this.rootInstance internally)
     const chainedProxy = proxy.withConfig({ language: 'de' });
-    expect((chainedProxy as any).rootInstance).toBe(translator);
-    expect((chainedProxy as any).language).toBe('de');
+    // @ts-expect-error
+    expect((chainedProxy).rootInstance).toBe(translator);
+    // @ts-expect-error
+    expect((chainedProxy).language).toBe('de');
 
     // prop === "subscribe" on fixed language proxy
     const deProxy = translator.withConfig({ language: 'de' });
@@ -300,13 +291,10 @@ describe('initLocL', () => {
       resources,
       fallbackLanguage: 'en',
     });
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.validateSupportedLanguage('en-US')).toBe('en');
-
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.validateSupportedLanguage('')).toBe(null);
-
-    // @ts-ignore
     expect(translator.t('apples', { count: 1 })).toBe('one apple');
 
     // Direction & RTL utilities
@@ -318,10 +306,11 @@ describe('initLocL', () => {
     expect(translator.getMetadata('ar')).toEqual({ language: 'ar', direction: 'rtl', isRTL: true });
 
     // Fallback subtag and script heuristics when Intl.Locale is bypassed/throws
+    // @ts-expect-error
     const mockLocale = jest.spyOn(Intl, 'Locale').mockImplementation((tag) => {
-      if (tag === 'ar') return { getTextInfo: () => ({ direction: 'rtl' }) } as any;
-      if (tag === 'en') return { textInfo: { direction: 'ltr' } } as any;
-      if (tag === 'und') return { textInfo: { direction: 'unknown' } } as any; // Exercises else path on if (info && ...)
+      if (tag === 'ar') return { getTextInfo: () => ({ direction: 'rtl' }) };
+      if (tag === 'en') return { textInfo: { direction: 'ltr' } };
+      if (tag === 'und') return { textInfo: { direction: 'unknown' } }; // Exercises else path on if (info && ...)
       throw new Error('Fallback to subtag parsing');
     });
 
@@ -344,7 +333,7 @@ describe('initLocL', () => {
       devMode: true
     });
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.t('test', { v: 'val' }, { formatter: 'missing' })).toBe('val');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
     warnSpy.mockRestore();
@@ -357,7 +346,7 @@ describe('initLocL', () => {
       devMode: true
     });
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.t('missing')).toBe('missing');
     expect(warnSpy).toHaveBeenCalled();
     warnSpy.mockRestore();
@@ -368,18 +357,15 @@ describe('initLocL', () => {
       resources,
       fallbackLanguage: 'en',
     });
-
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.findNestedValue(['a'], null)).toBeUndefined();
-
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.findNestedValue(['a'], 'string')).toBeUndefined();
-
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.findNestedValue(['missing'], {})).toBeUndefined();
 
     // findNestedValue loops - reached via empty array
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.findNestedValue([], { a: 1 })).toEqual({ a: 1 });
   });
 
@@ -391,7 +377,7 @@ describe('initLocL', () => {
     });
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
 
-    // @ts-ignore
+    // @ts-expect-error
     translator.format('val', 'missing');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('not found'));
     warnSpy.mockRestore();
@@ -475,11 +461,13 @@ describe('initLocL', () => {
     translator.addResource("en", "constructor.polluted", "bad");
     translator.addResource("en", "prototype.polluted", "bad");
     translator.addResource("en", "safe.__proto__", "bad");
-    expect(({} as any).polluted).toBeUndefined();
+    // @ts-expect-error
+    expect(({}).polluted).toBeUndefined();
 
     // Prototype pollution guards on lang
     translator.addResource("__proto__", "key", "bad");
-    expect(({} as any).key).toBeUndefined();
+    // @ts-expect-error
+    expect(({}).key).toBeUndefined();
   });
 
   it("should cover addResources deep merging, new languages, and proto guards", () => {
@@ -502,11 +490,13 @@ describe('initLocL', () => {
       nested: { extra: "Extra" }
     });
     expect(translator.tt("nested.extra")).toBe("Extra");
-    expect(({} as any).polluted).toBeUndefined();
+    // @ts-expect-error
+    expect(({}).polluted).toBeUndefined();
 
     // Prototype pollution guards on lang
     translator.addResources("__proto__", { key: "bad" });
-    expect(({} as any).key).toBeUndefined();
+    // @ts-expect-error
+    expect(({}).key).toBeUndefined();
   });
 
   it("should invalidate cache only for affected language with multi-language cache", () => {
@@ -537,12 +527,15 @@ describe('initLocL', () => {
 
     // Array scope in withConfig
     const proxy = translator.withConfig({ scope: ["nested.a"], language: "de" });
-    expect((proxy as any).language).toBe("de");
-    expect((proxy as any).scope).toEqual(["nested.a"]);
+    // @ts-expect-error
+    expect((proxy).language).toBe("de");
+    // @ts-expect-error
+    expect((proxy).scope).toEqual(["nested.a"]);
 
     // withConfig with scope property access
     const proxy2 = translator.withConfig({ scope: "nested" });
-    expect((proxy2 as any).scope).toBe("nested");
+    // @ts-expect-error
+    expect((proxy2).scope).toBe("nested");
   });
 
   it("should cover clone with default language and custom scope", () => {
@@ -558,10 +551,10 @@ describe('initLocL', () => {
 
   it("should cover validateSupportedLanguage returning null for unrecognized language and prefix", () => {
     const translator = initLocL({ resources, fallbackLanguage: "en" });
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.validateSupportedLanguage("xx-YY")).toBeNull();
     // changeLanguage with invalid language does nothing
-    // @ts-ignore
+    // @ts-expect-error
     translator.changeLanguage("xx-YY");
     expect(translator.getLanguage()).toBe("en");
   });
@@ -594,14 +587,16 @@ describe('initLocL', () => {
 
     // Browser document synchronization when document is defined
     const mockElement = { setAttribute: jest.fn() };
-    (global as any).document = { documentElement: mockElement };
+    // @ts-expect-error
+    (global).document = { documentElement: mockElement };
     const tSync = initLocL({ resources, fallbackLanguage: "en" });
     expect(mockElement.setAttribute).toHaveBeenCalledWith("dir", "ltr");
     expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "en");
 
     tSync.changeLanguage("de");
     expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "de");
-    delete (global as any).document;
+    // @ts-expect-error
+    delete (global).document;
   });
 
   it("should cover buildScopedTranslationObject non-string non-array scope warning and caching", () => {
@@ -609,7 +604,7 @@ describe('initLocL', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: "en",
-      // @ts-ignore
+      // @ts-expect-error
       scope: 12345,
       useCache: true,
       devMode: true
@@ -625,7 +620,7 @@ describe('initLocL', () => {
     const translatorNoCache = initLocL({
       resources,
       fallbackLanguage: "en",
-      // @ts-ignore
+      // @ts-expect-error
       scope: 12345,
       useCache: false,
       devMode: true
@@ -639,11 +634,10 @@ describe('initLocL', () => {
     const translator = initLocL({
       resources,
       fallbackLanguage: "en",
-      // @ts-ignore
+      // @ts-expect-error
       scope: ["nonexistent.path", "nested"]
     });
 
-    // @ts-ignore
     expect(translator.get("nested.a.b")).toBe("Nested value");
   });
 
@@ -749,7 +743,7 @@ describe('initLocL', () => {
     expect(translator.t("selectNested", { gender: "other", count: 10 })).toBe("They have 10 items");
 
     // select without passing field (falls back to 'other')
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.t("selectNested", {})).toBe("They have {count} items");
 
     // select with values === undefined (exercises values ? ... : "other" false branch)
@@ -784,11 +778,11 @@ describe('initLocL', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Formatter "nonExistentFmt" not found.'));
 
     // missing formatter without value
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.t("missingFmtNoValue", {})).toBe("Val: {missingX | nonExistentFmt}");
 
     // unbound variable without formatter
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.t("unbound", {})).toBe("Value: {missing}");
 
     // formatter with args
@@ -802,7 +796,7 @@ describe('initLocL', () => {
       resources: { en: { a: null, leaf: "val" } },
       fallbackLanguage: "en"
     });
-    // @ts-ignore
+    // @ts-expect-error
     expect(translator.get("a.b")).toBeUndefined();
   });
 
@@ -850,7 +844,8 @@ describe('initLocL', () => {
     ]);
 
     // 2-letter prefix fallback without hyphen/underscore
-    expect((translator as any).validateSupportedLanguage("enUS")).toBe("en");
+    // @ts-expect-error
+    expect((translator).validateSupportedLanguage("enUS")).toBe("en");
   });
 
   it("should cover pseudo-localization constructor, toggling, and options", () => {
@@ -895,7 +890,8 @@ describe('initLocL', () => {
       resources: { en: { test: "Result: {val | returnsUndef}" } },
       fallbackLanguage: "en",
       formatters: {
-        returnsUndef: () => undefined as any
+        // @ts-expect-error
+        returnsUndef: () => undefined
       }
     });
     expect(tFmt.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef}");
@@ -906,7 +902,8 @@ describe('initLocL', () => {
       fallbackLanguage: "en",
       devMode: true,
       formatters: {
-        returnsUndef: () => undefined as any
+        // @ts-expect-error
+        returnsUndef: () => undefined
       }
     });
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
@@ -1049,12 +1046,15 @@ describe("LocL Loader & Async Resolution", () => {
     // Monolithic language load (no namespace)
     await translator.loadLanguage("fr");
     expect(translator.isLoaded("fr")).toBe(true);
-    translator.changeLanguage("fr" as any);
-    expect(translator.t("full" as any)).toBe("Full fr");
+    // @ts-expect-error
+    translator.changeLanguage("fr");
+    // @ts-expect-error
+    expect(translator.t("full")).toBe("Full fr");
 
     // Nested dot namespace load
     await translator.loadNamespace("admin.settings");
-    expect(translator.t("admin.settings.val" as any)).toBe("admin.settings loaded");
+    // @ts-expect-error
+    expect(translator.t("admin.settings.val")).toBe("admin.settings loaded");
 
     // Calling load when already loaded returns immediately
     const loadSpy = jest.fn();
@@ -1075,7 +1075,8 @@ describe("LocL Loader & Async Resolution", () => {
       resolvePending = resolve;
     });
     const loadTask = translator.load("en", "replacedTaskNs", () => pendingBundle);
-    (translator as any).loadingPromises.set("en::replacedTaskNs", Promise.resolve());
+    // @ts-expect-error
+    (translator).loadingPromises.set("en::replacedTaskNs", Promise.resolve());
     resolvePending({ data: "ok" });
     await loadTask;
   });
@@ -1140,5 +1141,216 @@ describe("LocL Loader & Async Resolution", () => {
     // 7. resolveBundle with named namespace having a primitive string
     await translator.load("en", "primitiveNs", async () => ({ primitiveNs: "stringData" }));
     expect(translator.isLoaded("en", "primitiveNs")).toBe(true);
+  });
+});
+
+
+describe("Safe Type Mode for Large Dictionaries (strictParams: false & Pre-Flattened)", () => {
+  const largeResources = defineResources({
+    en: {
+      simple: "Simple text",
+      greeting: "Hello, {name}!",
+      complex: "{count, select, 0 {None} 1 {One} other {{count} items}} for {user}.",
+      messages: {
+        one: "1 message from {sender}",
+        other: "{count} messages from {sender}"
+      },
+      nav: {
+        home: "Home",
+        settings: {
+          profile: "Profile settings",
+          security: "Security settings for {role}"
+        }
+      }
+    },
+    de: {
+      simple: "Einfacher Text",
+      greeting: "Hallo, {name}!",
+      complex: "{count, select, 0 {Keine} 1 {Eins} other {{count} Artikel}} für {user}.",
+      messages: {
+        one: "1 Nachricht von {sender}",
+        other: "{count} Nachrichten von {sender}"
+      },
+      nav: {
+        home: "Startseite",
+        settings: {
+          profile: "Profileinstellungen",
+          security: "Sicherheitseinstellungen für {role}"
+        }
+      }
+    }
+  });
+
+  it("should enable Safe Type Mode via runtime config { strictParams: false } with automatic inference", () => {
+    const translator = initLocL({
+      resources: largeResources,
+      fallbackLanguage: "en",
+      strictParams: false
+    });
+
+    // Key autocomplete and key validation
+    expect(translator.t("simple")).toBe("Simple text");
+    expect(translator.t("nav.home")).toBe("Home");
+    expect(translator.t("nav.settings.profile")).toBe("Profile settings");
+
+    // Templates with parameters do NOT require values at compile time
+    // (Bypasses recursive template string scanning in tsc)
+    expect(translator.t("greeting")).toBe("Hello, {name}!");
+
+    // Values can still be provided and are interpolated as expected
+    expect(translator.t("greeting", { name: "Alice" })).toBe("Hello, Alice!");
+    expect(translator.t("nav.settings.security", { role: "Admin" })).toBe("Security settings for Admin");
+
+    // Plurals only require { count: number } & optional params
+    expect(translator.plural("messages", { count: 1, sender: "Bob" })).toBe("1 message from Bob");
+    expect(translator.t("messages", { count: 3, sender: "Bob" })).toBe("3 messages from Bob");
+
+    // Invalid keys are still caught at compile time
+    // @ts-expect-error Key does not exist in resources
+    translator.t("nonExistentKey");
+  });
+
+  it("should contrast strictParams: true (default) vs strictParams: false", () => {
+    // 1. Strict mode (default): enforces all template parameters at compile time
+    const strictTranslator = initLocL({
+      resources: largeResources,
+      fallbackLanguage: "en"
+      // strictParams defaults to true
+    });
+
+    // @ts-expect-error Missing required parameter '{ name: string }'
+    strictTranslator.t("greeting");
+    expect(strictTranslator.t("greeting", { name: "Alice" })).toBe("Hello, Alice!");
+
+    // 2. Safe mode: template params are optional InterpolationOptions
+    const safeTranslator = initLocL({
+      resources: largeResources,
+      fallbackLanguage: "en",
+      strictParams: false
+    });
+
+    // Valid: parameters are optional, no compile error
+    expect(safeTranslator.t("greeting")).toBe("Hello, {name}!");
+    expect(safeTranslator.t("greeting", { name: "Alice" })).toBe("Hello, Alice!");
+  });
+
+  it("should support scoped translations with strictParams: false", () => {
+    const scopedTranslator = initLocL({
+      resources: largeResources,
+      fallbackLanguage: "en",
+      scope: "nav",
+      strictParams: false
+    });
+
+    // Keys are strictly scoped to the 'nav' namespace
+    expect(scopedTranslator.t("home")).toBe("Home");
+    expect(scopedTranslator.t("settings.profile")).toBe("Profile settings");
+    expect(scopedTranslator.t("settings.security", { role: "Editor" })).toBe("Security settings for Editor");
+
+    // Keys outside the scope fail type checking
+    // @ts-expect-error 'simple' is not in the 'nav' scope
+    scopedTranslator.t("simple");
+  });
+
+  it("should allow explicit generic typing if manually specified", () => {
+    // Clean generic layout: T, Fallback, S, F, UseDefaultFormatter, StrictParams
+    const translator: LocL<typeof largeResources, "en", undefined, {}, true, false> = initLocL({
+      resources: largeResources,
+      fallbackLanguage: "en",
+      strictParams: false
+    });
+
+    expect(translator.t("nav.settings.profile")).toBe("Profile settings");
+    expect(translator.t("greeting", { name: "Sam" })).toBe("Hello, Sam!");
+
+    // @ts-expect-error Invalid key
+    translator.t("invalidKey");
+  });
+
+  it("should support FlattenKeys and PreFlattened type utilities", () => {
+    type Keys = FlattenKeys<typeof largeResources.en>;
+
+    const k1: Keys = "simple";
+    const k2: Keys = "greeting";
+    const k3: Keys = "nav.home";
+    const k4: Keys = "nav.settings.profile";
+    const k5: Keys = "messages"; // Plural object preserved as leaf key
+
+    expect(k1).toBe("simple");
+    expect(k2).toBe("greeting");
+    expect(k3).toBe("nav.home");
+    expect(k4).toBe("nav.settings.profile");
+    expect(k5).toBe("messages");
+
+    type FlatDict = PreFlattened<typeof largeResources.en>;
+    const flatDict: Partial<FlatDict> = {
+      "nav.home": "Home",
+      "simple": "Simple text"
+    };
+    expect(flatDict["nav.home"]).toBe("Home");
+  });
+
+  it("should flatten dictionaries at runtime using flattenDictionary()", () => {
+    const nested = {
+      user: {
+        name: "Name",
+        profile: {
+          bio: "Biography",
+          title: "Title"
+        }
+      },
+      messages: {
+        one: "1 message",
+        other: "{count} messages"
+      },
+      plain: "Plain"
+    };
+
+    const flat = flattenDictionary(nested);
+
+    expect(flat).toEqual({
+      "plain": "Plain",
+      "user.name": "Name",
+      "user.profile.bio": "Biography",
+      "user.profile.title": "Title",
+      // Plural objects are preserved for pluralization engine
+      "messages": {
+        one: "1 message",
+        other: "{count} messages"
+      }
+    });
+
+    // Edge cases
+    // @ts-expect-error
+    expect(flattenDictionary(null)).toEqual({});
+    expect(flattenDictionary([])).toEqual({});
+    // @ts-expect-error
+    expect(flattenDictionary("string")).toEqual({});
+  });
+
+  it("should support defineFastResources helper", () => {
+    const fastRes = defineFastResources(largeResources);
+    expect(fastRes).toBe(largeResources);
+  });
+
+  it("should efficiently process 1,000+ keys in Safe Type Mode without lag", () => {
+    const bigDict: Record<string, string> = {};
+    for (let i = 0; i < 1000; i++) {
+      bigDict[`key_${i}`] = `Template value {param_${i}}`;
+    }
+
+    const resources = {
+      en: bigDict
+    };
+
+    const translator = initLocL({
+      resources,
+      fallbackLanguage: "en",
+      strictParams: false
+    });
+
+    // Validates instantly without recursive template parsing
+    expect(translator.t("key_0", { param_0: "Val" })).toBe("Template value Val");
+    expect(translator.t("key_999", { param_999: "Val" })).toBe("Template value Val");
   });
 });
