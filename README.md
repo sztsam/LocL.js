@@ -2,31 +2,36 @@
 
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/sztsam/LocL.js) [![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue)](https://www.typescriptlang.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://www.npmjs.com/package/locl-js)
 
-**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, server environments, and full-stack frameworks, it provides compile-time type safety, pre-compiled template execution, automatic pluralization with exact quantities, RTL script detection, built-in formatters with pipeline chaining, and reactive subscriptions with **zero external dependencies**.
+**LocL** is an ultra-fast, lightweight, and fully-featured TypeScript internationalization (i18n) library. Designed for modern web applications, server environments, and full-stack frameworks, it provides compile-time type safety, pre-compiled template execution, automatic pluralization with exact quantities, ordinal numbers, automated language detection and routing middleware, developer CLI tooling, RTL script detection, built-in formatters with pipeline chaining, and reactive subscriptions with **zero external dependencies**.
 
 ---
 
 ## Features ✨
 
 - **🚀 10x–20x Execution Throughput**: Compiled token cache memoizes template execution plans on first lookup, eliminating regex scanning and string splitting in the hot path.
+- **🛠️ Built-in Developer CLI (`locl`)**: Automatic key extraction from source files (`extract`), CI translation parity validation (`check`), visual coverage matrix reports (`status`), and Ahead-of-Time bundling (`compile`).
+- **🌐 Universal Language Detector & Route Middleware (`locl-js/detector`)**: Browser detection across query parameters, cookies, storage, and navigator; RFC 7231 `Accept-Language` parsing; BCP 47 negotiation; and Web Standard middleware for Next.js App Router, Astro, and Node.js with automated prefix routing (`as-needed`, `always`, `never`) and SEO `hreflang` generation.
+- **🥇 Native Ordinal Pluralization (`1st`, `2nd`, `3rd`, `4th`)**: Support for ordinal numbers (`translator.ordinal()`) using native `Intl.PluralRules({ type: "ordinal" })` across dual-mode plural objects and suffix forms.
 - **🖥️ React Server Components & Full-Stack (`locl-js/server`)**: Headless async request isolation via Node's `AsyncLocalStorage` for React Server Components, Next.js App Router (no `"use client"`!), Astro, Remix, and backend routes.
 - **🏎️ Safe Type Mode for Huge Dictionaries (`strictParams: false`)**: Disable recursive template-literal parsing for codebases with 10,000+ keys to maximize `tsc` speed while retaining 100% key autocompletion and path validation.
-- **📑 Pre-Flattened Dictionary Utilities**: `FlattenKeys<T>`, `PreFlattened<T>`, and `flattenDictionary()` for compile-time and runtime optimization across enterprise setups.
+- **📑 Pre-Flattened Dictionary Utilities**: `FlattenKeys<T>`, `PreFlattened<T>`, `flattenDictionary()`, and `unflattenDictionary()` for compile-time and runtime optimization across enterprise setups.
 - **💪 Strict Compile-Time Safety**: Auto-extracts parameters (`{name}`, `{{name}}`, `{gender, select, ...}`) and enforces required arguments at compile time with full IDE autocomplete.
 - **🏷️ `defineResources` & `defineStrictResources`**: Preserves literal types without `as const` and enforces complete translation parity across all secondary languages at compile time.
+- **🌍 Language-Aware CLDR Plural Typing (`LangWithPlurals<T, L>`)**: Enforces CLDR-correct plural categories per language (e.g., `ja`/`zh` require only `other`; `ru`/`pl` require `one`/`few`/`many`/`other`; `en`/`de` require `one`/`other`).
 - **🔢 Plural Exact Quantities (`=0`, `=1`, `=N`)**: Define exact numeric exceptions alongside standard CLDR categories (`zero`, `one`, `other`) across both object and suffix plurals.
 - **🧭 Built-in RTL & Direction Utilities**: Automatic script-direction detection (`translator.getDirection()`, `translator.isRTL()`) with automatic browser `<html dir="..." lang="...">` synchronization.
 - **⚡ Lazy Loading & React `<Suspense>`**: Load monolithic language files (`de.json`) or modular namespaces (`de/dashboard.json`) asynchronously on demand with `<Suspense>` or non-suspense `ready` status.
 - **⚛️ First-Class React Integration**: Official React bindings (`<LocLProvider>`, `useTranslation`, `useLocL`, `<Trans />`) via `locl-js/react` with concurrent-safe `useSyncExternalStore` and store versioning:
   - **`createLocLReact` Hook Factory**: Zero-declaration, pre-bound React suite.
   - **`LocLRegister` Declaration Merging**: Ambient global autocomplete for standalone imports.
+  - **Tag Attribute Support**: `<Trans />` and `rich()` parse elements with attributes (`<link href="/terms">terms</link>`).
 - **📦 Zero Dependencies & Lightweight**: Pure TypeScript with no runtime dependencies.
 - **🔄 Drop-in i18next Compat**: Swap existing `i18next` codebases effortlessly using `locl-js/compat` without rewriting call sites. Supports colon namespaces (`auth:login`), strict parameter checking, dynamic bundle preloading, `dir()`, and default fallbacks.
 - **🌐 Multi-Framework Reactive Store**: Implements the standard reactive store contract via `translator.subscribe()`, working out of the box in Svelte, Vue, Solid, and Node.js.
 - **🔀 ICU Select Support**: Conditional branching (`{gender, select, male {He} female {She} other {They}}`) with nested parameter interpolation (`{gender, select, male {He has {count} items}}`).
 - **🔧 Multi-Pipe Formatter Chaining**: Format dates, numbers, currencies, strings, and booleans inline via pipe syntax (`{val | number}`, `{date | date:short}`). Chain multiple formatters sequentially (`{val | trim | upper | truncate:10}`).
 - **🧪 Built-in Pseudo-Localization**: Enterprise QA mode to test layout expansion and unlocalized strings without third-party tooling, preserving tags and interpolation tokens.
-- **🌍 BCP 47 Language Negotiation**: Multi-tier locale fallback chains (`de-AT-Vienna` → `de-AT` → `de` → `en`).
+- **📡 Telemetry Hook (`onMissingKey`)**: Production callback to track missing translation keys and plural categories in real-time.
 - **🛡️ Prototype-Safe Dynamic Resources**: Safely merge resources dynamically at runtime with built-in prototype pollution guards and type-evolved translator instances.
 - **💯 100% Test Coverage**: Fully verified across every line, branch, function, and edge case.
 
@@ -54,6 +59,12 @@ const resources = defineResources({
       one: "You have 1 item.",
       other: "You have {count} items.",
     },
+    rank: {
+      one: "{count}st place",
+      two: "{count}nd place",
+      few: "{count}rd place",
+      other: "{count}th place"
+    },
     auth: { login: "Log In", register: "Sign Up" },
     dashboard: { welcome: "Welcome, {name}" },
   },
@@ -63,6 +74,10 @@ const resources = defineResources({
       "=0": "Votre panier est vide.",
       one: "Vous avez un article.",
       other: "Vous avez {count} articles.",
+    },
+    rank: {
+      one: "{count}er place",
+      other: "{count}e place"
     },
     auth: { login: "Se connecter", register: "S'inscrire" },
     dashboard: { welcome: "Bienvenue, {name}" },
@@ -82,6 +97,11 @@ console.log(translator.t("cart", { count: 0 })); // "Your cart is empty."
 console.log(translator.t("cart", { count: 1 })); // "You have 1 item."
 console.log(translator.plural("cart", { count: 5 })); // "You have 5 items."
 
+// Ordinal Plurals (1st, 2nd, 3rd...)
+console.log(translator.ordinal("rank", { count: 1 })); // "1st place"
+console.log(translator.ordinal("rank", { count: 2 })); // "2nd place"
+console.log(translator.ordinal("rank", { count: 4 })); // "4th place"
+
 // Direction & RTL detection
 console.log(translator.getDirection()); // "ltr"
 console.log(translator.isRTL());        // false
@@ -97,6 +117,285 @@ console.log(frDashboardT.t("welcome", { name: "Hans" })); // "Bienvenue, Hans"
 // String / Array scope (combines multiple namespaces)
 const multiT = translator.withConfig({ scope: ["auth", "dashboard"] });
 console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Bienvenue, Alice"
+```
+
+---
+
+## Developer CLI & Localization Pipeline (`locl`)
+
+LocL includes an end-to-end command-line interface for maintaining localization files across codebases without external tooling.
+
+Add scripts to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "i18n:extract": "locl extract",
+    "i18n:check": "locl check",
+    "i18n:status": "locl status",
+    "i18n:compile": "locl compile"
+  }
+}
+```
+
+### 1. `locl extract` (Key Extraction)
+
+Scans your source files (`.ts`, `.tsx`, `.js`, `.jsx`, `.vue`, `.svelte`) and synchronizes translation keys into your base language file (`locales/en.json`):
+
+```bash
+# Scans src/, app/, pages/, components/ and updates locales/en.json
+npx locl extract
+
+# Custom source directory, extensions, and default value generator
+npx locl extract --src src --ext ts,tsx --locales locales --base en --default "TODO"
+
+# Prune orphaned keys that are no longer used in code
+npx locl extract --clean
+
+# Generate flat dot-notated keys instead of nested objects
+npx locl extract --flat
+```
+
+Extracts from:
+- Method calls: `t("key")`, `tt("key")`, `plural("key", ...)`, `ordinal("key", ...)`, `rich("key", ...)`, `get("key")`, `getObj("key")`
+- JSX components: `<Trans i18nKey="key" fallback="Default value" />`
+
+### 2. `locl check` (CI Translation Parity)
+
+Validates that all secondary language files implement every key present in the base language dictionary. Perfect for pull requests and CI pipelines:
+
+```bash
+# Fails with exit code 1 if any language is missing keys
+npx locl check --locales locales --base en
+
+# Strict mode: also fails on extraneous (orphaned) or empty string keys
+npx locl check --strict
+
+# Automatically backfill missing keys from the base language
+npx locl check --fix
+```
+
+### 3. `locl status` (Translation Matrix & Coverage)
+
+Displays a visual report of translation completion across all languages:
+
+```bash
+npx locl status --locales locales --base en
+```
+
+Output:
+```text
+LocL Translation Coverage (Base: en, 150 keys):
+  • [en] 100% [████████████████████] 150/150 keys (0 missing)
+  • [de]  96% [███████████████████░] 144/150 keys (6 missing)
+  • [fr]  80% [████████████████░░░░] 120/150 keys (30 missing)
+```
+
+### 4. `locl compile` (Ahead-of-Time Compilation)
+
+Bundles JSON locale files into an optimized TypeScript or JavaScript file for production zero-overhead imports:
+
+```bash
+# Compile to TypeScript bundle (exports typed resources)
+npx locl compile --format ts --output src/locales.compiled.ts
+
+# Compile to ESM or CommonJS
+npx locl compile --format esm --output dist/locales.js
+npx locl compile --format cjs --output dist/locales.cjs
+```
+
+### Programmatic CLI API
+
+All CLI operations are available programmatically from `"locl-js/cli"`:
+
+```typescript
+import { extractKeys, checkTranslations, compileTranslations, getTranslationStatus } from "locl-js/cli";
+
+const checkResult = checkTranslations({ localesDir: "locales", baseLang: "en" });
+if (!checkResult.success) {
+  console.error("Missing translations in:", checkResult.locales);
+}
+```
+
+---
+
+## Universal Language Detector & Routing Middleware (`locl-js/detector`)
+
+LocL provides complete language detection, persistence, negotiation, and full-stack route middleware via `locl-js/detector`.
+
+### 1. Browser Detection & Auto-Persistence
+
+Detect user language across multiple signals and persist updates automatically:
+
+```typescript
+import { initLocL } from "locl-js";
+import { attachDetector, detectBrowserLanguage, persistLanguage } from "locl-js/detector";
+
+const translator = initLocL({
+  resources: { en: { title: "Hello" }, de: { title: "Hallo" } },
+  fallbackLanguage: "en"
+});
+
+// Automatically detects initial language and persists changes to cookie & localStorage
+const unsubscribe = attachDetector(translator, {
+  order: ["querystring", "cookie", "localStorage", "navigator", "htmlTag"],
+  cookie: { name: "NEXT_LOCALE", maxAge: 31536000 },
+  localStorage: "locl_language",
+  htmlTag: true, // Auto-syncs <html lang="...">
+});
+```
+
+### 2. RFC 7231 `Accept-Language` Parsing & BCP 47 Negotiation
+
+Parse weighted HTTP headers and negotiate the optimal locale using BCP 47 truncation:
+
+```typescript
+import { parseAcceptLanguage, matchLanguage } from "locl-js/detector";
+
+// Parse RFC 7231 Accept-Language header into weighted tags
+const accepted = parseAcceptLanguage("en-US,en;q=0.9,de-AT;q=0.8,fr;q=0.7");
+// => [{ lang: "en-US", q: 1.0 }, { lang: "en", q: 0.9 }, { lang: "de-AT", q: 0.8 }, ...]
+
+// Negotiate best match with BCP 47 subtag truncation (de-AT -> de)
+const supported = ["en", "de", "fr-CA"];
+const matched = matchLanguage("de-AT-Vienna", supported, "en");
+console.log(matched); // "de"
+```
+
+### 3. Next.js App Router & Full-Stack Routing Middleware
+
+Zero-boilerplate Web Standard middleware supporting prefix routing strategies and automatic cookie persistence:
+
+```typescript
+// middleware.ts (Next.js App Router)
+import { createI18nMiddleware } from "locl-js/detector";
+
+export const middleware = createI18nMiddleware({
+  locales: ["en", "de", "fr"],
+  defaultLocale: "en",
+  prefixStrategy: "as-needed", // "as-needed" (default) | "always" | "never"
+  cookieName: "NEXT_LOCALE",
+  ignore: ["/api", "/_next", "/favicon.ico"]
+});
+
+export const config = {
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"]
+};
+```
+
+#### Routing Strategies
+
+- **`"as-needed"`** *(Default)*: Default language is served at root (`/about`), secondary languages are prefixed (`/de/about`). Visiting `/en/about` redirects to `/about`.
+- **`"always"`**: All languages require prefixes (`/en/about`, `/de/about`). Visiting `/about` redirects to `/{detectedLocale}/about`.
+- **`"never"`**: No path prefixes. Locale is resolved purely from cookies, query parameters, or `Accept-Language` headers.
+
+### 4. SEO Alternate Hreflang Links
+
+Generate search engine optimization `hreflang` link headers or metadata tags:
+
+```typescript
+import { getHreflangLinks } from "locl-js/detector";
+
+const links = getHreflangLinks("https://example.com", "/about", ["en", "de", "es"], "en");
+// [
+//   { rel: "alternate", hreflang: "en", href: "https://example.com/about" },
+//   { rel: "alternate", hreflang: "de", href: "https://example.com/de/about" },
+//   { rel: "alternate", hreflang: "es", href: "https://example.com/es/about" },
+//   { rel: "alternate", hreflang: "x-default", href: "https://example.com/about" }
+// ]
+```
+
+---
+
+## Native Ordinal Pluralization (`1st`, `2nd`, `3rd`, `4th`)
+
+LocL supports ordinal plural rules out of the box using native `Intl.PluralRules({ type: "ordinal" })`.
+
+### 1. Dual-Mode Plural Objects
+
+Define standard cardinal plurals alongside nested `ordinal` definitions within the same key:
+
+```typescript
+const en = {
+  competition: {
+    one: "1 competitor",
+    other: "{count} competitors",
+    ordinal: {
+      "=1": "1st place champion!",
+      one: "{count}st place",
+      two: "{count}nd place",
+      few: "{count}rd place",
+      other: "{count}th place"
+    }
+  }
+};
+
+// Cardinal plurals via plural() or t()
+translator.plural("competition", { count: 1 }); // "1 competitor"
+translator.plural("competition", { count: 5 }); // "5 competitors"
+
+// Ordinal plurals via ordinal()
+translator.ordinal("competition", { count: 1 });  // "1st place champion!"
+translator.ordinal("competition", { count: 2 });  // "2nd place"
+translator.ordinal("competition", { count: 3 });  // "3rd place"
+translator.ordinal("competition", { count: 4 });  // "4th place"
+translator.ordinal("competition", { count: 21 }); // "21st place"
+```
+
+### 2. Suffix Ordinals
+
+Define ordinals using `_ordinal_*` suffixes:
+
+```typescript
+const en = {
+  winner_ordinal_one: "{count}st winner",
+  winner_ordinal_two: "{count}nd winner",
+  winner_ordinal_few: "{count}rd winner",
+  winner_ordinal_other: "{count}th winner",
+  "winner_ordinal_=1": "Grand Champion"
+};
+
+translator.ordinal("winner", { count: 1 }); // "Grand Champion"
+translator.ordinal("winner", { count: 2 }); // "2nd winner"
+```
+
+---
+
+## Language-Aware Unicode CLDR Plural Validation (`LangWithPlurals<T, L>`)
+
+Unlike libraries that force every language into a generic `one` / `other` schema, `LangWithPlurals<T, Language>` verifies secondary language files against the exact Unicode CLDR rules for that language:
+
+```typescript
+import type { LangWithPlurals } from "locl-js";
+
+interface BaseSchema {
+  messages: {
+    one: string;
+    other: string;
+  };
+  car_one: string;
+  car_other: string;
+}
+
+// ✅ Japanese ("ja") has no grammatical plural: ONLY requires 'other'!
+const ja: LangWithPlurals<BaseSchema, "ja"> = {
+  messages: { other: "メッセージ{count}件" }, // 'one' is NOT required!
+  car_other: "車{count}台"
+};
+
+// ✅ Russian ("ru") requires Slavic plural forms: 'one', 'few', 'many', 'other'
+const ru: LangWithPlurals<BaseSchema, "ru"> = {
+  messages: {
+    one: "{count} сообщение",
+    few: "{count} сообщения",
+    many: "{count} сообщений",
+    other: "{count} сообщений"
+  },
+  car_one: "{count} машина",
+  car_few: "{count} машины",
+  car_many: "{count} машин",
+  car_other: "{count} машин"
+};
 ```
 
 ---
@@ -168,12 +467,12 @@ translator.t("welcome", { name: "Alice" });
 // translator.t("dashboard.nonExistent"); // Error: Key does not exist
 ```
 
-### Pre-Flattened Utilities
+### Pre-Flattened & Unflattening Utilities
 
-Flatten nested dictionaries at type level and runtime for build-time optimizations:
+Flatten nested dictionaries at type level and runtime for build-time optimizations, and reconstruct them when needed:
 
 ```typescript
-import { flattenDictionary, type FlattenKeys, type PreFlattened } from "locl-js";
+import { flattenDictionary, unflattenDictionary, type FlattenKeys, type PreFlattened } from "locl-js";
 
 // Type-level dot notation union
 type Keys = FlattenKeys<typeof resources.en>;
@@ -186,6 +485,8 @@ const flat = flattenDictionary(resources.en);
 //   "dashboard.profile": "User profile",
 //   "dashboard.settings": "Account settings"
 // }
+// Reconstruct nested structure from flat keys safely
+const nested = unflattenDictionary(flat);
 ```
 
 ---
@@ -232,7 +533,7 @@ export function App() {
 }
 
 function Header() {
-  const { t, language, changeLanguage, direction } = useTranslation();
+  const { t, language, changeLanguage, direction, ordinal } = useTranslation();
 
   return (
     <header dir={direction}>
@@ -291,11 +592,11 @@ function UserProfile() {
 
 ### The `<Trans />` Component
 
-Renders translations containing formatting tags (`<bold>read</bold>`, `<link>terms</link>`) and self-closing elements (`<br />`) into React elements safely without `dangerouslySetInnerHTML`:
+Renders translations containing formatting tags (`<bold>read</bold>`, `<link href="/terms">terms</link>`) and self-closing elements (`<br />`) into React elements safely without `dangerouslySetInnerHTML`:
 
 ```tsx
 <Trans
-  i18nKey="notice" // "Please <bold>read</bold> our <link>terms</link>.<br />Thank you!"
+  i18nKey="notice" // "Please <bold>read</bold> our <link href="/terms">terms</link>.<br />Thank you!"
   values={{ name: "Alice" }}
   components={{
     bold: <strong className="text-primary font-bold" />,
@@ -310,6 +611,7 @@ Renders translations containing formatting tags (`<bold>read</bold>`, `<link>ter
 
 - **Strict Key Validation**: Autocompletes valid keys and flags typos at compile time.
 - **Strict Value Validation**: If the template contains `{name}`, `values={{ name: ... }}` is required at compile time.
+- **Tag Attributes Supported**: Tag markers can include arbitrary attributes (e.g., `<link href="/path">text</link>`).
 - **Nested & Self-Closing Tags**: Supports self-closing tags (`<br />`, `<hr />`) and recursively parses nested elements (`<bold>Click <link>here</link></bold>`).
 - **Dynamic Key Fallback**: Dynamic keys are permitted whenever an explicit `fallback` prop is provided (`fallback="Default string"`).
 - **Scope Support**: Narrow keys using the `scope` prop: `<Trans scope="user" i18nKey="greeting" values={{ name: "Alice" }} />`.
@@ -401,7 +703,9 @@ const resources = defineResources({
       save: "Save"
     },
     apple_one: "1 apple",
-    apple_other: "{count} apples"
+    apple_other: "{count} apples",
+    rank_ordinal_one: "{count}st",
+    rank_ordinal_other: "{count}th"
   }
 });
 const locl = initLocL({ resources, fallbackLanguage: "en" });
@@ -413,6 +717,9 @@ i18n.t("common.save");                    // Static key: options optional!
 
 // Plurals strictly enforce { count: number }:
 i18n.t("apple", { count: 5 });
+
+// Native ordinals:
+i18n.ordinal("rank", { count: 1 }); // "1st"
 
 // Dynamic and fallback keys:
 i18n.t("missing.key", "Default Fallback");
@@ -540,6 +847,7 @@ t("welcome", { name: "Alice" });
 
 // Attached utilities:
 t.plural("cart", { count: 3 });
+t.ordinal("rank", { count: 1 });
 t.language;       // "en"
 t.direction;      // "ltr"
 t.isRTL();        // false
@@ -748,7 +1056,7 @@ Interpolate custom inline components, terminal styling, or HTML strings using `<
 
 ```typescript
 const en = {
-  notice: "Click <link>here</link> to view details or <bold>read more</bold>.",
+  notice: "Click <link href=\"/details\">here</link> to view details or <bold>read more</bold>.",
 };
 
 const elements = translator.rich("notice", {
@@ -783,6 +1091,23 @@ translator.setPseudoLocalization({
 ```
 
 * Preserves all HTML/JSX tags (`<bold>`, `<link>`) and interpolation tokens (`{name}`, `{{name}}`) completely intact.
+
+---
+
+## Production Telemetry Hook (`onMissingKey`)
+
+Monitor untranslated keys and missing plural categories in production:
+
+```typescript
+const translator = initLocL({
+  resources,
+  fallbackLanguage: "en",
+  onMissingKey: (key, language, fallbackChain) => {
+    // Send to Datadog, Sentry, or internal telemetry
+    console.warn(`[i18n telemetry] Missing key: ${key} in ${language} (Chain: ${fallbackChain.join(" -> ")})`);
+  }
+});
+```
 
 ---
 
@@ -826,7 +1151,6 @@ translator.addResource("en", "dashboard.title", "Analytics Dashboard");
 
 // Deep-merge an entire namespace (returns a type-evolved translator!)
 const updatedTranslator = translator.addResources("en", {
-translator.addResources("en", {
   checkout: {
     pay: "Pay Now",
     cancel: "Cancel",
@@ -857,15 +1181,15 @@ const resources = defineResources({
 
 const translator = initLocL({ resources, fallbackLanguage: "en" });
 
-// 1. Scoped proxy (inherits active language dynamically)
+// Scoped proxy (inherits active language dynamically)
 const authT = translator.withConfig({ scope: "auth" });
 console.log(authT.t("login")); // "Log In"
 
-// 2. Fixed-language proxy (pinned to German regardless of global language)
+// Fixed-language proxy (pinned to German regardless of global language)
 const deDashboardT = translator.withConfig({ scope: "dashboard", language: "de" });
-console.log(deDashboardT.t("welcome", { name: "Hans" })); // "Willkommen, Hans"
+console.log(deDashboardT.t("welcome", { name: "Hans" })); // "Bienvenue, Hans"
 
-// 3. Combined array scopes (merges multiple namespaces)
+// Combined array scopes (merges multiple namespaces)
 const multiT = translator.withConfig({ scope: ["auth", "dashboard"] });
 console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alice"
 ```
@@ -876,20 +1200,42 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 ### Top-Level Exports (`locl-js`)
 
-- **`initLocL(config)`**: Creates and returns a new `LocL` translator instance. Supports `strictParams: false` for large dictionaries.
+- **`initLocL(config)`**: Creates and returns a new `LocL` translator instance. Supports `strictParams: false`, `onMissingKey`, and `pseudoLocalization`.
 - **`defineResources(resources)`**: Identity helper using `<const T>` to enforce compile-time literal types without `as const`.
 - **`defineStrictResources(resources)`**: Identity helper enforcing compile-time translation parity across all secondary languages against the fallback language.
 - **`defineFastResources(resources)`**: Identity helper for large dictionaries.
 - **`flattenDictionary(obj)`**: Runtime utility flattening nested dictionary objects into single-level dot-notated objects while preserving plural objects.
-- **`LangWithPlurals<T>`**: Type utility enforcing plural structures on translation packs.
+- **`unflattenDictionary(flat)`**: Reconstructs a deeply nested dictionary from flat dot-notated keys.
+- **`LangWithPlurals<T, Language>`**: Type utility enforcing language-aware CLDR plural structures per language code.
+
+### Detector & Routing Exports (`locl-js/detector`)
+
+- **`createI18nMiddleware(options)`** / **`handleI18nRouting(options)`**: Standard Web Response middleware for Next.js App Router, Astro, and edge runtimes.
+- **`resolveRouteLocale(request, options)`**: Resolves routing prefixes, redirects, rewrites, and detected locales.
+- **`getHreflangLinks(baseUrl, pathname, locales, defaultLocale, strategy)`**: Generates SEO alternate `hreflang` links.
+- **`detectBrowserLanguage(options)`**: Multi-source client-side locale detector.
+- **`detectAndMatch(supported, fallback, options)`**: Detects and negotiates the closest supported locale.
+- **`persistLanguage(language, options)`**: Stores active locale across cookies, storage, and HTML tags.
+- **`attachDetector(translator, options)`**: Auto-detects locale and binds listener for auto-persistence.
+- **`parseAcceptLanguage(header)`**: RFC 7231 `Accept-Language` parser returning sorted `{ lang, q }` objects.
+- **`getAcceptedLanguages(header)`**: Returns ordered array of accepted language tags.
+- **`matchLanguage(accepted, supported, fallback)`** / **`negotiateLanguage`**: BCP 47 matching heuristic engine.
+
+### CLI Exports (`locl-js/cli`)
+
+- **`extractKeys(options)`**: Scans codebases and extracts translation keys into JSON dictionaries.
+- **`checkTranslations(options)`**: Verifies translation parity, missing keys, and extraneous keys in CI.
+- **`getTranslationStatus(options)`**: Computes translation completion matrix and statistics.
+- **`compileTranslations(options)`**: Compiles JSON dictionaries into TS, ESM, CJS, or JSON bundles.
+- **`runCli(argv?)`**: Programmatic entrypoint for running the `locl` CLI.
 
 ### React Exports (`locl-js/react`)
 
 - **`createLocLReact(translator)`**: Returns a pre-bound, zero-declaration React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`, `LocLContext`).
 - **`LocLProvider`**: React Context Provider for managing the active translator.
-- **`useTranslation(scope?, options?, customTranslator?)`**: Translation hook with scope support, `<Suspense>` mode (`{ suspense: true }`), loader overrides, and `ready: boolean` status.
+- **`useTranslation(scope?, options?, customTranslator?)`**: Translation hook with scope support, `<Suspense>` mode (`{ suspense: true }`), loader overrides, `ordinal()`, and `ready: boolean` status.
 - **`useLocL(customTranslator?)`**: Hook returning translator instance, active language, and bound translator APIs.
-- **`<Trans />`**: Rich JSX component interpolation component supporting strict key/param validation, paired/self-closing tags, nested elements, fallbacks, and scope narrowing.
+- **`<Trans />`**: Rich JSX component interpolation supporting strict key/param validation, attributes in tags, paired/self-closing tags, nested elements, fallbacks, and scope narrowing.
 - **`LocLRegister`**: Ambient interface for global type registration.
 
 ### Compat Exports (`locl-js/compat`)
@@ -910,12 +1256,14 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 - **`setServerTranslator(translator)`**: Configures the global default server translator instance.
 - **`getServerTranslator()`**: Returns the global default server translator instance.
 - **`serverStorage`**: Direct access to the underlying `AsyncLocalStorage` instance.
+- Re-exports `resolveRouteLocale`, `createI18nMiddleware`, `handleI18nRouting`, `getHreflangLinks`.
 
 ### `LocL` Instance Methods
 
 - **`t(key, values?, format?)`**: Translates a key, handles interpolation, formatters, and plurals.
 - **`plural(key, values, format?)`**: Translates a key with pluralization.
-- **`rich(key, tagRenderers, values?)`**: Replaces `<tag>` wrappers using custom renderer functions.
+- **`ordinal(key, values, format?)`**: Translates a key using native ordinal rules (`1st`, `2nd`...).
+- **`rich(key, tagRenderers, values?)`**: Replaces `<tag>` and `<tag attr="...">` wrappers using custom renderer functions.
 - **`getDirection(lang?)`**: Returns the script direction (`"ltr" | "rtl"`).
 - **`isRTL(lang?)`**: Returns whether the active or queried locale is right-to-left.
 - **`getMetadata(lang?)`**: Returns structured locale metadata (`{ language, direction, isRTL }`).

@@ -37,8 +37,7 @@ export const defaultFormatters = {
    * @param val - The value to format.
    * @returns The capitalized string.
    */
-  capitalize: (val: any) =>
-    String(val).charAt(0).toUpperCase() + String(val).slice(1),
+  capitalize: (val: any) => String(val).charAt(0).toUpperCase() + String(val).slice(1),
 
   /**
    * Trims whitespace from the beginning and end of a string.
@@ -74,7 +73,9 @@ export const defaultFormatters = {
     const locales = args[0] || undefined;
     const options: Intl.NumberFormatOptions = {};
     if (args[1]) options.style = args[1] as Intl.NumberFormatOptions["style"];
-    return new Intl.NumberFormat(locales, options).format(Number(val));
+    const num = Number(val);
+    if (isNaN(num)) { return String(val); }
+    return new Intl.NumberFormat(locales, options).format(num);
   },
 
   /**
@@ -88,10 +89,12 @@ export const defaultFormatters = {
   currency: (val: any, args: string[] = []) => {
     const currency = args[0] || "USD";
     const locales = args[1] || undefined;
+    const num = Number(val);
+    if (isNaN(num)) { return String(val); }
     return new Intl.NumberFormat(locales, {
       style: "currency",
       currency,
-    }).format(Number(val));
+    }).format(val);
   },
 
   /**
@@ -106,7 +109,9 @@ export const defaultFormatters = {
     const locales = args[0] || undefined;
     const options: Intl.DateTimeFormatOptions = {};
     if (args[1]) options.dateStyle = args[1] as Intl.DateTimeFormatOptions["dateStyle"];
-    return new Intl.DateTimeFormat(locales, options).format(new Date(val));
+    const d = new Date(val);
+    if (isNaN(d.getTime())) { return String(val); }
+    return new Intl.DateTimeFormat(locales, options).format(d);
   },
 
   /**
@@ -120,7 +125,9 @@ export const defaultFormatters = {
     const locales = args[0] || undefined;
     const options: Intl.RelativeTimeFormatOptions = { numeric: "auto" };
     const rtf = new Intl.RelativeTimeFormat(locales, options);
-    const diff = (new Date(val).getTime() - Date.now()) / 1000;
+    const time = new Date(val).getTime();
+    if (isNaN(time)) { return String(val); }
+    const diff = (time - Date.now()) / 1000;
     if (Math.abs(diff) < 60) return rtf.format(Math.round(diff), "seconds");
     if (Math.abs(diff) < 3600) return rtf.format(Math.round(diff / 60), "minutes");
     if (Math.abs(diff) < 86400) return rtf.format(Math.round(diff / 3600), "hours");

@@ -1,10 +1,11 @@
 {
   "name": "locl-js",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Ultra-fast, lightweight TypeScript internationalization (i18n) library with React bindings, React Server Components (RSC) support, and drop-in i18next compatibility.",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",
   "type": "module",
+  "sideEffects": false,
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,6 +40,16 @@
         "default": "./dist/server.cjs"
       }
     },
+    "./detector": {
+      "import": {
+        "types": "./dist/detector/index.d.ts",
+        "default": "./dist/detector/index.js"
+      },
+      "require": {
+        "types": "./dist/detector/index.d.cts",
+        "default": "./dist/detector/index.cjs"
+      }
+    },
     "./compat": {
       "import": {
         "types": "./dist/compat.d.ts",
@@ -48,10 +59,23 @@
         "types": "./dist/compat.d.cts",
         "default": "./dist/compat.cjs"
       }
+    },
+    "./cli": {
+      "import": {
+        "types": "./dist/cli/index.d.ts",
+        "default": "./dist/cli/index.js"
+      },
+      "require": {
+        "types": "./dist/cli/index.d.cts",
+        "default": "./dist/cli/index.cjs"
+      }
     }
   },
+  "bin": {
+    "locl": "./bin/locl.js"
+  },
   "peerDependencies": {
-    "react": ">=16.8.0"
+    "react": ">=18.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
@@ -66,7 +90,11 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "jest --coverage"
+    "test": "jest --coverage",
+    "i18n:extract": "locl extract",
+    "i18n:check": "locl check",
+    "i18n:status": "locl status",
+    "i18n:compile": "locl compile"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
@@ -83,6 +111,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "CHANGELOG.md"
   ],
   "keywords": [
@@ -94,6 +123,9 @@
     "type-safe",
     "language",
     "plurals",
+    "ordinal",
+    "detector",
+    "middleware",
     "formatting",
     "modular"
   ]

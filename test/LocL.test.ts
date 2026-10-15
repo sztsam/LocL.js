@@ -1,4 +1,4 @@
-import { initLocL, LocL, defineResources, defineStrictResources, flattenDictionary, defineFastResources } from '../src/index';
+import { initLocL, LocL, defineResources, defineStrictResources, defineFastResources, flattenDictionary, unflattenDictionary } from '../src/index';
 import { FlattenKeys, PreFlattened } from "../src/types";
 
 describe('initLocL', () => {
@@ -33,7 +33,41 @@ describe('initLocL', () => {
       suffixNoOther_one: "one item",
       date_fmt: "Date: {d}",
       num_fmt: "Number: {n}",
-      formatted: "Upper: {v | upper}"
+      formatted: "Upper: {v | upper}",
+      rank: {
+        one: "{count}st",
+        two: "{count}nd",
+        few: "{count}rd",
+        other: "{count}th"
+      },
+      competition: {
+        one: "1 competitor",
+        other: "{count} competitors",
+        ordinal: {
+          one: "{count}st place",
+          two: "{count}nd place",
+          few: "{count}rd place",
+          other: "{count}th place"
+        }
+      },
+      winner_ordinal_one: "{count}st winner",
+      winner_ordinal_two: "{count}nd winner",
+      winner_ordinal_few: "{count}rd winner",
+      winner_ordinal_other: "{count}th winner",
+      exactOrdinal: {
+        "=1": "First place champion!",
+        other: "{count}th place"
+      },
+      ordinalMissingCategory: {
+        other: "{count}th item"
+      },
+      exactOrdinalSuffix_ordinal_one: "1st item",
+      exactOrdinalSuffix_ordinal_other: "{count}th items",
+      "exactOrdinalSuffix_ordinal_=1": "1st champion",
+      zeroOrdinalSuffix_ordinal_zero: "0th item",
+      zeroOrdinalSuffix_ordinal_other: "{count}th items",
+      otherOrdinalOnly_ordinal_other: "{count}th place only",
+      ordOnlyOne_ordinal_one: "{count}st item"
     },
     de: {
       greeting: 'Hallo, {name}!',
@@ -127,6 +161,75 @@ describe('initLocL', () => {
     // formatting in plural
     expect(translator.plural('apples', { count: 1 }, { formatter: 'upper' })).toBe('ONE APPLE');
 
+    warnSpy.mockRestore();
+  });
+
+  it("should format English ordinals accurately using translator.ordinal(), plural(), and t()", () => {
+    const translator = initLocL({ resources, fallbackLanguage: "en", devMode: true });
+    const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+
+    // Standard ordinal formatting via translator.ordinal()
+    expect(translator.ordinal("rank", { count: 1 })).toBe("1st");
+    expect(translator.ordinal("rank", { count: 2 })).toBe("2nd");
+    expect(translator.ordinal("rank", { count: 3 })).toBe("3rd");
+    expect(translator.ordinal("rank", { count: 4 })).toBe("4th");
+    expect(translator.ordinal("rank", { count: 21 })).toBe("21st");
+    expect(translator.ordinal("rank", { count: 22 })).toBe("22nd");
+    expect(translator.ordinal("rank", { count: 23 })).toBe("23rd");
+    expect(translator.ordinal("rank", { count: 24 })).toBe("24th");
+
+    // Ordinal flag inside plural() and t()
+    expect(translator.plural("rank", { count: 1, ordinal: true })).toBe("1st");
+    expect(translator.plural("rank", { count: 2, ordinal: true })).toBe("2nd");
+    expect(translator.t("rank", { count: 3, ordinal: true })).toBe("3rd");
+    expect(translator.t("rank", { count: 4, ordinal: true })).toBe("4th");
+
+    // Nested ordinal block inside dual-mode key (competition)
+    expect(translator.plural("competition", { count: 1 })).toBe("1 competitor");
+    expect(translator.plural("competition", { count: 5 })).toBe("5 competitors");
+    expect(translator.ordinal("competition", { count: 1 })).toBe("1st place");
+    expect(translator.ordinal("competition", { count: 2 })).toBe("2nd place");
+    expect(translator.ordinal("competition", { count: 3 })).toBe("3rd place");
+    expect(translator.ordinal("competition", { count: 10 })).toBe("10th place");
+
+    // Suffix ordinals (winner_ordinal_one, winner_ordinal_two, etc.)
+    expect(translator.ordinal("winner", { count: 1 })).toBe("1st winner");
+    expect(translator.ordinal("winner", { count: 2 })).toBe("2nd winner");
+    expect(translator.ordinal("winner", { count: 3 })).toBe("3rd winner");
+    expect(translator.ordinal("winner", { count: 4 })).toBe("4th winner");
+
+    // Suffix ordinal count === 0 when zero suffix is missing
+    expect(translator.ordinal("winner", { count: 0 })).toBe("0th winner");
+
+    // Exact ordinal matches (=1)
+    expect(translator.ordinal("exactOrdinal", { count: 1 })).toBe("First place champion!");
+    expect(translator.ordinal("exactOrdinal", { count: 5 })).toBe("5th place");
+
+    // Fallback to other with devMode warning
+    expect(translator.ordinal("ordinalMissingCategory", { count: 1 })).toBe("1th item");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "ordinalMissingCategory" in "en"'));
+
+    // Exact ordinal suffix (_=1)
+    expect(translator.ordinal("exactOrdinalSuffix", { count: 1 })).toBe("1st champion");
+
+    // Zero ordinal suffix (_zero)
+    expect(translator.ordinal("zeroOrdinalSuffix", { count: 0 })).toBe("0th item");
+
+    // Suffix ordinal other fallback with warning
+    expect(translator.ordinal("otherOrdinalOnly", { count: 2 })).toBe("2th place only");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "otherOrdinalOnly" in "en"'));
+
+    // Missing plural other fallback in suffix ordinals
+    expect(translator.ordinal("ordOnlyOne", { count: 5 })).toBe("ordOnlyOne");
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Missing plural: "ordOnlyOne" in "en"'));
+
+    // translator.ordinal with undefined values parameter
+    // @ts-expect-error
+    expect(typeof translator.ordinal("rank", undefined)).toBe("object");
+
+    // translator.getPluralRules with default type argument
+    // @ts-expect-error
+    expect(translator.getPluralRules("en")).toBeDefined();
     warnSpy.mockRestore();
   });
 
@@ -310,7 +413,7 @@ describe('initLocL', () => {
     const mockLocale = jest.spyOn(Intl, 'Locale').mockImplementation((tag) => {
       if (tag === 'ar') return { getTextInfo: () => ({ direction: 'rtl' }) };
       if (tag === 'en') return { textInfo: { direction: 'ltr' } };
-      if (tag === 'und') return { textInfo: { direction: 'unknown' } }; // Exercises else path on if (info && ...)
+      if (tag === 'und') return { textInfo: { direction: 'unknown' } };
       throw new Error('Fallback to subtag parsing');
     });
 
@@ -367,6 +470,12 @@ describe('initLocL', () => {
     // findNestedValue loops - reached via empty array
     // @ts-expect-error
     expect(translator.findNestedValue([], { a: 1 })).toEqual({ a: 1 });
+
+    // property accessed through prototype inheritance (first in tree && !hasOwnProperty)
+    const protoObj = { inheritedProp: "from-prototype" };
+    const childObj = Object.create(protoObj);
+    // @ts-expect-error
+    expect(translator.findNestedValue(["inheritedProp"], childObj)).toBe("from-prototype");
   });
 
   it('should cover applyNamedFormatter missing formatter warning', () => {
@@ -400,7 +509,9 @@ describe('initLocL', () => {
     expect(translator.t('select', { gender: 'female' })).toBe('She is a person.');
     expect(translator.t('select', { gender: 'other' })).toBe('They is a person.');
     expect(translator.t('select', { gender: 'unknown' })).toBe('They is a person.');
-  
+    // @ts-expect-error
+    expect(translator.parseSelectCases("male {He}")).toEqual({ male: "He" });
+
     // Unmatched closing brace (depth === 0)
     const tUnmatched = initLocL({
       resources: { en: { unmatched: 'Hello } World' } },
@@ -712,7 +823,7 @@ describe('initLocL', () => {
 
     // Tag covering entire string
     expect(translator.rich("tagOnly", { bold: (c) => `[${c}]` })).toEqual(["[ExactTag]"]);
-  
+
     // Self-closing tag in rich() (exercises match[3], isSelfClosing, and content === "")
     const scChunks = translator.rich("selfClosingTag", {
       br: (c) => `[BR:${c}]`
@@ -808,10 +919,25 @@ describe('initLocL', () => {
     expect(translator.t("repeat", { name: "Sam" })).toBe("Hello, Sam! Good to see you, Sam.");
   });
 
+  it("should support curly brace escaping in templates", () => {
+    const translator = initLocL({
+      resources: {
+        en: {
+          escaped: "Press \\{Esc\\} or {action}!",
+          onlyEscaped: "\\{foo\\} and \\{bar\\}"
+        }
+      },
+      fallbackLanguage: "en"
+    });
+    expect(translator.t("escaped", { action: "click" })).toBe("Press {Esc} or click!");
+    expect(translator.t("onlyEscaped")).toBe("{foo} and {bar}");
+  });
+
+
   it("should cover useCache: false with string scope and array scope", () => {
     const tStr = initLocL({ resources, fallbackLanguage: "en", useCache: false, scope: "nested" });
     expect(tStr.get("a.b")).toBe("Nested value");
-    
+
     // Exercises evaluateTemplate when useCache: false
     const tNoCache = initLocL({ resources, fallbackLanguage: "en", useCache: false });
     expect(tNoCache.t("greeting", { name: "World" })).toBe("Hello, World!");
@@ -850,7 +976,13 @@ describe('initLocL', () => {
 
   it("should cover pseudo-localization constructor, toggling, and options", () => {
     const tPseudo = initLocL({
-      resources: { en: { welcome: "Welcome, {name}! <bold>Click</bold>" } },
+      resources: {
+        en: {
+          welcome: "Welcome, {name}! <bold>Click</bold>",
+          unclosed: "Hello {name",
+          selectText: "{gender, select, male {He} female {She} other {They}} is here."
+        }
+      },
       fallbackLanguage: "en",
       pseudoLocalization: true
     });
@@ -861,9 +993,13 @@ describe('initLocL', () => {
     expect(res1).toContain("[!!! ");
     expect(res1).toContain(" !!!]");
 
+    expect(tPseudo.t("unclosed")).toContain("[!!! ");
+    expect(tPseudo.t("selectText", { gender: "male" })).toContain("Ḩé");
+
     // setPseudoLocalization with boolean false
     tPseudo.setPseudoLocalization(false);
     expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+    expect(tPseudo.t("unclosed")).toBe("Hello {name");
 
     // setPseudoLocalization with boolean true
     tPseudo.setPseudoLocalization(true);
@@ -909,6 +1045,83 @@ describe('initLocL', () => {
     const warnSpy = jest.spyOn(console, "warn").mockImplementation();
     expect(tFmt2.t("test", { val: "hello" })).toBe("Result: {val | returnsUndef | missingFormatter}");
     warnSpy.mockRestore();
+  });
+
+  it("should trigger onMissingKey hook when translations are missing", () => {
+    const missing: Array<{ key: string; lang: string }> = [];
+    const translator = initLocL({
+      resources: { en: { title: "Hello" } },
+      fallbackLanguage: "en",
+      onMissingKey: (key, lang) => {
+        missing.push({ key, lang });
+      }
+    });
+    // @ts-expect-error
+    translator.t("nonExistentKey");
+    expect(missing).toEqual([{ key: "nonExistentKey", lang: "en" }]);
+  });
+
+  it("should evict oldest cache entries when reaching cache capacity", () => {
+    const translator = initLocL({
+      resources: { en: { scopeTest: { a: "A" } } },
+      fallbackLanguage: "en",
+      useCache: true
+    });
+
+    // Evict templateCache (templateCache.size >= MAX_TEMPLATE_CACHE)
+    for (let i = 0; i < 1000; i++) {
+      // @ts-expect-error
+      translator.templateCache.set(`dummy_t_${i}`, [{ type: "lit", value: "" }]);
+    }
+    // @ts-expect-error
+    translator.evaluateTemplate("evict_trigger {x}", { x: "1" });
+
+    // withConfig cache eviction (root.cache.size >= MAX_SCOPE_CACHE)
+    for (let i = 0; i < 500; i++) {
+      // @ts-expect-error
+      translator.cache.set(`dummy_p_${i}`, {});
+    }
+    // @ts-expect-error
+    translator.withConfig({ scope: "evict_test" });
+
+    // String scope cache eviction (buildScopedTranslationObject string scope)
+    const strScopedTranslator = initLocL({
+      resources: { en: { scopeTest: { a: "A" } } },
+      fallbackLanguage: "en",
+      useCache: true,
+      scope: "scopeTest"
+    });
+    for (let i = 0; i < 500; i++) {
+      // @ts-expect-error
+      strScopedTranslator.cache.set(`dummy_str_${i}`, {});
+    }
+    expect(strScopedTranslator.get("a")).toBe("A");
+
+    // Array scope cache eviction (buildScopedTranslationObject array scope)
+    const arrScopedTranslator = initLocL({
+      resources: { en: { scopeTest: { a: "A" } } },
+      fallbackLanguage: "en",
+      useCache: true,
+      scope: ["scopeTest"]
+    });
+    for (let i = 0; i < 500; i++) {
+      // @ts-expect-error
+      arrScopedTranslator.cache.set(`dummy_arr_${i}`, {});
+    }
+    expect(arrScopedTranslator.get("scopeTest.a")).toBe("A");
+  });
+
+  it("should test parseSelectCases default argument and unflatten terminal prototype keys", () => {
+    const translator = initLocL({ resources, fallbackLanguage: "en" });
+    // @ts-expect-error
+    expect(translator.parseSelectCases("male {He}")).toEqual({ male: "He" });
+
+    const protoPolluted = unflattenDictionary({
+      "safe.__proto__": "blocked",
+      "safe.constructor": "blocked",
+      "safe.prototype": "blocked"
+    });
+    expect(Object.prototype.hasOwnProperty.call(protoPolluted.safe, "__proto__")).toBe(false);
   });
 });
 
@@ -972,7 +1185,7 @@ describe("LocL Loader & Async Resolution", () => {
       fallbackLanguage: "en"
     });
 
-    // 1. Fetch Response object
+    // Fetch Response object
     if (typeof Response !== "undefined") {
       await translator.load(
         "en",
@@ -990,22 +1203,22 @@ describe("LocL Loader & Async Resolution", () => {
       ).rejects.toThrow("[LocL] Failed to load resource: 404 Not Found");
     }
 
-    // 2. Raw JSON string (valid and invalid fallback)
+    // Raw JSON string (valid and invalid fallback)
     await translator.load("en", "fromJsonStr", async () => JSON.stringify({ text: "From JSON String" }));
     expect(translator.tt("fromJsonStr.text")).toBe("From JSON String");
 
     await translator.load("en", "fromInvalidStr", async () => "not a valid json");
     expect(translator.isLoaded("en", "fromInvalidStr")).toBe(true);
 
-    // 3. ES Module default export
+    // ES Module default export
     await translator.load("en", "fromDefault", async () => ({ default: { text: "From Default" } }));
     expect(translator.tt("fromDefault.text")).toBe("From Default");
 
-    // 4. Function / factory export
+    // Function / factory export
     await translator.load("en", "fromFactory", async () => () => ({ text: "From Factory" }));
     expect(translator.tt("fromFactory.text")).toBe("From Factory");
 
-    // 5. Named exports (translations, messages, resources, namespace key)
+    // Named exports (translations, messages, resources, namespace key)
     await translator.load("en", "fromNamed", async () => ({ fromNamed: { text: "From Named NS" } }));
     expect(translator.tt("fromNamed.text")).toBe("From Named NS");
 
@@ -1018,7 +1231,7 @@ describe("LocL Loader & Async Resolution", () => {
     await translator.load("en", "fromRes", async () => ({ resources: { text: "From Resources" } }));
     expect(translator.tt("fromRes.text")).toBe("From Resources");
 
-    // 6. Non-object / array fallback
+    // Non-object / array fallback
     await translator.load("en", "fromArray", async () => [1, 2, 3]);
     expect(translator.isLoaded("en", "fromArray")).toBe(true);
   });
@@ -1109,36 +1322,36 @@ describe("LocL Loader & Async Resolution", () => {
       loader: async () => ({ loaded: "yes" })
     });
 
-    // 1. Initially "en" is empty, so isLoaded() with default lang is false
+    // Initially "en" is empty, so isLoaded() with default lang is false
     expect(translator.isLoaded()).toBe(false);
 
-    // 2. Load "en" using default lang argument
+    // Load "en" using default lang argument
     await translator.load();
     expect(translator.isLoaded()).toBe(true);
 
-    // 3. Overwrite existing string primitive with a nested object path
+    // Overwrite existing string primitive with a nested object path
     translator.addResource("en", "nonObj", "stringValue");
     translator.addResource("en", "nonObj.nested", "nestedValue");
-    //@ts-expect-error
+    // @ts-expect-error
     expect(translator.t("nonObj.nested")).toBe("nestedValue");
 
-    // 4. isLoaded with non-existent language & dotted path
+    // isLoaded with non-existent language & dotted path
     expect(translator.isLoaded("nonExistentLang", "someNs")).toBe(false);
     expect(translator.isLoaded("nonExistentLang")).toBe(false);
     expect(translator.isLoaded("en", "nonexistent.dotted.path")).toBe(false);
 
-    // 5. Monolithic load when already loaded returns immediately
+    // Monolithic load when already loaded returns immediately
     const noopSpy = jest.fn();
     await translator.load("en", undefined, noopSpy);
     expect(noopSpy).not.toHaveBeenCalled();
 
-    // 6. Call load without namespace on translator with no loader (covers `: ""` branch)
+    // Call load without namespace on translator with no loader (covers `: ""` branch)
     const noLoaderT = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
     await expect(noLoaderT.load("en")).rejects.toThrow(
       '[LocL] No loader configured to load translations for "en".'
     );
 
-    // 7. resolveBundle with named namespace having a primitive string
+    // resolveBundle with named namespace having a primitive string
     await translator.load("en", "primitiveNs", async () => ({ primitiveNs: "stringData" }));
     expect(translator.isLoaded("en", "primitiveNs")).toBe(true);
   });
@@ -1211,7 +1424,7 @@ describe("Safe Type Mode for Large Dictionaries (strictParams: false & Pre-Flatt
   });
 
   it("should contrast strictParams: true (default) vs strictParams: false", () => {
-    // 1. Strict mode (default): enforces all template parameters at compile time
+    // Strict mode (default): enforces all template parameters at compile time
     const strictTranslator = initLocL({
       resources: largeResources,
       fallbackLanguage: "en"
@@ -1222,7 +1435,7 @@ describe("Safe Type Mode for Large Dictionaries (strictParams: false & Pre-Flatt
     strictTranslator.t("greeting");
     expect(strictTranslator.t("greeting", { name: "Alice" })).toBe("Hello, Alice!");
 
-    // 2. Safe mode: template params are optional InterpolationOptions
+    // Safe mode: template params are optional InterpolationOptions
     const safeTranslator = initLocL({
       resources: largeResources,
       fallbackLanguage: "en",
@@ -1290,7 +1503,7 @@ describe("Safe Type Mode for Large Dictionaries (strictParams: false & Pre-Flatt
     expect(flatDict["nav.home"]).toBe("Home");
   });
 
-  it("should flatten dictionaries at runtime using flattenDictionary()", () => {
+  it("should flatten/unflatten dictionaries at runtime using un/flattenDictionary()", () => {
     const nested = {
       user: {
         name: "Name",
@@ -1326,6 +1539,56 @@ describe("Safe Type Mode for Large Dictionaries (strictParams: false & Pre-Flatt
     expect(flattenDictionary([])).toEqual({});
     // @ts-expect-error
     expect(flattenDictionary("string")).toEqual({});
+
+    // Covers unflattenDictionary
+    const flatInput = {
+      "user.name": "Alice",
+      "user.profile.bio": "Engineer",
+      "plain": "Simple",
+      "items": { one: "1 item", other: "{count} items" }
+    };
+
+    const unflat = unflattenDictionary(flatInput);
+    expect(unflat).toEqual({
+      user: {
+        name: "Alice",
+        profile: {
+          bio: "Engineer"
+        }
+      },
+      plain: "Simple",
+      items: { one: "1 item", other: "{count} items" }
+    });
+
+    // Edge cases and prototype pollution protection in unflattenDictionary
+    // @ts-expect-error
+    expect(unflattenDictionary(null)).toEqual({});
+    // @ts-expect-error
+    expect(unflattenDictionary(undefined)).toEqual({});
+    expect(unflattenDictionary([])).toEqual({});
+    // @ts-expect-error
+    expect(unflattenDictionary("string")).toEqual({});
+
+    const polluted = unflattenDictionary({
+      "__proto__.polluted": "yes",
+      "constructor.polluted": "yes",
+      "prototype.polluted": "yes",
+      "safe.__proto__.val": "no",
+      "safe.constructor.val": "no",
+      "safe.prototype.val": "no",
+      "safe.arr": [1, 2],
+      "safe.arr.sub": "overrideArray"
+    });
+    // @ts-expect-error
+    expect(({}).polluted).toBeUndefined();
+    expect(polluted.safe.arr.sub).toBe("overrideArray");
+
+    const protoPolluted = unflattenDictionary({
+      "safe.__proto__": "blocked",
+      "safe.constructor": "blocked",
+      "safe.prototype": "blocked"
+    });
+    expect(Object.prototype.hasOwnProperty.call(protoPolluted.safe, "__proto__")).toBe(false);
   });
 
   it("should support defineFastResources helper", () => {

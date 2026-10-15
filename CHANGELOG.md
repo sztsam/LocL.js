@@ -2,6 +2,49 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.4.0] — 2026-10-15
+
+### Added
+
+- **Developer CLI & Localization Pipeline (`locl` / `locl-js/cli`)**:
+  - Full-featured command-line tool accessible via `npx locl` or npm scripts (`npm run i18n:...`).
+  - `locl extract`: Scans `.ts`, `.tsx`, `.js`, `.jsx`, `.vue`, and `.svelte` files across configurable source directories (`--src`, `--ext`). Extracts translation keys from `t()`, `tt()`, `plural()`, `ordinal()`, `rich()`, `get()`, `getObj()`, and `<Trans i18nKey="..." fallback="..." />` into base JSON dictionaries (`locales/en.json`). Supports `--flat`, `--clean`/`--prune` (removes orphaned keys), `--dry-run`, `--sort`/`--no-sort`, and default value generation (`--default`).
+  - `locl check`: Automated CI verification tool checking translation key parity across all secondary language files against the fallback language. Detects missing, extraneous, and empty keys. Supports `--fix` (automatically backfills missing keys preserving flat or nested structures) and `--strict`.
+  - `locl status`: Visual matrix report displaying language coverage percentages and ASCII completion bars (`█░`).
+  - `locl compile`: Ahead-of-Time (AOT) compiles JSON localization files into optimized TypeScript (`ts`), ECMAScript Module (`esm`), CommonJS (`cjs`), or unified `json` bundles.
+  - Programmatic API exported from `locl-js/cli`: `extractKeys`, `checkTranslations`, `compileTranslations`, `getTranslationStatus`.
+- **Universal Language Detection & Route Middleware (`locl-js/detector`)**:
+  - `detectBrowserLanguage(options)`: Configurable multi-tier browser language detector prioritizing querystring parameters (`?lang=de`), cookies (`NEXT_LOCALE`), `localStorage`, `sessionStorage`, `navigator.languages`, HTML `<html lang="...">` attributes, or custom detector functions.
+  - `persistLanguage(language, options)`: Persists active language preferences across cookies, `localStorage`, `sessionStorage`, and the HTML root element.
+  - `attachDetector(translator, options)`: Attaches automatic detection and auto-persists language updates on `changeLanguage()`.
+  - RFC 7231 / RFC 2616 compliant `Accept-Language` header parser: `parseAcceptLanguage(header)` and `getAcceptedLanguages(header)` supporting arbitrary whitespace, quality weights (`q=0.9`), and clamping.
+  - `matchLanguage(accepted, supported, fallback)` (aliased as `negotiateLanguage`): Advanced BCP 47 language negotiation with exact matching, subtag truncation (`de-AT-Vienna` → `de-AT` → `de`), regional prefix matching (`fr` → `fr-CA`), and `*` wildcard support.
+  - Full-Stack Route Middleware (`resolveRouteLocale`, `createI18nMiddleware`, `handleI18nRouting`):
+    - Zero-boilerplate Web Standard (`Request` → `Response`) middleware compatible with Next.js App Router, Astro, Cloudflare Workers, and Node servers.
+    - Path prefix strategies: `"as-needed"` (default: default locale has no prefix, secondary locales prefixed), `"always"`, and `"never"`.
+    - Handles automatic 307 redirects, rewrites, cookie syncing (`Set-Cookie`), routing headers (`x-locl-locale`, `x-locl-pathname`), and static asset ignoring.
+  - SEO Alternate Links (`getHreflangLinks`): Generates alternate `hreflang` link objects along with `x-default` for search engine indexing.
+- **Native Ordinal Pluralization (`translator.ordinal()`)**:
+  - Added native ordinal plural formatting (`1st`, `2nd`, `3rd`, `4th`, `21st`) powered by `Intl.PluralRules({ type: "ordinal" })`.
+  - Supported via `translator.ordinal(key, values, format?)`, `translator.plural(key, { count, ordinal: true })`, and `translator.t(key, { count, ordinal: true })`.
+  - Dual-mode plural object support: nested `ordinal: { one: "...", two: "...", few: "...", other: "..." }` blocks inside existing cardinal plural objects.
+  - Suffix ordinals: `${key}_ordinal_one`, `${key}_ordinal_two`, `${key}_ordinal_few`, `${key}_ordinal_other`, `${key}_ordinal_=1`, `${key}_ordinal_zero`.
+  - Available across all integrations: `useTranslation().ordinal`, `useLocL().ordinal`, `t.ordinal` in `locl-js/server`, and `i18n.ordinal()` in `locl-js/compat`.
+- **Language-Aware Unicode CLDR Plural Validation (`LangWithPlurals<T, L>`)**:
+  - `LangWithPlurals<T, L>` now dynamically adapts required plural categories based on target language `L`:
+    - Other-only languages (`ja`, `zh`, `ko`, `vi`, `th`, `id`, `ms`, `tr`, `hu`, etc.): Only requires `other` (no unnecessary `one` category required).
+    - Slavic languages (`ru`, `uk`, `pl`, `cs`, `sk`, etc.): Enforces `one`, `few`, `many`, and `other`.
+    - Arabic (`ar`): Enforces `zero`, `one`, `two`, `few`, `many`, and `other`.
+    - Standard Germanic/Romance (`en`, `de`, `fr`, `es`): Enforces `one` and `other`.
+- **Production Telemetry Hook (`onMissingKey`)**:
+  - Added optional `onMissingKey: (key, language, fallbackChain) => void` hook to `initLocL` configuration for error reporting and missing-key logging.
+- **Dictionary Reconstitution (`unflattenDictionary`)**:
+  - Added `unflattenDictionary(flat)` runtime utility that reconstructs deeply nested dictionaries from dot-notated objects while preserving plural objects and protecting against prototype pollution.
+- **Tag Attributes in `<Trans />` and `rich()`**:
+  - Both `<Trans />` and `translator.rich()` now support elements with attributes (e.g. `<link href="/terms" target="_blank">terms</link>`, `<br className="divider" />`).
+- **Server Module Routing Re-exports**:
+  - `locl-js/server` now re-exports route resolution and middleware utilities (`resolveRouteLocale`, `createI18nMiddleware`, `handleI18nRouting`, `getHreflangLinks`, `HreflangLink`).
+
 ## [2.3.0] — 2026-10-14
 
 ### Added

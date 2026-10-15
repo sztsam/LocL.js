@@ -137,7 +137,7 @@ export function flattenDictionary(obj: Record<string, any>, prefix = ""): Record
     if (val && typeof val === "object" && !Array.isArray(val)) {
       const keys = Object.keys(val);
       const isPlural = keys.length > 0 && keys.every(k =>
-        ["zero", "one", "two", "few", "many", "other"].includes(k) || k.startsWith("=")
+        ["zero", "one", "two", "few", "many", "other"].includes(k) || k.startsWith("=") || k === "ordinal"
       );
       if (isPlural) {
         result[fullKey] = val;
@@ -146,6 +146,38 @@ export function flattenDictionary(obj: Record<string, any>, prefix = ""): Record
       }
     } else {
       result[fullKey] = val;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Reconstructs a nested object dictionary from flat dot-separated keys.
+ * Preserves plural objects intact.
+ */
+export function unflattenDictionary(flat: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  if (!flat || typeof flat !== "object" || Array.isArray(flat)) {
+    return result;
+  }
+
+  for (const [keyPath, val] of Object.entries(flat)) {
+    const parts = keyPath.split(".");
+    let cur = result;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const p = parts[i];
+      if (p === "__proto__" || p === "constructor" || p === "prototype") {
+        break;
+      }
+      if (!cur[p] || typeof cur[p] !== "object" || Array.isArray(cur[p])) {
+        cur[p] = {};
+      }
+      cur = cur[p];
+    }
+    const last = parts[parts.length - 1];
+    if (last !== "__proto__" && last !== "constructor" && last !== "prototype") {
+      cur[last] = val;
     }
   }
 

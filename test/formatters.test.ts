@@ -44,6 +44,10 @@ describe('defaultFormatters', () => {
     it('should format a number with default args', () => {
       expect(defaultFormatters.number(123456.789)).toContain('123');
     });
+
+    it('should return original value as string when value is not a valid number', () => {
+      expect(defaultFormatters.number('not-a-number')).toBe('not-a-number');
+    });
   });
 
   describe('currency', () => {
@@ -59,6 +63,10 @@ describe('defaultFormatters', () => {
     it('should format with custom currency and default locale', () => {
       expect(defaultFormatters.currency(100, ['GBP'])).toMatch(/£100|100.*GBP/);
     });
+
+    it('should return original value as string when value is not a valid number', () => {
+      expect(defaultFormatters.currency('not-a-number')).toBe('not-a-number');
+    });
   });
 
   describe('date', () => {
@@ -70,6 +78,10 @@ describe('defaultFormatters', () => {
 
     it('should format a date with default args', () => {
       expect(defaultFormatters.date(date)).toBeDefined();
+    });
+
+    it('should return original value as string when value is an invalid date', () => {
+      expect(defaultFormatters.date('invalid-date')).toBe('invalid-date');
     });
   });
 
@@ -111,6 +123,10 @@ describe('defaultFormatters', () => {
     it('should work with default args', () => {
       const date = new Date(Date.now() - 10 * 1000);
       expect(defaultFormatters.relativeDate(date)).toBeDefined();
+    });
+
+    it('should return original value as string when value is an invalid date', () => {
+      expect(defaultFormatters.relativeDate('invalid-date')).toBe('invalid-date');
     });
   });
 

@@ -20,13 +20,17 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/server/index.ts
 var server_exports = {};
 __export(server_exports, {
+  createI18nMiddleware: () => createI18nMiddleware,
   createLocLServer: () => createLocLServer,
   createServerTranslator: () => createServerTranslator,
+  getHreflangLinks: () => getHreflangLinks,
   getLocale: () => getLocale,
   getServerTranslator: () => getServerTranslator,
   getSyncTranslator: () => getSyncTranslator,
   getTranslations: () => getTranslations,
   getTranslator: () => getTranslator,
+  handleI18nRouting: () => handleI18nRouting,
+  resolveRouteLocale: () => resolveRouteLocale,
   runWithLocale: () => runWithLocale,
   runWithTranslator: () => runWithTranslator,
   serverStorage: () => serverStorage,
@@ -88,7 +92,11 @@ var defaultFormatters = {
     const locales = args[0] || void 0;
     const options = {};
     if (args[1]) options.style = args[1];
-    return new Intl.NumberFormat(locales, options).format(Number(val));
+    const num = Number(val);
+    if (isNaN(num)) {
+      return String(val);
+    }
+    return new Intl.NumberFormat(locales, options).format(num);
   },
   /**
    * Formats a number as a currency string using `Intl.NumberFormat`.
@@ -101,10 +109,14 @@ var defaultFormatters = {
   currency: (val, args = []) => {
     const currency = args[0] || "USD";
     const locales = args[1] || void 0;
+    const num = Number(val);
+    if (isNaN(num)) {
+      return String(val);
+    }
     return new Intl.NumberFormat(locales, {
       style: "currency",
       currency
-    }).format(Number(val));
+    }).format(val);
   },
   /**
    * Formats a date using `Intl.DateTimeFormat`.
@@ -118,7 +130,11 @@ var defaultFormatters = {
     const locales = args[0] || void 0;
     const options = {};
     if (args[1]) options.dateStyle = args[1];
-    return new Intl.DateTimeFormat(locales, options).format(new Date(val));
+    const d = new Date(val);
+    if (isNaN(d.getTime())) {
+      return String(val);
+    }
+    return new Intl.DateTimeFormat(locales, options).format(d);
   },
   /**
    * Formats a date as a relative time string (e.g., "2 hours ago").
@@ -131,7 +147,11 @@ var defaultFormatters = {
     const locales = args[0] || void 0;
     const options = { numeric: "auto" };
     const rtf = new Intl.RelativeTimeFormat(locales, options);
-    const diff = (new Date(val).getTime() - Date.now()) / 1e3;
+    const time = new Date(val).getTime();
+    if (isNaN(time)) {
+      return String(val);
+    }
+    const diff = (time - Date.now()) / 1e3;
     if (Math.abs(diff) < 60) return rtf.format(Math.round(diff), "seconds");
     if (Math.abs(diff) < 3600) return rtf.format(Math.round(diff / 60), "minutes");
     if (Math.abs(diff) < 86400) return rtf.format(Math.round(diff / 3600), "hours");
@@ -286,6 +306,8 @@ var RTL_PRIMARY_LANGUAGES = /* @__PURE__ */ new Set([
   "yi",
   "ji"
 ]);
+var MAX_TEMPLATE_CACHE = 1e3;
+var MAX_SCOPE_CACHE = 500;
 var LocL = class _LocL {
   /**
    * Creates a new LocL instance.
@@ -318,8 +340,8 @@ var LocL = class _LocL {
       ...config
     };
     this.resources = { ...config.resources };
-    this.language = this.validateSupportedLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
+    this.language = this.validateSupportedLanguage(config.language) ?? config.fallbackLanguage;
     this.scope = config.scope;
     this.loader = config.loader;
     config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
@@ -379,6 +401,12 @@ var LocL = class _LocL {
       }
     });
     if (root.config.useCache) {
+      if (root.cache.size >= MAX_SCOPE_CACHE) {
+        const keysToDelete = Array.from(root.cache.keys()).slice(0, 100);
+        for (const k of keysToDelete) {
+          root.cache.delete(k);
+        }
+      }
       root.cache.set(cacheKey, result);
     }
     return result;
@@ -546,25 +574,28 @@ var LocL = class _LocL {
    * @param value - The translation value.
    */
   addResource(lang, key, value) {
-    if (this.isUnsafeObjectKey(lang)) {
+    if (typeof lang !== "string" || typeof key !== "string" || this.isUnsafeObjectKey(lang)) {
       return;
     }
-    const keys = key.split(".");
-    if (keys.some((k) => this.isUnsafeObjectKey(k))) {
-      return;
-    }
-    if (!this.resources[lang]) {
+    if (!Object.prototype.hasOwnProperty.call(this.resources, lang) || !this.resources[lang] || typeof this.resources[lang] !== "object") {
       this.resources[lang] = /* @__PURE__ */ Object.create(null);
     }
+    const keys = key.split(".");
     let current = this.resources[lang];
     for (let i = 0; i < keys.length - 1; i++) {
       const k = keys[i];
-      if (!current[k] || typeof current[k] !== "object") {
+      if (this.isUnsafeObjectKey(k)) {
+        return;
+      }
+      if (!Object.prototype.hasOwnProperty.call(current, k) || typeof current[k] !== "object" || current[k] === null) {
         current[k] = /* @__PURE__ */ Object.create(null);
       }
       current = current[k];
     }
     const lastKey = keys[keys.length - 1];
+    if (this.isUnsafeObjectKey(lastKey)) {
+      return;
+    }
     current[lastKey] = value;
     this.invalidateCacheForLanguage(lang);
     this.version++;
@@ -577,10 +608,10 @@ var LocL = class _LocL {
    * @returns DeepMergedResource LocL type
    */
   addResources(lang, bundle) {
-    if (this.isUnsafeObjectKey(lang)) {
+    if (typeof lang !== "string" || this.isUnsafeObjectKey(lang)) {
       return this;
     }
-    if (!this.resources[lang]) {
+    if (!Object.prototype.hasOwnProperty.call(this.resources, lang) || !this.resources[lang] || typeof this.resources[lang] !== "object") {
       this.resources[lang] = /* @__PURE__ */ Object.create(null);
     }
     const deepMerge = (target, source) => {
@@ -589,7 +620,7 @@ var LocL = class _LocL {
           continue;
         }
         if (source[k] && typeof source[k] === "object" && !Array.isArray(source[k])) {
-          if (!target[k] || typeof target[k] !== "object") {
+          if (!Object.prototype.hasOwnProperty.call(target, k) || !target[k] || typeof target[k] !== "object") {
             target[k] = /* @__PURE__ */ Object.create(null);
           }
           deepMerge(target[k], source[k]);
@@ -667,6 +698,9 @@ var LocL = class _LocL {
   plural(key, values, format) {
     return this.t(key, values, format);
   }
+  ordinal(key, values, format) {
+    return this.t(key, { ...values || {}, ordinal: true }, format);
+  }
   /**
    * Translates a key and interpolates rich elements using tag functions.
    * Matches `<tag>content</tag>` in translation templates.
@@ -686,7 +720,7 @@ var LocL = class _LocL {
     if (typeof rawStr !== "string") {
       return [rawStr];
     }
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?\/>/g;
     const result = [];
     let lastIndex = 0;
     let match;
@@ -746,7 +780,7 @@ var LocL = class _LocL {
   /* =========================================================================
    * Fast Template Compilation & Evaluation Engine & Plural Resolution
    * ========================================================================= */
-  evaluateTemplate(template, values) {
+  evaluateTemplate(template, values, isNested = false) {
     if (typeof template !== "string") {
       return template;
     }
@@ -755,10 +789,16 @@ var LocL = class _LocL {
     if (!chunks) {
       chunks = this.compileTemplateIntoChunks(template);
       if (this.config.useCache) {
+        if (this.templateCache.size >= MAX_TEMPLATE_CACHE) {
+          const keysToDelete = Array.from(this.templateCache.keys()).slice(0, 200);
+          for (const k of keysToDelete) {
+            this.templateCache.delete(k);
+          }
+        }
         this.templateCache.set(cacheKey, chunks);
       }
     }
-    if (chunks.length === 1 && chunks[0].type === "lit") {
+    if (chunks.length === 1 && chunks[0].type === "lit" && !this.pseudoOptions?.enabled) {
       return chunks[0].value;
     }
     let output = "";
@@ -772,22 +812,38 @@ var LocL = class _LocL {
         output += this.evaluateSelectChunk(chunk, values);
       }
     }
+    if (this.pseudoOptions?.enabled && !isNested) {
+      const prefix = this.pseudoOptions.prefix ?? "[!!! ";
+      const suffix = this.pseudoOptions.suffix ?? " !!!]";
+      return `${prefix}${output}${suffix}`;
+    }
     return output;
   }
   compileTemplateIntoChunks(template) {
-    let text = template;
-    if (this.pseudoOptions?.enabled) {
-      text = this.applyPseudoLocalization(text);
-    }
+    const text = template;
+    const isPseudo = Boolean(this.pseudoOptions?.enabled);
+    const useAccents = this.pseudoOptions?.accents !== false;
+    const formatLit = (str) => {
+      const unescaped = str.replace(/\\([{}])/g, "$1");
+      return isPseudo && useAccents ? this.applyPseudoAccents(unescaped) : unescaped;
+    };
     const chunks = [];
     let lastIndex = 0;
     let depth = 0;
     let start = -1;
     for (let i = 0; i < text.length; i++) {
+      if (text[i] === "\\" && (text[i + 1] === "{" || text[i + 1] === "}")) {
+        i++;
+        continue;
+      }
       if (text[i] === "{") {
         if (depth === 0) {
           if (i > lastIndex) {
-            chunks.push({ type: "lit", value: text.slice(lastIndex, i) });
+            const rawLit = text.slice(lastIndex, i);
+            chunks.push({
+              type: "lit",
+              value: formatLit(rawLit)
+            });
           }
           start = i;
         }
@@ -804,7 +860,7 @@ var LocL = class _LocL {
             const selectMatch = inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
             if (selectMatch) {
               const field = selectMatch[1].trim();
-              const cases = this.parseSelectCases(selectMatch[2]);
+              const cases = this.parseSelectCases(selectMatch[2], isPseudo && useAccents);
               chunks.push({ type: "select", field, cases });
             } else {
               const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
@@ -820,8 +876,18 @@ var LocL = class _LocL {
         }
       }
     }
-    if (lastIndex < text.length) {
-      chunks.push({ type: "lit", value: text.slice(lastIndex) });
+    if (depth > 0 && start >= 0) {
+      const remaining = text.slice(start);
+      chunks.push({
+        type: "lit",
+        value: formatLit(remaining)
+      });
+    } else if (lastIndex < text.length) {
+      const remaining = text.slice(lastIndex);
+      chunks.push({
+        type: "lit",
+        value: formatLit(remaining)
+      });
     }
     return chunks;
   }
@@ -855,9 +921,9 @@ var LocL = class _LocL {
   evaluateSelectChunk(chunk, values) {
     const val = values ? String(values[chunk.field] ?? "other") : "other";
     const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
-    return caseText.includes("{") ? this.evaluateTemplate(caseText, values) : caseText;
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
   }
-  parseSelectCases(casesBody) {
+  parseSelectCases(casesBody, pseudoAccents = false) {
     const cases = {};
     let i = 0;
     while (i < casesBody.length) {
@@ -887,7 +953,10 @@ var LocL = class _LocL {
           }
           i++;
         }
-        const caseText = casesBody.slice(bodyStart, i - 1).trim();
+        let caseText = casesBody.slice(bodyStart, i - 1).trim();
+        if (pseudoAccents) {
+          caseText = this.applyPseudoAccents(caseText);
+        }
         if (caseKey) {
           cases[caseKey] = caseText;
         }
@@ -896,49 +965,84 @@ var LocL = class _LocL {
     return cases;
   }
   resolvePluralKey(key, values) {
-    if (values?.count !== void 0 && !key.match(/_(zero|one|two|few|many|other)$/)) {
+    if (values?.count !== void 0 && !key.match(/_(zero|one|two|few|many|other)$/) && !key.match(/_ordinal_(zero|one|two|few|many|other)$/)) {
+      const isOrdinal = Boolean(values.ordinal || values.type === "ordinal");
+      const pluralType = isOrdinal ? "ordinal" : "cardinal";
       const exactKey = `=${values.count}`;
       const baseValue = this.lookupKeyWithFallback(key);
       if (baseValue && typeof baseValue === "object") {
-        if (exactKey in baseValue) {
-          return this.evaluateTemplate(baseValue[exactKey], values);
+        const target = isOrdinal && baseValue.ordinal && typeof baseValue.ordinal === "object" ? baseValue.ordinal : baseValue;
+        if (exactKey in target) {
+          return this.evaluateTemplate(target[exactKey], values);
         }
-        if (values.count === 0 && "zero" in baseValue) {
-          return this.evaluateTemplate(baseValue.zero, values);
+        if (values.count === 0 && "zero" in target) {
+          return this.evaluateTemplate(target.zero, values);
         }
-        const category2 = this.getPluralRules(this.language).select(values.count);
-        if (category2 in baseValue) {
-          return this.evaluateTemplate(baseValue[category2], values);
+        const category2 = this.getPluralRules(this.language, pluralType).select(values.count);
+        if (category2 in target) {
+          return this.evaluateTemplate(target[category2], values);
         }
-        if ("other" in baseValue) {
+        if ("other" in target) {
+          this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
           this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-          return this.evaluateTemplate(baseValue.other, values);
+          return this.evaluateTemplate(target.other, values);
         }
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return key;
+      }
+      if (isOrdinal) {
+        const exactOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_${exactKey}`);
+        if (exactOrdinalSuffix !== void 0) {
+          return this.evaluateTemplate(exactOrdinalSuffix, values);
+        }
       }
       const exactSuffixValue = this.lookupKeyWithFallback(`${key}_${exactKey}`);
       if (exactSuffixValue !== void 0) {
         return this.evaluateTemplate(exactSuffixValue, values);
       }
       if (values.count === 0) {
+        if (isOrdinal) {
+          const zeroOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_zero`);
+          if (zeroOrdinalSuffix !== void 0) {
+            return this.evaluateTemplate(zeroOrdinalSuffix, values);
+          }
+        }
         const zeroSuffixValue = this.lookupKeyWithFallback(`${key}_zero`);
         if (zeroSuffixValue !== void 0) {
           return this.evaluateTemplate(zeroSuffixValue, values);
         }
       }
-      const category = this.getPluralRules(this.language).select(values.count);
+      const category = this.getPluralRules(this.language, pluralType).select(values.count);
+      if (isOrdinal) {
+        const categoryOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_${category}`);
+        if (categoryOrdinalSuffix !== void 0) {
+          return this.evaluateTemplate(categoryOrdinalSuffix, values);
+        }
+      }
       const categorySuffixValue = this.lookupKeyWithFallback(`${key}_${category}`);
       if (categorySuffixValue !== void 0) {
         return this.evaluateTemplate(categorySuffixValue, values);
       }
+      if (isOrdinal) {
+        const otherOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_other`);
+        if (otherOrdinalSuffix !== void 0) {
+          this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
+          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+          return this.evaluateTemplate(otherOrdinalSuffix, values);
+        }
+      }
       const otherSuffixValue = this.lookupKeyWithFallback(`${key}_other`);
       if (otherSuffixValue !== void 0) {
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return this.evaluateTemplate(otherSuffixValue, values);
       }
-      const anySuffixExists = ["zero", "one", "two", "few", "many"].some((cat) => this.lookupKeyWithFallback(`${key}_${cat}`) !== void 0);
+      const anySuffixExists = ["zero", "one", "two", "few", "many"].some(
+        (cat) => isOrdinal && this.lookupKeyWithFallback(`${key}_ordinal_${cat}`) !== void 0 || this.lookupKeyWithFallback(`${key}_${cat}`) !== void 0
+      );
       if (anySuffixExists) {
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return key;
       }
@@ -976,8 +1080,9 @@ var LocL = class _LocL {
   }
   invalidateCacheForLanguage(lang) {
     const prefix = `${lang}::`;
+    const proxyPrefix = `proxy::${lang}::`;
     for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) {
+      if (key.startsWith(prefix) || key.startsWith(proxyPrefix)) {
         this.cache.delete(key);
       }
     }
@@ -1001,6 +1106,7 @@ var LocL = class _LocL {
         return res;
       }
     }
+    this.config.onMissingKey?.(key, this.language, chain);
     if (this.config.devMode) {
       console.warn(`[LocL] Missing key: "${key}" in "${this.language}" (fallback chain: ${chain.join(" -> ")})`);
     }
@@ -1018,6 +1124,12 @@ var LocL = class _LocL {
     if (typeof this.scope === "string") {
       const result = this.scope.split(".").reduce((acc, k) => acc?.[k], langObject);
       if (this.config.useCache) {
+        if (this.cache.size >= MAX_SCOPE_CACHE) {
+          const keysToDelete = Array.from(this.cache.keys()).slice(0, 100);
+          for (const k of keysToDelete) {
+            this.cache.delete(k);
+          }
+        }
         this.cache.set(cacheKey, result);
       }
       result === void 0 && this.config.devMode && console.warn(`[LocL] Missing namespace: "${this.scope}" in "${this.language}"`);
@@ -1039,6 +1151,12 @@ var LocL = class _LocL {
         }
       }
       if (this.config.useCache) {
+        if (this.cache.size >= MAX_SCOPE_CACHE) {
+          const keysToDelete = Array.from(this.cache.keys()).slice(0, 100);
+          for (const k of keysToDelete) {
+            this.cache.delete(k);
+          }
+        }
         this.cache.set(cacheKey, combined);
       }
       return combined;
@@ -1050,32 +1168,41 @@ var LocL = class _LocL {
     return void 0;
   }
   findNestedValue(keys, tree) {
+    if (keys.length === 0) {
+      return tree;
+    }
     if (!tree || typeof tree !== "object") {
       return void 0;
     }
-    let current = tree;
-    const keysCopy = [...keys];
-    for (const key of keys) {
-      if (current === null || typeof current !== "object") {
-        return void 0;
-      }
-      const keyTest = keysCopy.join(".");
-      if (Object.prototype.hasOwnProperty.call(current, keyTest)) {
-        return current[keyTest];
-      }
-      if (!(key in current)) {
-        return void 0;
-      }
-      current = current[key];
-      keysCopy.shift();
+    const fullKey = keys.join(".");
+    if (Object.prototype.hasOwnProperty.call(tree, fullKey)) {
+      return tree[fullKey];
     }
-    return current;
+    for (let i = keys.length - 1; i >= 1; i--) {
+      const prefix = keys.slice(0, i).join(".");
+      if (Object.prototype.hasOwnProperty.call(tree, prefix)) {
+        const remaining = keys.slice(i);
+        const res = this.findNestedValue(remaining, tree[prefix]);
+        if (res !== void 0) {
+          return res;
+        }
+      }
+    }
+    const first = keys[0];
+    if (Object.prototype.hasOwnProperty.call(tree, first)) {
+      return this.findNestedValue(keys.slice(1), tree[first]);
+    }
+    if (!this.isUnsafeObjectKey(first) && first in tree && tree[first] !== void 0) {
+      return this.findNestedValue(keys.slice(1), tree[first]);
+    }
+    return void 0;
   }
-  getPluralRules(lang) {
-    let rules = this.pluralRulesCache.get(lang);
+  getPluralRules(lang, type = "cardinal") {
+    const cacheKey = `${lang}::${type}`;
+    let rules = this.pluralRulesCache.get(cacheKey);
     if (!rules) {
-      rules = new Intl.PluralRules(lang);
-      this.pluralRulesCache.set(lang, rules);
+      rules = new Intl.PluralRules(lang, { type });
+      this.pluralRulesCache.set(cacheKey, rules);
     }
     return rules;
   }
@@ -1103,22 +1230,15 @@ var LocL = class _LocL {
     }
     return formatterFn(value, args);
   }
-  applyPseudoLocalization(text) {
-    const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
-    const suffix = this.pseudoOptions?.suffix ?? " !!!]";
-    const useAccents = this.pseudoOptions?.accents !== false;
-    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
+  applyPseudoAccents(text) {
+    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^>]*)?>|{{[^{}]+}}|{[^{}]+})/g;
     const parts = text.split(tokenRegex);
-    const transformed = parts.map((part) => {
+    return parts.map((part) => {
       if (part.startsWith("<") || part.startsWith("{")) {
-        return part;
-      }
-      if (!useAccents) {
         return part;
       }
       return part.split("").map((ch) => PSEUDO_ACCENT_MAP[ch] ?? ch).join("");
     }).join("");
-    return `${prefix}${transformed}${suffix}`;
   }
   syncBrowserDocumentAttributes() {
     if (this.config.autoSyncDocument === false) {
@@ -1191,9 +1311,329 @@ var LocL = class _LocL {
     return proxy;
   }
   isUnsafeObjectKey(key) {
-    return key === "__proto__" || key === "constructor" || key === "prototype";
+    return key === "__proto__" || key === "constructor" || key === "prototype" || key === "__defineGetter__" || key === "__defineSetter__" || key === "__lookupGetter__" || key === "__lookupSetter__";
   }
 };
+
+// src/detector/index.ts
+function parseAcceptLanguage(header) {
+  if (!header || typeof header !== "string") {
+    return [];
+  }
+  const results = [];
+  const parts = header.split(",");
+  for (let i = 0; i < parts.length; i++) {
+    const rawPart = parts[i].trim();
+    if (!rawPart) {
+      continue;
+    }
+    const segments = rawPart.split(";");
+    const lang = segments[0].trim();
+    if (!lang) {
+      continue;
+    }
+    let q = 1;
+    for (let j = 1; j < segments.length; j++) {
+      const match = segments[j].match(/^\s*q\s*=\s*(-?[0-9.]+)/i);
+      if (match) {
+        const parsedQ = parseFloat(match[1]);
+        if (!isNaN(parsedQ)) {
+          q = Math.max(0, Math.min(1, parsedQ));
+        }
+        break;
+      }
+    }
+    results.push({ lang, q });
+  }
+  return results.sort((a, b) => b.q - a.q);
+}
+function matchLanguage(accepted, supported, fallback) {
+  if (!supported || supported.length === 0) {
+    return fallback;
+  }
+  let candidates = [];
+  if (typeof accepted === "string") {
+    if (accepted.includes(",") || accepted.includes(";")) {
+      candidates = parseAcceptLanguage(accepted).map((a) => a.lang);
+    } else {
+      candidates = [accepted];
+    }
+  } else if (Array.isArray(accepted)) {
+    if (accepted.length > 0 && typeof accepted[0] === "object" && accepted[0] !== null) {
+      const list = accepted.slice().sort((a, b) => (b.q ?? 1) - (a.q ?? 1));
+      candidates = list.map((item) => item.lang);
+    } else {
+      candidates = accepted;
+    }
+  }
+  for (const rawCandidate of candidates) {
+    const candidate = rawCandidate.trim();
+    if (!candidate) {
+      continue;
+    }
+    if (candidate === "*") {
+      return supported[0];
+    }
+    const exact = supported.find((s) => s.toLowerCase() === candidate.toLowerCase());
+    if (exact) {
+      return exact;
+    }
+    let current = candidate;
+    while (current) {
+      const lastSep = Math.max(current.lastIndexOf("-"), current.lastIndexOf("_"));
+      if (lastSep === -1) {
+        break;
+      }
+      current = current.slice(0, lastSep);
+      const subtagMatch = supported.find((s) => s.toLowerCase() === current.toLowerCase());
+      if (subtagMatch) {
+        return subtagMatch;
+      }
+    }
+    const prefixCandidate = `${candidate.toLowerCase()}-`;
+    const prefixMatch = supported.find((s) => s.toLowerCase().startsWith(prefixCandidate));
+    if (prefixMatch) {
+      return prefixMatch;
+    }
+  }
+  return fallback;
+}
+
+// src/detector/middleware.ts
+var DEFAULT_IGNORED_EXTENSIONS = /\.(ico|png|jpg|jpeg|svg|webp|gif|css|js|map|txt|xml|woff|woff2|ttf|eot|pdf|json)$/i;
+function isPathIgnored(pathname, ignore) {
+  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || pathname.startsWith("/__next")) {
+    return true;
+  }
+  if (DEFAULT_IGNORED_EXTENSIONS.test(pathname)) {
+    return true;
+  }
+  if (!ignore) {
+    return false;
+  }
+  if (typeof ignore === "function") {
+    return ignore(pathname);
+  }
+  for (const item of ignore) {
+    if (typeof item === "string" && pathname.startsWith(item)) {
+      return true;
+    }
+    if (item instanceof RegExp && item.test(pathname)) {
+      return true;
+    }
+  }
+  return false;
+}
+function parseCookie(cookieHeader) {
+  const result = {};
+  if (!cookieHeader) {
+    return result;
+  }
+  const parts = cookieHeader.split(";");
+  for (const part of parts) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx !== -1) {
+      const key = part.slice(0, eqIdx).trim();
+      const val = part.slice(eqIdx + 1).trim();
+      if (key && val) {
+        try {
+          result[key] = decodeURIComponent(val);
+        } catch {
+          result[key] = val;
+        }
+      }
+    }
+  }
+  return result;
+}
+function getHreflangLinks(baseUrl, pathname, locales, defaultLocale, prefixStrategy = "as-needed") {
+  const cleanBase = baseUrl.replace(/\/+$/, "");
+  const cleanPath = pathname === "/" ? "" : pathname.replace(/^\/+/, "/");
+  const links = locales.map((locale) => {
+    let href;
+    if (prefixStrategy === "as-needed" && locale.toLowerCase() === defaultLocale.toLowerCase()) {
+      href = `${cleanBase}${cleanPath || "/"}`;
+    } else if (prefixStrategy === "never") {
+      href = `${cleanBase}${cleanPath || "/"}`;
+    } else {
+      href = `${cleanBase}/${locale}${cleanPath}`;
+    }
+    return {
+      rel: "alternate",
+      hreflang: locale,
+      href
+    };
+  });
+  const defaultHref = prefixStrategy === "always" ? `${cleanBase}/${defaultLocale}${cleanPath}` : `${cleanBase}${cleanPath || "/"}`;
+  links.push({
+    rel: "alternate",
+    hreflang: "x-default",
+    href: defaultHref
+  });
+  return links;
+}
+function formatCookieHeader(name, value, options) {
+  const path = options?.path ?? "/";
+  const maxAge = options?.maxAge ?? 31536e3;
+  const sameSite = options?.sameSite ?? "lax";
+  const secure = options?.secure ? "; Secure" : "";
+  const domain = options?.domain ? `; Domain=${options?.domain}` : "";
+  return `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=${path}; Max-Age=${maxAge}; SameSite=${sameSite}${secure}${domain}`;
+}
+function resolveRouteLocale(request, options) {
+  const strategy = options.prefixStrategy ?? "as-needed";
+  const cookieName = options.cookieName ?? "NEXT_LOCALE";
+  const queryParam = options.queryParam ?? "lang";
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(request.url, "http://localhost");
+  } catch {
+    const pathPart = String(request.url).replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/?#]*/, "");
+    parsedUrl = new URL("/" + pathPart.replace(/^\/+/, ""), "http://localhost");
+  }
+  const originalPathname = parsedUrl.pathname;
+  if (isPathIgnored(originalPathname, options.ignore)) {
+    return {
+      locale: options.defaultLocale,
+      detectedLocale: options.defaultLocale,
+      pathname: originalPathname,
+      originalPathname,
+      localeInPath: null,
+      shouldRedirect: false,
+      isIgnored: true,
+      headers: {}
+    };
+  }
+  const segments = originalPathname.split("/").filter(Boolean);
+  const firstSegment = segments[0]?.toLowerCase();
+  const matchedPrefix = options.locales.find((l) => l.toLowerCase() === firstSegment) ?? null;
+  const localeInPath = matchedPrefix;
+  const pathnameWithoutPrefix = matchedPrefix ? "/" + segments.slice(1).join("/") : originalPathname;
+  const queryLocale = parsedUrl.searchParams.get(queryParam) || parsedUrl.searchParams.get("locale");
+  let cookieLocale;
+  if (request.cookies && typeof request.cookies.get === "function") {
+    cookieLocale = request.cookies.get(cookieName)?.value;
+  } else if (request.cookies && typeof request.cookies === "object" && typeof request.cookies[cookieName] === "string") {
+    cookieLocale = request.cookies[cookieName];
+  } else {
+    const rawHeader = typeof request.headers?.get === "function" ? request.headers.get("cookie") : request.headers?.cookie;
+    cookieLocale = parseCookie(rawHeader)[cookieName];
+  }
+  const acceptHeader = typeof request.headers?.get === "function" ? request.headers.get("accept-language") : request.headers?.["accept-language"];
+  const candidate = queryLocale || cookieLocale || acceptHeader;
+  const detectedLocale = matchLanguage(candidate, options.locales, options.defaultLocale);
+  let targetLocale = localeInPath ?? detectedLocale;
+  let shouldRedirect = false;
+  let redirectPath = originalPathname;
+  if (strategy === "as-needed") {
+    if (localeInPath) {
+      if (localeInPath.toLowerCase() === options.defaultLocale.toLowerCase()) {
+        shouldRedirect = true;
+        redirectPath = pathnameWithoutPrefix;
+        targetLocale = options.defaultLocale;
+      }
+    } else {
+      if (detectedLocale.toLowerCase() !== options.defaultLocale.toLowerCase()) {
+        shouldRedirect = true;
+        redirectPath = `/${detectedLocale}${pathnameWithoutPrefix === "/" ? "" : pathnameWithoutPrefix}`;
+        targetLocale = detectedLocale;
+      } else {
+        targetLocale = options.defaultLocale;
+      }
+    }
+  } else if (strategy === "always") {
+    if (!localeInPath) {
+      shouldRedirect = true;
+      redirectPath = `/${detectedLocale}${pathnameWithoutPrefix === "/" ? "" : pathnameWithoutPrefix}`;
+      targetLocale = detectedLocale;
+    }
+  } else if (strategy === "never") {
+    if (localeInPath) {
+      shouldRedirect = true;
+      redirectPath = pathnameWithoutPrefix;
+      targetLocale = localeInPath;
+    } else {
+      targetLocale = detectedLocale;
+    }
+  }
+  let redirectUrl;
+  if (shouldRedirect) {
+    const targetUrl = new URL(parsedUrl.toString());
+    targetUrl.pathname = redirectPath;
+    redirectUrl = targetUrl.pathname + targetUrl.search;
+  }
+  const responseHeaders = {
+    "x-locl-locale": targetLocale,
+    "x-locl-pathname": pathnameWithoutPrefix
+  };
+  const cookieData = options.setCookie !== false ? {
+    name: cookieName,
+    value: targetLocale,
+    options: options.cookieOptions
+  } : void 0;
+  const baseUrl = parsedUrl.origin;
+  const hreflangLinks = getHreflangLinks(
+    baseUrl,
+    pathnameWithoutPrefix,
+    options.locales,
+    options.defaultLocale,
+    strategy
+  );
+  return {
+    locale: targetLocale,
+    detectedLocale,
+    pathname: pathnameWithoutPrefix,
+    originalPathname,
+    localeInPath,
+    shouldRedirect,
+    redirectUrl,
+    rewriteUrl: pathnameWithoutPrefix,
+    isIgnored: false,
+    cookie: cookieData,
+    headers: responseHeaders,
+    hreflangLinks
+  };
+}
+function createI18nMiddleware(options) {
+  return function i18nMiddleware(request) {
+    const resolution = resolveRouteLocale(request, options);
+    if (resolution.isIgnored) {
+      return new Response(null, { status: 200, headers: resolution.headers });
+    }
+    if (resolution.shouldRedirect && resolution.redirectUrl) {
+      let finalRedirectUrl;
+      try {
+        finalRedirectUrl = new URL(resolution.redirectUrl, request.url).toString();
+      } catch {
+        finalRedirectUrl = resolution.redirectUrl;
+      }
+      const headers2 = new Headers(resolution.headers);
+      headers2.set("Location", finalRedirectUrl);
+      if (resolution.cookie) {
+        headers2.append(
+          "Set-Cookie",
+          formatCookieHeader(resolution.cookie.name, resolution.cookie.value, resolution.cookie.options)
+        );
+      }
+      return new Response(null, {
+        status: 307,
+        headers: headers2
+      });
+    }
+    const headers = new Headers(resolution.headers);
+    if (resolution.cookie) {
+      headers.append(
+        "Set-Cookie",
+        formatCookieHeader(resolution.cookie.name, resolution.cookie.value, resolution.cookie.options)
+      );
+    }
+    return new Response(null, {
+      status: 200,
+      headers
+    });
+  };
+}
+var handleI18nRouting = createI18nMiddleware;
 
 // src/server/index.ts
 var serverStorage = new import_node_async_hooks.AsyncLocalStorage();
@@ -1204,6 +1644,7 @@ function createServerTranslator(translator) {
   tFn.t = translator.t.bind(translator);
   tFn.tt = translator.tt.bind(translator);
   tFn.plural = translator.plural.bind(translator);
+  tFn.ordinal = translator.ordinal.bind(translator);
   tFn.rich = translator.rich.bind(translator);
   tFn.format = translator.format.bind(translator);
   tFn.get = translator.get.bind(translator);
@@ -1225,22 +1666,13 @@ function createServerTranslator(translator) {
 }
 function parseGetTranslatorArgs(arg1, arg2) {
   if (typeof arg1 === "string" || Array.isArray(arg1)) {
-    return {
-      scope: arg1,
-      locale: arg2?.locale
-    };
+    return { scope: arg1, locale: arg2?.locale };
   }
   if (arg1 && typeof arg1 === "object") {
     const opts = arg1;
-    return {
-      scope: opts.scope,
-      locale: opts.locale
-    };
+    return { scope: opts.scope, locale: opts.locale };
   }
-  return {
-    scope: void 0,
-    locale: void 0
-  };
+  return { scope: void 0, locale: void 0 };
 }
 function createLocLServer(translatorOrOptions, suiteOptions) {
   let baseTranslator;
@@ -1269,7 +1701,7 @@ function createLocLServer(translatorOrOptions, suiteOptions) {
   function runWithLocale2(locale, fn) {
     const current = storage.getStore();
     const next = {
-      ...current,
+      ...current && typeof current === "object" ? current : {},
       locale
     };
     return storage.run(next, fn);
@@ -1277,7 +1709,7 @@ function createLocLServer(translatorOrOptions, suiteOptions) {
   function runWithTranslator2(trans, fn) {
     const current = storage.getStore();
     const next = {
-      ...current,
+      ...current && typeof current === "object" ? current : {},
       translator: trans,
       locale: trans.getLanguage()
     };
@@ -1381,14 +1813,14 @@ function runWithLocale(locale, fn) {
     return defaultServerInstance.runWithLocale(locale, fn);
   }
   const current = serverStorage.getStore();
-  return serverStorage.run({ ...current, locale }, fn);
+  return serverStorage.run({ ...current && typeof current === "object" ? current : {}, locale }, fn);
 }
 function runWithTranslator(translator, fn) {
   if (defaultServerInstance) {
     return defaultServerInstance.runWithTranslator(translator, fn);
   }
   const current = serverStorage.getStore();
-  return serverStorage.run({ ...current, translator, locale: translator.getLanguage() }, fn);
+  return serverStorage.run({ ...current && typeof current === "object" ? current : {}, translator, locale: translator.getLanguage() }, fn);
 }
 function getLocale() {
   const store = serverStorage.getStore();
@@ -1417,13 +1849,17 @@ function getSyncTranslator(scopeOrOptions, options) {
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  createI18nMiddleware,
   createLocLServer,
   createServerTranslator,
+  getHreflangLinks,
   getLocale,
   getServerTranslator,
   getSyncTranslator,
   getTranslations,
   getTranslator,
+  handleI18nRouting,
+  resolveRouteLocale,
   runWithLocale,
   runWithTranslator,
   serverStorage,

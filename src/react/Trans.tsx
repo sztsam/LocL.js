@@ -54,7 +54,7 @@ function renderNodes(
   components: Record<string, ReactElement | ((content: ReactNode) => ReactNode)> = {}
 ): ReactNode[] {
   // Matches paired <tag>content</tag> OR self-closing <tag/> / <tag />
-  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+  const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?\/>/g;
   const nodes: ReactNode[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null;
@@ -148,7 +148,7 @@ export function Trans<
       : (activeTranslator.getLanguage?.() || "");
   };
   const version = useSyncExternalStore(
-    (onStoreChange) => (activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => {}),
+    (onStoreChange) => (activeTranslator ? activeTranslator.subscribe(onStoreChange) : () => { }),
     getSnapshot,
     getSnapshot
   );
@@ -177,10 +177,11 @@ export function Trans<
     if (res !== i18nKey && res !== undefined) {
       return String(res);
     }
-    // Verify key existence (checking both regular key and suffix plural `_other`)
+    // Verify key existence (checking regular key, suffix plural `_other`, and ordinal suffix `_ordinal_other`)
     const keyExists =
       tInstance.get(i18nKey as string) !== undefined ||
-      tInstance.get(`${i18nKey as string}_other`) !== undefined;
+      tInstance.get(`${i18nKey as string}_other`) !== undefined ||
+      tInstance.get(`${i18nKey as string}_ordinal_other`) !== undefined;
 
     if (keyExists) {
       return String(res);

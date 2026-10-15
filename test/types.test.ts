@@ -3,14 +3,8 @@ import { LangWithPlurals } from '../src/types';
 
 describe('LangWithPlurals Type', () => {
   it('should correctly type-check valid language structures', () => {
-    // This is a compile-time test. If tsc runs without errors, this test passes.
-    // The runtime assertion is just a placeholder for Jest.
     expect(true).toBe(true);
   });
-
-  // --- Test Cases ---
-
-  // 1. Define a raw language structure
   interface RawLang {
     simple: string;
     nested: {
@@ -52,8 +46,7 @@ describe('LangWithPlurals Type', () => {
     }[];
   }
 
-  // 2. Apply LangWithPlurals to the raw type
-  // If this compiles, the type transformation is working as expected.
+  // Apply LangWithPlurals to the raw type (default language, requires one & other)
   const validLang: LangWithPlurals<RawLang> = {
     simple: 'A simple string',
     nested: {
@@ -93,6 +86,43 @@ describe('LangWithPlurals Type', () => {
       { name: 'Second Item', value_one: '1 value', value_other: 'many values' },
     ]
   };
+
+  // Language-Aware Plural Verification: Japanese ("ja") requires only `other`
+  const validJaLang: LangWithPlurals<RawLang, "ja"> = {
+    simple: 'A simple string',
+    nested: {
+      key1: 'Nested key 1',
+      key2: 'Nested key 2',
+    },
+    plurals: {
+      apple: {
+        other: 'りんご', // No 'one' required!
+      },
+      banana: {
+        other: 'バナナ',
+      }
+    },
+    suffix_plurals: {
+      car_other: '車', // No 'car_one' required!
+      boat_other: 'ボート',
+    },
+    mixed: {
+      plain: 'A plain string in a mixed object',
+      nested_plural: {
+        item_other: 'アイテム',
+      }
+    },
+    primitive_number: 123,
+    primitive_boolean: true,
+    primitive_null: null,
+    items: [
+      { name: 'First Item', value_other: 'many values' }
+    ]
+  };
+
+  expect(validLang.plurals.apple.one).toBe('one apple');
+  expect(validJaLang.plurals.apple.other).toBe('りんご');
+
 
   /*
   // --- INVALID TEST CASES ---

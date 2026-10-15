@@ -76,6 +76,9 @@ function toI18next(translator) {
   const compat = {
     translator,
     t: tFunction,
+    ordinal(key, values) {
+      return translator.ordinal(key, values);
+    },
     exists(key, options) {
       let lookupKey = key;
       let ns = options?.ns;
