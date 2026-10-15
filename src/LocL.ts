@@ -1108,15 +1108,65 @@ export class LocL<
   }
 
   private applyPseudoAccents(text: string): string {
-    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^>]*)?>|{{[^{}]+}}|{[^{}]+})/g;
-    const parts = text.split(tokenRegex);
+    let result = "";
+    let i = 0;
+    const len = text.length;
 
-    return parts.map((part) => {
-      if (part.startsWith("<") || part.startsWith("{")) {
-        return part;
+    while (i < len) {
+      const ch = text[i];
+
+      // Preserve HTML/JSX tags: <tag>, </tag>, <tag attr="..."/>, etc.
+      if (ch === "<") {
+        let next = i + 1;
+        if (next < len && text[next] === "/") {
+          next++;
+        }
+        const tagStart = next;
+        while (next < len && /[a-zA-Z0-9_-]/.test(text[next])) {
+          next++;
+        }
+        if (next > tagStart) {
+          const closeIdx = text.indexOf(">", next);
+          const nextOpen = text.indexOf("<", next);
+          // Only match if '>' exists and no subsequent '<' appears before it
+          if (closeIdx !== -1 && (nextOpen === -1 || closeIdx < nextOpen)) {
+            result += text.slice(i, closeIdx + 1);
+            i = closeIdx + 1;
+            continue;
+          }
+        }
       }
-      return part.split("").map((ch) => PSEUDO_ACCENT_MAP[ch] ?? ch).join("");
-    }).join("");
+
+      // Preserve variable interpolation tokens: {{name}} or {name}
+      if (ch === "{") {
+        if (i + 1 < len && text[i + 1] === "{") {
+          const doubleClose = text.indexOf("}}", i + 2);
+          if (doubleClose !== -1) {
+            const inner = text.slice(i + 2, doubleClose);
+            if (!inner.includes("{") && !inner.includes("}")) {
+              result += text.slice(i, doubleClose + 2);
+              i = doubleClose + 2;
+              continue;
+            }
+          }
+        }
+        const singleClose = text.indexOf("}", i + 1);
+        if (singleClose !== -1) {
+          const inner = text.slice(i + 1, singleClose);
+          if (!inner.includes("{") && !inner.includes("}")) {
+            result += text.slice(i, singleClose + 1);
+            i = singleClose + 1;
+            continue;
+          }
+        }
+      }
+
+      // Convert standard characters with accent map
+      result += PSEUDO_ACCENT_MAP[ch] ?? ch;
+      i++;
+    }
+
+    return result;
   }
 
   private syncBrowserDocumentAttributes() {

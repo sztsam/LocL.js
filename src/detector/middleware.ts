@@ -114,7 +114,9 @@ function parseCookie(cookieHeader?: string | null): Record<string, string> {
 }
 
 export function getHreflangLinks(baseUrl: string, pathname: string, locales: readonly string[], defaultLocale: string, prefixStrategy: PrefixStrategy = "as-needed"): HreflangLink[] {
-  const cleanBase = baseUrl.replace(/\/+$/, "");
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) { end--; }
+  const cleanBase = end === baseUrl.length ? baseUrl : baseUrl.slice(0, end);
   const cleanPath = pathname === "/" ? "" : pathname.replace(/^\/+/, "/");
 
   const links: HreflangLink[] = locales.map((locale) => {

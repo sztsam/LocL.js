@@ -46,7 +46,11 @@ function parseCookie(cookieHeader) {
   return result;
 }
 function getHreflangLinks(baseUrl, pathname, locales, defaultLocale, prefixStrategy = "as-needed") {
-  const cleanBase = baseUrl.replace(/\/+$/, "");
+  let end = baseUrl.length;
+  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47) {
+    end--;
+  }
+  const cleanBase = end === baseUrl.length ? baseUrl : baseUrl.slice(0, end);
   const cleanPath = pathname === "/" ? "" : pathname.replace(/^\/+/, "/");
   const links = locales.map((locale) => {
     let href;
