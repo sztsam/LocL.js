@@ -1,5 +1,5 @@
 import { initLocL } from "../src/index.js";
-import { createLocLServer, getTranslator, getTranslations, getSyncTranslator, runWithLocale, runWithTranslator, getLocale, setLocale, setServerTranslator, getServerTranslator } from "../src/server/index.js";
+import { createLocLServer, getTranslator, getTranslations, getSyncTranslator, runWithLocale, runWithTranslator, getLocale, setLocale, setServerTranslator, getServerTranslator, resolveRouteLocale, createI18nMiddleware, handleI18nRouting, getHreflangLinks } from "../src/server/index.js";
 
 describe("Server Components & Async Request Isolation (locl-js/server)", () => {
   const resources = {
@@ -49,6 +49,28 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
       return getLocale();
     });
     expect(transLocale).toBe("de");
+
+    // Nested calls when defaultServerInstance is null (covers both branches of current && typeof current === "object")
+    runWithLocale("es", () => {
+      expect(getLocale()).toBe("es");
+      runWithLocale("fr", () => {
+        expect(getLocale()).toBe("fr");
+      });
+      runWithTranslator(dummyTranslator, () => {
+        expect(getLocale()).toBe("de");
+      });
+      expect(getLocale()).toBe("es");
+    });
+
+    runWithTranslator(dummyTranslator, () => {
+      expect(getLocale()).toBe("de");
+      runWithTranslator(dummyTranslator, () => {
+        expect(getLocale()).toBe("de");
+      });
+      runWithLocale("it", () => {
+        expect(getLocale()).toBe("it");
+      });
+    });
 
     expect(() => getSyncTranslator()).toThrow(
       "[LocL/server] No server translator configured. Call `setServerTranslator(translator)` or use `createLocLServer(translator)`."
@@ -119,6 +141,7 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
       expect(t.get("title")).toBe("Dashboard");
       expect(t.getObj("dashboard")).toEqual(resources.en.dashboard);
       expect(t.translator).toBeDefined();
+      expect(t.ordinal("items", { count: 1 })).toBe("1 item");
     });
   });
 
@@ -245,6 +268,17 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
       expect(server.getLocale()).toBe("de");
     });
 
+    // Nested calls to runWithLocale and runWithTranslator (exercises current && typeof current === "object")
+    server.runWithLocale("en", () => {
+      server.runWithLocale("de", () => {
+        expect(server.getLocale()).toBe("de");
+      });
+      server.runWithTranslator(translatorDe, () => {
+        expect(server.getLocale()).toBe("de");
+      });
+      expect(server.getLocale()).toBe("en");
+    });
+
     // server.setLocale called outside runWithLocale (store is undefined)
     server.setLocale("fr");
     expect(server.getLocale()).toBe("en");
@@ -285,10 +319,20 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
       expect(sync("title")).toBe("Übersicht");
     });
 
+    // Nested calls on standalone functions
+    runWithLocale("en", () => {
+      runWithLocale("de", () => {
+        expect(getLocale()).toBe("de");
+      });
+    });
+
     // standalone runWithTranslator delegates to defaultServerInstance.runWithTranslator
     const custom = initLocL({ resources, fallbackLanguage: "en", language: "en" });
     runWithTranslator(custom, () => {
       expect(getLocale()).toBe("en");
+      runWithTranslator(custom, () => {
+        expect(getLocale()).toBe("en");
+      });
     });
   });
 
@@ -311,8 +355,30 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
     expect(() => createLocLServer({})).toThrow(
       "[LocL/server] `createLocLServer` requires a LocL instance or resources configuration."
     );
-    expect(() => createLocLServer(undefined as any)).toThrow(
+    // @ts-expect-error
+    expect(() => createLocLServer(undefined)).toThrow(
       "[LocL/server] `createLocLServer` requires a LocL instance or resources configuration."
     );
+  });
+
+  it("should export and invoke routing middleware helpers from locl-js/server", () => {
+    expect(typeof resolveRouteLocale).toBe("function");
+    expect(typeof createI18nMiddleware).toBe("function");
+    expect(typeof handleI18nRouting).toBe("function");
+    expect(typeof getHreflangLinks).toBe("function");
+
+    const links = getHreflangLinks("https://example.com", "/about", ["en", "de"], "en");
+    expect(links).toBeDefined();
+
+    const res = resolveRouteLocale({ url: "https://example.com/" }, { locales: ["en"], defaultLocale: "en" });
+    expect(res.locale).toBe("en");
+
+    const mw = createI18nMiddleware({ locales: ["en"], defaultLocale: "en" });
+    const response = mw({ url: "https://example.com/" });
+    expect(response.status).toBe(200);
+
+    const mw2 = handleI18nRouting({ locales: ["en"], defaultLocale: "en" });
+    const response2 = mw2({ url: "https://example.com/" });
+    expect(response2.status).toBe(200);
   });
 });

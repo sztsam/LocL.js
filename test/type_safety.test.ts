@@ -3,22 +3,22 @@ import { ExtractInterpolationParams, ExtractPluralObjectParams, IsEmptyParams } 
 
 describe("Type Safety & Parameter Extraction", () => {
   it("should extract template parameters accurately at type level", () => {
-    // 1. Single curly
+    // Single curly
     type P1 = ExtractInterpolationParams<"Hello, {name}! You have {count} items.">;
     const p1: P1 = { name: "Alice", count: 42 };
     expect(p1.name).toBe("Alice");
 
-    // 2. Double curly (i18next style)
+    // Double curly (i18next style)
     type P2 = ExtractInterpolationParams<"Price is {{amount | currency:USD}} for {{item}}.">;
     const p2: P2 = { amount: 99, item: "Book" };
     expect(p2.amount).toBe(99);
 
-    // 3. ICU select syntax
+    // ICU select syntax
     type P3 = ExtractInterpolationParams<"{gender, select, male {He} female {She} other {They}} is here.">;
     const p3: P3 = { gender: "female" };
     expect(p3.gender).toBe("female");
 
-    // 4. Static string has no parameters
+    // Static string has no parameters
     type P4 = ExtractInterpolationParams<"Static string with no tokens">;
     type IsP4Empty = IsEmptyParams<P4>;
     const isEmpty: IsP4Empty = true;
@@ -62,27 +62,27 @@ describe("Type Safety & Parameter Extraction", () => {
       fallbackLanguage: "en"
     });
 
-    // 1. Template with placeholder requires param
+    // Template with placeholder requires param
     const res1 = translator.t("greeting", { name: "World" });
     expect(res1).toBe("Hello, World!");
 
-    // 2. Static template allows omitting params
+    // Static template allows omitting params
     const res2 = translator.t("staticText");
     expect(res2).toBe("Just a plain string");
 
-    // 3. Object plural through t()
+    // Object plural through t()
     const res3 = translator.t("items", { count: 3 });
     expect(res3).toBe("3 items");
 
-    // 4. Plural method with count for suffix plural
+    // Plural method with count for suffix plural
     const res4 = translator.plural("car", { count: 1 });
     expect(res4).toBe("1 car");
 
-    // 5. Plural via t() directly for suffix plural
+    // Plural via t() directly for suffix plural
     const res5 = translator.t("car", { count: 2 });
     expect(res5).toBe("2 cars");
 
-    // 6. Suffix plural with additional template parameters
+    // Suffix plural with additional template parameters
     const res6 = translator.plural("boat", { count: 3, color: "blue" });
     expect(res6).toBe("3 blue boats");
   });

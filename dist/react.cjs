@@ -1,3 +1,4 @@
+"use client";
 "use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
@@ -44,7 +45,7 @@ var import_react2 = require("react");
 var import_react = __toESM(require("react"), 1);
 var import_jsx_runtime = require("react/jsx-runtime");
 function renderNodes(rawText, components = {}) {
-  const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+  const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?\/>/g;
   const nodes = [];
   let lastIndex = 0;
   let match;
@@ -120,7 +121,7 @@ function Trans(props) {
     if (res !== i18nKey && res !== void 0) {
       return String(res);
     }
-    const keyExists = tInstance.get(i18nKey) !== void 0 || tInstance.get(`${i18nKey}_other`) !== void 0;
+    const keyExists = tInstance.get(i18nKey) !== void 0 || tInstance.get(`${i18nKey}_other`) !== void 0 || tInstance.get(`${i18nKey}_ordinal_other`) !== void 0;
     if (keyExists) {
       return String(res);
     }
@@ -140,6 +141,7 @@ function bindApi(translator) {
     t: translator.t.bind(translator),
     tt: translator.tt.bind(translator),
     plural: translator.plural.bind(translator),
+    ordinal: translator.ordinal.bind(translator),
     rich: translator.rich.bind(translator),
     format: translator.format.bind(translator),
     get: translator.get.bind(translator),

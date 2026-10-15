@@ -21,6 +21,8 @@ const RTL_PRIMARY_LANGUAGES = new Set([
   "ar", "arc", "bcc", "bqi", "ckb", "dv", "fa", "glk", "he", "iw", "khw", "ks", "ku", "mzn", "pnb", "ps", "sd", "ug", "ur", "yi", "ji"
 ]);
 
+const MAX_TEMPLATE_CACHE = 1000;
+const MAX_SCOPE_CACHE = 500;
 
 /**
  * Configuration for the LocL instance.
@@ -53,6 +55,8 @@ export interface LocLConfig<T extends Record<string, any>, Fallback extends keyo
   autoSyncDocument?: boolean;
   /** When false, disables recursive template-literal parsing for large dictionaries to maximize tsc performance */
   strictParams?: boolean;
+  /** Optional telemetry hook triggered when a key cannot be found */
+  onMissingKey?: (key: string, language: string, fallbackChain: string[]) => void;
 }
 
 /**
@@ -108,15 +112,15 @@ export class LocL<
       ...config
     };
     this.resources = { ...config.resources } as const;
-    this.language = this.validateSupportedLanguage(config.language) ?? config.fallbackLanguage;
     this.fallbackLanguage = config.fallbackLanguage;
+    this.language = this.validateSupportedLanguage(config.language) ?? config.fallbackLanguage;
     this.scope = config.scope as S;
     this.loader = config.loader;
     config.pseudoLocalization && this.setPseudoLocalization(config.pseudoLocalization);
     this.formatters = (this.config.useDefaultFormatters
       ? { ...(defaultFormatters as DefaultFormatters), ...(config.formatters ?? {}) }
       : { ...(config.formatters ?? {}) }) as EffectiveFormatters<F, UseDefaultFormatter>;
-    
+
     this.syncBrowserDocumentAttributes();
   }
 
@@ -167,7 +171,7 @@ export class LocL<
             catch (err) {
               console.error("[LocL] Error in subscriber:", err);
             }
-            return () => {};
+            return () => { };
           };
         }
         return Reflect.get(target, prop, receiver);
@@ -175,6 +179,12 @@ export class LocL<
     }) as unknown as LocL<T, Fallback, N, F, UseDefaultFormatter, StrictParams>;
 
     if (root.config.useCache) {
+      if (root.cache.size >= MAX_SCOPE_CACHE) {
+        const keysToDelete = Array.from(root.cache.keys()).slice(0, 100);
+        for (const k of keysToDelete) {
+          root.cache.delete(k);
+        }
+      }
       root.cache.set(cacheKey, result);
     }
 
@@ -354,26 +364,29 @@ export class LocL<
    * @param key - Dotted path key.
    * @param value - The translation value.
    */
-  public addResource(lang: Language<T> | string, key: string, value: any) {
-    if (this.isUnsafeObjectKey(lang)) { return; }
-
-    const keys = key.split(".");
-    if (keys.some((k) => this.isUnsafeObjectKey(k))) {
+  public addResource(lang: Language<T> | string, key: string, value: any): void {
+    if (typeof lang !== "string" || typeof key !== "string" || this.isUnsafeObjectKey(lang)) {
       return;
     }
-    if (!this.resources[lang]) {
+    if (!Object.prototype.hasOwnProperty.call(this.resources, lang) || !this.resources[lang] || typeof this.resources[lang] !== "object") {
       this.resources[lang] = Object.create(null);
     }
-    
+
+    const keys = key.split(".");
     let current = this.resources[lang];
+
     for (let i = 0; i < keys.length - 1; i++) {
       const k = keys[i];
-      if (!current[k] || typeof current[k] !== "object") {
+      if (this.isUnsafeObjectKey(k)) { return; }
+      if (!Object.prototype.hasOwnProperty.call(current, k) || typeof current[k] !== "object" || current[k] === null) {
         current[k] = Object.create(null);
       }
       current = current[k];
     }
+
     const lastKey = keys[keys.length - 1];
+    if (this.isUnsafeObjectKey(lastKey)) { return; }
+
     current[lastKey] = value;
     this.invalidateCacheForLanguage(lang);
     this.version++;
@@ -387,15 +400,18 @@ export class LocL<
    * @returns DeepMergedResource LocL type
    */
   public addResources<const L extends Language<T> | string, const B extends Record<string, any>>(lang: L, bundle: B): LocL<DeepMergeResources<T, L, B>, Fallback, S, F, UseDefaultFormatter, StrictParams> {
-    if (this.isUnsafeObjectKey(lang)) { return this as any; }
-    if (!this.resources[lang]) {
+    if (typeof lang !== "string" || this.isUnsafeObjectKey(lang)) {
+      return this as any;
+    }
+    if (!Object.prototype.hasOwnProperty.call(this.resources, lang) || !this.resources[lang] || typeof this.resources[lang] !== "object") {
       this.resources[lang] = Object.create(null);
     }
+
     const deepMerge = (target: any, source: any) => {
       for (const k of Object.keys(source)) {
         if (this.isUnsafeObjectKey(k)) { continue; }
         if (source[k] && typeof source[k] === "object" && !Array.isArray(source[k])) {
-          if (!target[k] || typeof target[k] !== "object") {
+          if (!Object.prototype.hasOwnProperty.call(target, k) || !target[k] || typeof target[k] !== "object") {
             target[k] = Object.create(null);
           }
           deepMerge(target[k], source[k]);
@@ -500,12 +516,27 @@ export class LocL<
   public plural<K extends PluralKeys<S, T, Fallback>>(
     key: K,
     values: StrictParams extends false
-      ? { count: number } & InterpolationOptions
+      ? { count: number; ordinal?: boolean; type?: "cardinal" | "ordinal" } & InterpolationOptions
       : PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>,
     format?: FormatOptions<F, UseDefaultFormatter>
   ): string;
   public plural(key: any, values: any, format?: any): string {
     return this.t(key as any, values as any, format as any) as string;
+  }
+
+  /**
+   * Translates a key using native ordinal pluralization (`1st`, `2nd`, `3rd`, `4th`).
+   * Automatically configures `Intl.PluralRules({ type: "ordinal" })`.
+   */
+  public ordinal<K extends PluralKeys<S, T, Fallback>>(
+    key: K,
+    values: StrictParams extends false
+      ? { count: number } & InterpolationOptions
+      : PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>>,
+    format?: FormatOptions<F, UseDefaultFormatter>
+  ): string;
+  public ordinal(key: any, values: any, format?: any): string {
+    return this.t(key as any, { ...(values || {}), ordinal: true } as any, format as any) as string;
   }
 
   /**
@@ -528,7 +559,7 @@ export class LocL<
       return [rawStr as any];
     }
 
-    const tagRegex = /<([a-zA-Z0-9_-]+)>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)\s*\/>/g;
+    const tagRegex = /<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?>([\s\S]*?)<\/\1>|<([a-zA-Z0-9_-]+)(?:\s+[^>]*)?\/>/g;
     const result: (string | TOutput)[] = [];
     let lastIndex = 0;
     let match: RegExpExecArray | null;
@@ -541,7 +572,7 @@ export class LocL<
       const tagName = isSelfClosing ? match[3] : match[1];
       const content = isSelfClosing ? "" : match[2];
       const renderer = tags[tagName];
-      
+
       if (typeof renderer === "function") {
         result.push(renderer(content));
       } else if (renderer !== undefined) {
@@ -605,7 +636,7 @@ export class LocL<
    * Fast Template Compilation & Evaluation Engine & Plural Resolution
    * ========================================================================= */
 
-  private evaluateTemplate(template: any, values?: InterpolationOptions): string {
+  private evaluateTemplate(template: any, values?: InterpolationOptions, isNested = false): string {
     if (typeof template !== "string") { return template; }
 
     const cacheKey = this.pseudoOptions?.enabled ? `pseudo::${template}` : `raw::${template}`;
@@ -614,11 +645,17 @@ export class LocL<
     if (!chunks) {
       chunks = this.compileTemplateIntoChunks(template);
       if (this.config.useCache) {
+        if (this.templateCache.size >= MAX_TEMPLATE_CACHE) {
+          const keysToDelete = Array.from(this.templateCache.keys()).slice(0, 200);
+          for (const k of keysToDelete) {
+            this.templateCache.delete(k);
+          }
+        }
         this.templateCache.set(cacheKey, chunks);
       }
     }
 
-    if (chunks.length === 1 && chunks[0].type === "lit") {
+    if (chunks.length === 1 && chunks[0].type === "lit" && !this.pseudoOptions?.enabled) {
       return chunks[0].value;
     }
 
@@ -634,14 +671,24 @@ export class LocL<
       }
     }
 
+    if (this.pseudoOptions?.enabled && !isNested) {
+      const prefix = this.pseudoOptions.prefix ?? "[!!! ";
+      const suffix = this.pseudoOptions.suffix ?? " !!!]";
+      return `${prefix}${output}${suffix}`;
+    }
+
     return output;
   }
 
   private compileTemplateIntoChunks(template: string): TemplateChunk[] {
-    let text = template;
-    if (this.pseudoOptions?.enabled) {
-      text = this.applyPseudoLocalization(text);
-    }
+    const text = template;
+    const isPseudo = Boolean(this.pseudoOptions?.enabled);
+    const useAccents = this.pseudoOptions?.accents !== false;
+
+    const formatLit = (str: string): string => {
+      const unescaped = str.replace(/\\([{}])/g, "$1");
+      return isPseudo && useAccents ? this.applyPseudoAccents(unescaped) : unescaped;
+    };
 
     const chunks: TemplateChunk[] = [];
     let lastIndex = 0;
@@ -649,10 +696,18 @@ export class LocL<
     let start = -1;
 
     for (let i = 0; i < text.length; i++) {
+      if (text[i] === "\\" && (text[i + 1] === "{" || text[i + 1] === "}")) {
+        i++;
+        continue;
+      }
       if (text[i] === "{") {
         if (depth === 0) {
           if (i > lastIndex) {
-            chunks.push({ type: "lit", value: text.slice(lastIndex, i) });
+            const rawLit = text.slice(lastIndex, i);
+            chunks.push({
+              type: "lit",
+              value: formatLit(rawLit)
+            });
           }
           start = i;
         }
@@ -671,7 +726,7 @@ export class LocL<
             const selectMatch = inner.match(/^\s*([^,]+),\s*select\s*,\s*([\s\S]+)$/);
             if (selectMatch) {
               const field = selectMatch[1].trim();
-              const cases = this.parseSelectCases(selectMatch[2]);
+              const cases = this.parseSelectCases(selectMatch[2], isPseudo && useAccents);
               chunks.push({ type: "select", field, cases });
             } else {
               const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
@@ -691,8 +746,19 @@ export class LocL<
       }
     }
 
-    if (lastIndex < text.length) {
-      chunks.push({ type: "lit", value: text.slice(lastIndex) });
+    // Prevent text duplication on unclosed curly brace
+    if (depth > 0 && start >= 0) {
+      const remaining = text.slice(start);
+      chunks.push({
+        type: "lit",
+        value: formatLit(remaining)
+      });
+    } else if (lastIndex < text.length) {
+      const remaining = text.slice(lastIndex);
+      chunks.push({
+        type: "lit",
+        value: formatLit(remaining)
+      });
     }
 
     return chunks;
@@ -723,10 +789,10 @@ export class LocL<
   private evaluateSelectChunk(chunk: TemplateChunk & { type: "select" }, values?: InterpolationOptions): string {
     const val = values ? String(values[chunk.field] ?? "other") : "other";
     const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
-    return caseText.includes("{") ? this.evaluateTemplate(caseText, values) : caseText;
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
   }
 
-  private parseSelectCases(casesBody: string): Record<string, string> {
+  private parseSelectCases(casesBody: string, pseudoAccents = false): Record<string, string> {
     const cases: Record<string, string> = {};
     let i = 0;
     while (i < casesBody.length) {
@@ -745,7 +811,10 @@ export class LocL<
           else if (casesBody[i] === "}") { depth--; }
           i++;
         }
-        const caseText = casesBody.slice(bodyStart, i - 1).trim();
+        let caseText = casesBody.slice(bodyStart, i - 1).trim();
+        if (pseudoAccents) {
+          caseText = this.applyPseudoAccents(caseText);
+        }
         if (caseKey) { cases[caseKey] = caseText; }
       }
     }
@@ -753,54 +822,97 @@ export class LocL<
   }
 
   private resolvePluralKey(key: string, values?: InterpolationOptions): string | undefined {
-    if (values?.count !== undefined && !key.match(/_(zero|one|two|few|many|other)$/)) {
+    if (values?.count !== undefined && !key.match(/_(zero|one|two|few|many|other)$/) && !key.match(/_ordinal_(zero|one|two|few|many|other)$/)) {
+      const isOrdinal = Boolean(values.ordinal || values.type === "ordinal");
+      const pluralType: "cardinal" | "ordinal" = isOrdinal ? "ordinal" : "cardinal";
       const exactKey = `=${values.count}`;
       const baseValue = this.lookupKeyWithFallback(key);
 
-      // Plural Objects: { "=0": "...", one: "...", other: "..." }
+      // Plural Objects: { "=0": "...", one: "...", other: "..." } or nested { ordinal: { ... } }
       if (baseValue && typeof baseValue === "object") {
-        if (exactKey in baseValue) {
-          return this.evaluateTemplate(baseValue[exactKey], values);
+        const target = (isOrdinal && baseValue.ordinal && typeof baseValue.ordinal === "object")
+          ? baseValue.ordinal
+          : baseValue;
+
+        if (exactKey in target) {
+          return this.evaluateTemplate(target[exactKey], values);
         }
-        if (values.count === 0 && "zero" in baseValue) {
-          return this.evaluateTemplate(baseValue.zero, values);
+        if (values.count === 0 && "zero" in target) {
+          return this.evaluateTemplate(target.zero, values);
         }
-        const category = this.getPluralRules(this.language).select(values.count);
-        if (category in baseValue) {
-          return this.evaluateTemplate(baseValue[category], values);
+        const category = this.getPluralRules(this.language, pluralType).select(values.count);
+        if (category in target) {
+          return this.evaluateTemplate(target[category], values);
         }
-        if ("other" in baseValue) {
+        if ("other" in target) {
+          this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
           this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
-          return this.evaluateTemplate(baseValue.other, values);
+          return this.evaluateTemplate(target.other, values);
         }
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return key;
       }
 
-      // Plural Suffixes: messages_=0, messages_one, messages_other
+      // Plural Suffixes: messages_=0, messages_ordinal_one, messages_one, messages_other
+      if (isOrdinal) {
+        const exactOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_${exactKey}`);
+        if (exactOrdinalSuffix !== undefined) {
+          return this.evaluateTemplate(exactOrdinalSuffix, values);
+        }
+      }
       const exactSuffixValue = this.lookupKeyWithFallback(`${key}_${exactKey}`);
       if (exactSuffixValue !== undefined) {
         return this.evaluateTemplate(exactSuffixValue, values);
       }
+
       if (values.count === 0) {
+        if (isOrdinal) {
+          const zeroOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_zero`);
+          if (zeroOrdinalSuffix !== undefined) {
+            return this.evaluateTemplate(zeroOrdinalSuffix, values);
+          }
+        }
         const zeroSuffixValue = this.lookupKeyWithFallback(`${key}_zero`);
         if (zeroSuffixValue !== undefined) {
           return this.evaluateTemplate(zeroSuffixValue, values);
         }
       }
-      const category = this.getPluralRules(this.language).select(values.count);
+
+      const category = this.getPluralRules(this.language, pluralType).select(values.count);
+      if (isOrdinal) {
+        const categoryOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_${category}`);
+        if (categoryOrdinalSuffix !== undefined) {
+          return this.evaluateTemplate(categoryOrdinalSuffix, values);
+        }
+      }
       const categorySuffixValue = this.lookupKeyWithFallback(`${key}_${category}`);
       if (categorySuffixValue !== undefined) {
         return this.evaluateTemplate(categorySuffixValue, values);
       }
+
+      if (isOrdinal) {
+        const otherOrdinalSuffix = this.lookupKeyWithFallback(`${key}_ordinal_other`);
+        if (otherOrdinalSuffix !== undefined) {
+          this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
+          this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
+          return this.evaluateTemplate(otherOrdinalSuffix, values);
+        }
+      }
       const otherSuffixValue = this.lookupKeyWithFallback(`${key}_other`);
       if (otherSuffixValue !== undefined) {
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return this.evaluateTemplate(otherSuffixValue, values);
       }
+
       const anySuffixExists = ["zero", "one", "two", "few", "many"]
-        .some(cat => this.lookupKeyWithFallback(`${key}_${cat}`) !== undefined);
+        .some(cat =>
+          (isOrdinal && this.lookupKeyWithFallback(`${key}_ordinal_${cat}`) !== undefined) ||
+          this.lookupKeyWithFallback(`${key}_${cat}`) !== undefined
+        );
       if (anySuffixExists) {
+        this.config.onMissingKey?.(key, this.language, this.getFallbackChain(this.language));
         this.config.devMode && console.warn(`[LocL] Missing plural: "${key}" in "${this.language}"`);
         return key;
       }
@@ -816,7 +928,7 @@ export class LocL<
   private validateSupportedLanguage(value?: string): Language<T> | null {
     if (!value) { return null; }
     const available = Object.keys(this.resources);
-    
+
     // Check exact match and BCP 47 truncated subtags
     let current = value;
     while (current) {
@@ -841,10 +953,11 @@ export class LocL<
     return `${language}::${scopeKey}`;
   }
 
-  private invalidateCacheForLanguage(lang: Language<T>) {
+  private invalidateCacheForLanguage(lang: Language<T> | string) {
     const prefix = `${lang}::`;
+    const proxyPrefix = `proxy::${lang}::`;
     for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) {
+      if (key.startsWith(prefix) || key.startsWith(proxyPrefix)) {
         this.cache.delete(key);
       }
     }
@@ -852,7 +965,7 @@ export class LocL<
 
   private lookupKeyWithFallback(key: string, base?: object) {
     const keys = key.split(".");
-    
+
     if (base) {
       const res = this.findNestedValue(keys, base);
       if (res !== undefined) { return res; }
@@ -866,6 +979,7 @@ export class LocL<
       if (res !== undefined) { return res; }
     }
 
+    this.config.onMissingKey?.(key, this.language, chain);
     if (this.config.devMode) {
       console.warn(`[LocL] Missing key: "${key}" in "${this.language}" (fallback chain: ${chain.join(" -> ")})`);
     }
@@ -884,7 +998,15 @@ export class LocL<
     if (typeof this.scope === "string") {
       const result = this.scope.split(".")
         .reduce<Record<string, any> | undefined>((acc, k) => acc?.[k], langObject);
-      if (this.config.useCache) { this.cache.set(cacheKey, result); }
+      if (this.config.useCache) {
+        if (this.cache.size >= MAX_SCOPE_CACHE) {
+          const keysToDelete = Array.from(this.cache.keys()).slice(0, 100);
+          for (const k of keysToDelete) {
+            this.cache.delete(k);
+          }
+        }
+        this.cache.set(cacheKey, result);
+      }
       result === undefined && this.config.devMode && console.warn(`[LocL] Missing namespace: "${this.scope}" in "${this.language}"`);
       return result;
     }
@@ -901,7 +1023,15 @@ export class LocL<
           }, combined);
         }
       }
-      if (this.config.useCache) { this.cache.set(cacheKey, combined); }
+      if (this.config.useCache) {
+        if (this.cache.size >= MAX_SCOPE_CACHE) {
+          const keysToDelete = Array.from(this.cache.keys()).slice(0, 100);
+          for (const k of keysToDelete) {
+            this.cache.delete(k);
+          }
+        }
+        this.cache.set(cacheKey, combined);
+      }
       return combined;
     }
     if (this.config.useCache) { this.cache.set(cacheKey, undefined); }
@@ -911,25 +1041,41 @@ export class LocL<
   }
 
   private findNestedValue(keys: string[], tree: any): any {
+    if (keys.length === 0) { return tree; }
     if (!tree || typeof tree !== "object") { return undefined; }
-    let current = tree;
-    const keysCopy = [...keys];
-    for (const key of keys) {
-      if (current === null || typeof current !== "object") { return undefined; }
-      const keyTest = keysCopy.join(".");
-      if (Object.prototype.hasOwnProperty.call(current, keyTest)) { return current[keyTest]; }
-      if (!(key in current)) { return undefined; }
-      current = current[key];
-      keysCopy.shift();
+
+    const fullKey = keys.join(".");
+    if (Object.prototype.hasOwnProperty.call(tree, fullKey)) {
+      return tree[fullKey];
     }
-    return current;
+
+    for (let i = keys.length - 1; i >= 1; i--) {
+      const prefix = keys.slice(0, i).join(".");
+      if (Object.prototype.hasOwnProperty.call(tree, prefix)) {
+        const remaining = keys.slice(i);
+        const res = this.findNestedValue(remaining, tree[prefix]);
+        if (res !== undefined) {
+          return res;
+        }
+      }
+    }
+
+    const first = keys[0];
+    if (Object.prototype.hasOwnProperty.call(tree, first)) {
+      return this.findNestedValue(keys.slice(1), tree[first]);
+    }
+    if (!this.isUnsafeObjectKey(first) && first in tree && tree[first] !== undefined) {
+      return this.findNestedValue(keys.slice(1), tree[first]);
+    }
+    return undefined;
   }
 
-  private getPluralRules(lang: string): Intl.PluralRules {
-    let rules = this.pluralRulesCache.get(lang);
+  private getPluralRules(lang: string, type: "cardinal" | "ordinal" = "cardinal"): Intl.PluralRules {
+    const cacheKey = `${lang}::${type}`;
+    let rules = this.pluralRulesCache.get(cacheKey);
     if (!rules) {
-      rules = new Intl.PluralRules(lang);
-      this.pluralRulesCache.set(lang, rules);
+      rules = new Intl.PluralRules(lang, { type });
+      this.pluralRulesCache.set(cacheKey, rules);
     }
     return rules;
   }
@@ -961,25 +1107,66 @@ export class LocL<
     return formatterFn(value, args);
   }
 
-  private applyPseudoLocalization(text: string): string {
-    const prefix = this.pseudoOptions?.prefix ?? "[!!! ";
-    const suffix = this.pseudoOptions?.suffix ?? " !!!]";
-    const useAccents = this.pseudoOptions?.accents !== false;
+  private applyPseudoAccents(text: string): string {
+    let result = "";
+    let i = 0;
+    const len = text.length;
 
-    // Isolate opening tags, closing tags, self-closing tags, and variable tokens
-    const tokenRegex = /(<\/?[a-zA-Z0-9_-]+(?:\s[^<>]*|\/)?>|{{[^{}]+}}|{[^{}]+})/g;
-    const parts = text.split(tokenRegex);
+    while (i < len) {
+      const ch = text[i];
 
-    const transformed = parts.map((part) => {
-      // Don't modify tokens or tags
-      if (part.startsWith("<") || part.startsWith("{")) {
-        return part;
+      // Preserve HTML/JSX tags: <tag>, </tag>, <tag attr="..."/>, etc.
+      if (ch === "<") {
+        let next = i + 1;
+        if (next < len && text[next] === "/") {
+          next++;
+        }
+        const tagStart = next;
+        while (next < len && /[a-zA-Z0-9_-]/.test(text[next])) {
+          next++;
+        }
+        if (next > tagStart) {
+          const closeIdx = text.indexOf(">", next);
+          const nextOpen = text.indexOf("<", next);
+          // Only match if '>' exists and no subsequent '<' appears before it
+          if (closeIdx !== -1 && (nextOpen === -1 || closeIdx < nextOpen)) {
+            result += text.slice(i, closeIdx + 1);
+            i = closeIdx + 1;
+            continue;
+          }
+        }
       }
-      if (!useAccents) { return part; }
-      return part.split("").map((ch) => PSEUDO_ACCENT_MAP[ch] ?? ch).join("");
-    }).join("");
 
-    return `${prefix}${transformed}${suffix}`;
+      // Preserve variable interpolation tokens: {{name}} or {name}
+      if (ch === "{") {
+        if (i + 1 < len && text[i + 1] === "{") {
+          const doubleClose = text.indexOf("}}", i + 2);
+          if (doubleClose !== -1) {
+            const inner = text.slice(i + 2, doubleClose);
+            if (!inner.includes("{") && !inner.includes("}")) {
+              result += text.slice(i, doubleClose + 2);
+              i = doubleClose + 2;
+              continue;
+            }
+          }
+        }
+        const singleClose = text.indexOf("}", i + 1);
+        if (singleClose !== -1) {
+          const inner = text.slice(i + 1, singleClose);
+          if (!inner.includes("{") && !inner.includes("}")) {
+            result += text.slice(i, singleClose + 1);
+            i = singleClose + 1;
+            continue;
+          }
+        }
+      }
+
+      // Convert standard characters with accent map
+      result += PSEUDO_ACCENT_MAP[ch] ?? ch;
+      i++;
+    }
+
+    return result;
   }
 
   private syncBrowserDocumentAttributes() {
@@ -1060,6 +1247,14 @@ export class LocL<
   }
 
   private isUnsafeObjectKey(key: string): boolean {
-    return key === "__proto__" || key === "constructor" || key === "prototype";
+    return (
+      key === "__proto__" ||
+      key === "constructor" ||
+      key === "prototype" ||
+      key === "__defineGetter__" ||
+      key === "__defineSetter__" ||
+      key === "__lookupGetter__" ||
+      key === "__lookupSetter__"
+    );
   }
 }

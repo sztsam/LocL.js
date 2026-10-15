@@ -1,5 +1,5 @@
-import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-DJ5CfHdW.cjs';
-export { b as LangWithPlurals } from './LocL-DJ5CfHdW.cjs';
+import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-Dlwcpdya.cjs';
+export { b as LangWithPlurals } from './LocL-Dlwcpdya.cjs';
 
 /**
  * Initializes a new LocL instance.
@@ -100,5 +100,10 @@ declare function defineFastResources<const T extends Record<string, any>>(resour
  * ```
  */
 declare function flattenDictionary(obj: Record<string, any>, prefix?: string): Record<string, any>;
+/**
+ * Reconstructs a nested object dictionary from flat dot-separated keys.
+ * Preserves plural objects intact.
+ */
+declare function unflattenDictionary(flat: Record<string, any>): Record<string, any>;
 
-export { LocL, LocLConfig, defineFastResources, defineResources, defineStrictResources, flattenDictionary, initLocL };
+export { LocL, LocLConfig, defineFastResources, defineResources, defineStrictResources, flattenDictionary, initLocL, unflattenDictionary };

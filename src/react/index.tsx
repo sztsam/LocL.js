@@ -48,7 +48,7 @@ export type TranslatorApi<
   T extends Record<string, any>,
   Fallback extends keyof T & string,
   S extends ScopeType<T, Fallback>
-> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
+> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "ordinal" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
 
 function bindApi<
   T extends Record<string, any>,
@@ -59,6 +59,7 @@ function bindApi<
     t: translator.t.bind(translator) as LocL<T, Fallback, S>["t"],
     tt: translator.tt.bind(translator) as LocL<T, Fallback, S>["tt"],
     plural: translator.plural.bind(translator) as LocL<T, Fallback, S>["plural"],
+    ordinal: translator.ordinal.bind(translator) as LocL<T, Fallback, S>["ordinal"],
     rich: translator.rich.bind(translator) as LocL<T, Fallback, S>["rich"],
     format: translator.format.bind(translator) as LocL<T, Fallback, S>["format"],
     get: translator.get.bind(translator) as LocL<T, Fallback, S>["get"],
@@ -194,7 +195,7 @@ function useScopedTranslation<
   }, [translator, language, scopeKey, isReady, options?.loader, options?.suspense]);
 
   const scopedTranslator = useMemo(() => {
-    return (scope !== undefined ? translator.withConfig({ scope } as any) : translator) as LocL<T, Fallback, S, any, any>;
+    return (scope !== undefined ? translator.withConfig({ scope }) : translator) as LocL<T, Fallback, S, any, any>;
   }, [translator, scopeKey]);
 
   return {

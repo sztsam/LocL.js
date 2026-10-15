@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { initLocL, defineResources } from "../src/index.js";
 import { LocLProvider, useTranslation, useLocL, Trans, createLocLReact } from "../src/react/index.js";
 
-// 1. Declare resources using defineResources for compile-time literal types
+
 const resources = defineResources({
   en: {
     title: "Hello World",
@@ -35,7 +35,6 @@ const resources = defineResources({
   }
 });
 
-// 2. Ambient type registration: connects `resources` to standalone `useTranslation()`
 declare module "../src/react/index.js" {
   interface LocLRegister {
     resources: typeof resources;
@@ -95,7 +94,7 @@ describe("React Integration", () => {
     const html = renderToStaticMarkup(
       <LocLProvider translator={translator}>
         <UserComponent />
-        {}
+        { }
       </LocLProvider>
     );
 
@@ -161,13 +160,14 @@ describe("React Integration", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
 
       function TestComponent() {
-        const { t, plural, rich, format, language, changeLanguage, translator: activeT } = useLocL(translator);
+        const { t, plural, ordinal, rich, format, language, changeLanguage, translator: activeT } = useLocL(translator);
         expect(activeT).toBe(translator);
         expect(language).toBe("en");
         expect(t("title")).toBe("Hello World");
         // Strictly typed plural without any casts
         expect(plural("messages", { count: 1 })).toBe("1 message");
         expect(plural("messages", { count: 5 })).toBe("5 messages");
+        expect(ordinal("messages", { count: 1 })).toBe("1 message");
         expect(rich("title", {})).toEqual(["Hello World"]);
         expect(format("123", "number")).toBe("123");
         changeLanguage("de");
@@ -202,7 +202,7 @@ describe("React Integration", () => {
       let snapshotCalled = false;
 
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        subscribe(() => {});
+        subscribe(() => { });
         subscribeCalled = true;
         getSnapshot();
         snapshotCalled = true;
@@ -225,14 +225,14 @@ describe("React Integration", () => {
       const snapshots: string[] = [];
 
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        subscribe(() => {});
+        subscribe(() => { });
         const val = getSnapshot();
         // @ts-expect-error
         snapshots.push(val);
         return getServerSnapshot ? getServerSnapshot() : val;
       });
 
-      // 1. getLanguage returns "en"
+      // getLanguage returns "en"
       const mockWithLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => "en",
@@ -243,7 +243,7 @@ describe("React Integration", () => {
       }
       renderToStaticMarkup(<CompWithLang />);
 
-      // 2. getLanguage returns "" (evaluates || "")
+      // getLanguage returns "" (evaluates || "")
       const mockWithEmptyLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => "",
@@ -254,7 +254,7 @@ describe("React Integration", () => {
       }
       renderToStaticMarkup(<CompWithEmptyLang />);
 
-      // 3. getLanguage is undefined (evaluates optional chain undefined -> "")
+      // getLanguage is undefined (evaluates optional chain undefined -> "")
       const mockWithUndefinedLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => undefined,
@@ -400,7 +400,7 @@ describe("React Integration", () => {
       expect(suite.translator).toBe(translator);
       expect(suite.LocLContext).toBeDefined();
 
-      // 1. Root useTranslation via suite (100% pre-bound strict types)
+      // Root useTranslation via suite (100% pre-bound strict types)
       function RootComp() {
         const { t, language, changeLanguage, plural, rich, format } = suite.useTranslation();
         expect(language).toBe("en");
@@ -418,7 +418,7 @@ describe("React Integration", () => {
         return <h1>{t("title")}</h1>;
       }
 
-      // 2. Scoped useTranslation (string and array) & customTranslator override
+      // Scoped useTranslation (string and array) & customTranslator override
       const otherTranslator = initLocL({ resources, fallbackLanguage: "de" });
       function ScopedComp() {
         const { t: userT } = suite.useTranslation("user");
@@ -433,7 +433,7 @@ describe("React Integration", () => {
         );
       }
 
-      // 3. suite.useLocL
+      // suite.useLocL
       function LocLComp() {
         const { t, language } = suite.useLocL();
         const { t: customT } = suite.useLocL(otherTranslator);
@@ -441,7 +441,7 @@ describe("React Integration", () => {
         return <span>{t("title")}-{customT("title")}</span>;
       }
 
-      // 4. suite.Trans
+      // suite.Trans
       function TransComp() {
         return (
           <div>
@@ -476,7 +476,7 @@ describe("React Integration", () => {
       let snapshotCalled = false;
 
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        subscribe(() => {});
+        subscribe(() => { });
         subscribeCalled = true;
         getSnapshot();
         snapshotCalled = true;
@@ -494,28 +494,28 @@ describe("React Integration", () => {
       const snapshots: string[] = [];
 
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        subscribe(() => {});
+        subscribe(() => { });
         const val = getSnapshot();
         // @ts-expect-error
         snapshots.push(val);
         return getServerSnapshot ? getServerSnapshot() : val;
       });
 
-      // 1. activeTranslator without getVersion, getLanguage returns "en"
+      // activeTranslator without getVersion, getLanguage returns "en"
       const mockWithLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => "en",
       });
       renderToStaticMarkup(<Trans translator={mockWithLang} i18nKey="title" />);
 
-      // 2. activeTranslator without getVersion, getLanguage returns ""
+      // activeTranslator without getVersion, getLanguage returns ""
       const mockWithEmptyLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: () => "",
       });
       renderToStaticMarkup(<Trans translator={mockWithEmptyLang} i18nKey="title" />);
 
-      // 3. activeTranslator without getVersion, getLanguage undefined
+      // activeTranslator without getVersion, getLanguage undefined
       const mockWithoutGetLang = Object.assign(Object.create(translator), {
         getVersion: undefined,
         getLanguage: undefined,
@@ -556,7 +556,7 @@ describe("React Integration", () => {
       // Test unsubscribe guard when activeTranslator is missing
       let unsub1: any;
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        unsub1 = subscribe(() => {});
+        unsub1 = subscribe(() => { });
         return getServerSnapshot ? getServerSnapshot() : getSnapshot();
       });
       renderToStaticMarkup(<Trans i18nKey="standalone" fallback="Fallback" />);
@@ -585,7 +585,7 @@ describe("React Integration", () => {
       let subscribeInvocations = 0;
 
       jest.spyOn(React, "useSyncExternalStore").mockImplementation((subscribe, getSnapshot, getServerSnapshot) => {
-        const unsub = subscribe(() => {});
+        const unsub = subscribe(() => { });
         subscribeInvocations++;
         if (typeof unsub === "function") {
           unsub();
@@ -610,14 +610,14 @@ describe("React Integration", () => {
     it("should cover Trans remaining branches (missing key with no fallback, invalid components, plain text)", () => {
       const translator = initLocL({ resources, fallbackLanguage: "en" });
 
-      // 1. Missing key with translator, WITHOUT fallback
+      // Missing key with translator, WITHOUT fallback
       const html1 = renderToStaticMarkup(
         // @ts-expect-error
         <Trans translator={translator} i18nKey="completelyMissing" />
       );
       expect(html1).toBe("completelyMissing");
 
-      // 2. Component is defined but is neither element nor function
+      // Component is defined but is neither element nor function
       const html2 = renderToStaticMarkup(
         <Trans
           translator={translator}
@@ -630,7 +630,7 @@ describe("React Integration", () => {
       );
       expect(html2).toContain("&lt;bold&gt;read&lt;/bold&gt;");
 
-      // 3. Plain text with no tags at all (exercises while loop not running)
+      // Plain text with no tags at all (exercises while loop not running)
       const html3 = renderToStaticMarkup(
         <Trans translator={translator} i18nKey="title" />
       );

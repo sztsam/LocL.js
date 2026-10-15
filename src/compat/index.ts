@@ -45,7 +45,7 @@ interface I18nextTranslation<
   Tr = TranslationObjectFor<undefined, T, Fallback>,
   PK extends string = PluralKeys<undefined, T, Fallback>
 > {
-  // 1. Known key: options is REQUIRED if template has variables or is plural, OPTIONAL if static
+  // Known key: options is REQUIRED if template has variables or is plural, OPTIONAL if static
   <K extends I18nextKey<Tr, PK>>(
     key: K,
     ...args: I18nextHasParams<K, Tr, PK> extends true
@@ -53,7 +53,7 @@ interface I18nextTranslation<
       : [options?: I18nextOptions]
   ): string;
 
-  // 2. Known key with defaultValue string argument: combines params from key and/or defaultValue
+  // Known key with defaultValue string argument: combines params from key and/or defaultValue
   <K extends I18nextKey<Tr, PK>, D extends string = string>(
     key: K,
     defaultValue: D,
@@ -66,7 +66,7 @@ interface I18nextTranslation<
       : [options?: I18nextOptions]
   ): string;
 
-  // 3. Fallback signature for dynamic keys with defaultValue string argument
+  // Fallback signature for dynamic keys with defaultValue string argument
   <D extends string>(
     key: string,
     defaultValue: D,
@@ -75,7 +75,7 @@ interface I18nextTranslation<
       : [options?: I18nextOptions]
   ): string;
 
-  // 4. Fallback signature for dynamic keys when defaultValue is in options
+  // Fallback signature for dynamic keys when defaultValue is in options
   <D extends string>(
     key: string,
     options: { defaultValue: D } & (IsEmptyParams<ParamsFor<D>> extends false
@@ -83,7 +83,7 @@ interface I18nextTranslation<
       : {}) & I18nextOptions
   ): string;
 
-  // 5. Dynamic key with explicit ns option
+  // Dynamic key with explicit ns option
   (
     key: string,
     options: { ns: string } & I18nextOptions
@@ -97,6 +97,8 @@ interface I18nextCompat<
   PK extends string = PluralKeys<undefined, T, Fallback>
 > {
   t: I18nextTranslation<T, Fallback, Tr, PK>;
+  ordinal<K extends I18nextKey<Tr, PK>>(key: K, values: { count: number } & InterpolationOptions): string;
+  ordinal(key: string, values: { count: number } & InterpolationOptions): string;
   exists<K extends I18nextKey<Tr, PK>>(key: K, options?: { ns?: string; [key: string]: any }): boolean;
   exists(key: string, options?: { ns?: string; [key: string]: any }): boolean;
   get language(): string;
@@ -182,6 +184,10 @@ export function toI18next<
     translator,
     t: tFunction as I18nextTranslation<T, Fallback>,
 
+    ordinal(key: any, values: { count: number } & InterpolationOptions): string {
+      return translator.ordinal(key, values);
+    },
+
     exists(key: string, options?: { ns?: string }): boolean {
       let lookupKey = key;
       let ns = options?.ns;
@@ -214,8 +220,8 @@ export function toI18next<
     async changeLanguage(lng: string, callback?: (err: any, t: any) => void): Promise<string> {
       try {
         if (
-          typeof (translator as any).isLoaded === "function" &&
-          typeof (translator as any).load === "function" &&
+          typeof translator.isLoaded === "function" &&
+          typeof translator.load === "function" &&
           !translator.isLoaded(lng)
         ) {
           await translator.load(lng);

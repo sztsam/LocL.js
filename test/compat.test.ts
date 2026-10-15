@@ -45,7 +45,8 @@ describe("i18next Compatibility Adapter", () => {
     expect(i18n.t("missing.key", "Default {name}", { name: "Maria" })).toBe("Default {name}");
 
     // Signature 2 with non-object arg2 -> exercises fallback branch
-    expect(i18n.t("missing.key", "Default String", null as any)).toBe("Default String");
+    // @ts-expect-error
+    expect(i18n.t("missing.key", "Default String", null)).toBe("Default String");
 
     // Signature 3: t(key, { defaultValue })
     expect(i18n.t("nonexistent", { defaultValue: "Fallback Text" })).toBe("Fallback Text");
@@ -93,13 +94,14 @@ describe("i18next Compatibility Adapter", () => {
 
     // off method no-op and typed off
     expect(typeof i18n.off).toBe("function");
-    (i18n as any).off();
-    const dummyListener = () => {};
+    // @ts-expect-error
+    i18n.off();
+    const dummyListener = () => { };
     i18n.on("custom", dummyListener);
     i18n.off("custom", dummyListener);
 
     // unhandled event on() returns no-op unsubscribe
-    const unbind = i18n.on("unknownEvent", () => {});
+    const unbind = i18n.on("unknownEvent", () => { });
     expect(typeof unbind).toBe("function");
     unbind();
 
@@ -168,6 +170,9 @@ describe("i18next Compatibility Adapter", () => {
     // @ts-expect-error
     expect(i18n.t("missingKey")).toBe("missingKey");
 
+    // ordinal method on i18next compat adapter
+    expect(i18n.ordinal("apple", { count: 1 })).toBe("one apple");
+
     // exists with colon and ns
     expect(i18n.exists("common:login")).toBe(true);
     expect(i18n.exists("login", { ns: "common" })).toBe(true);
@@ -221,7 +226,7 @@ describe("i18next Compatibility Adapter", () => {
   });
 
   it("should cover compat async loading, changeLanguage failure, and loadNamespaces", async () => {
-    // 1. changeLanguage loading language when not loaded
+    // changeLanguage loading language when not loaded
     const asyncTranslator = initLocL({
       resources: { en: { hello: "Hello" } },
       fallbackLanguage: "en",
@@ -234,7 +239,7 @@ describe("i18next Compatibility Adapter", () => {
     // @ts-expect-error
     expect(i18n.t("greeting",)).toBe("Hola from es");
 
-    // 2. loadNamespaces with single string and array
+    // loadNamespaces with single string and array
     let singleLoaded = false;
     await i18n.loadNamespaces("dashboard", () => {
       singleLoaded = true;
@@ -247,7 +252,7 @@ describe("i18next Compatibility Adapter", () => {
     // @ts-expect-error
     expect(i18n.t("auth:msg")).toBe("auth loaded");
 
-    // 3. changeLanguage failure callback and catch block
+    // changeLanguage failure callback and catch block
     const failingTranslator = initLocL({
       resources: { en: {} },
       fallbackLanguage: "en",
@@ -276,7 +281,7 @@ describe("i18next Compatibility Adapter", () => {
       ...translator,
       resources: undefined,
       getLanguage: () => "en",
-      subscribe: () => () => {}
+      subscribe: () => () => { }
     };
     // @ts-expect-error
     const i18nWithoutRes = toI18next(dummyLocL);
@@ -288,7 +293,7 @@ describe("i18next Compatibility Adapter", () => {
       t: () => undefined,
       get: () => undefined,
       getLanguage: () => "en",
-      subscribe: () => () => {}
+      subscribe: () => () => { }
     };
     // @ts-expect-error
     const i18nUndefined = toI18next(mockUndefinedT);

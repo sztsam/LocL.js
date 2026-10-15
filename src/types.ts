@@ -36,16 +36,16 @@ export type NestedKeyOfObj<ObjectType extends object, SkipArrays extends boolean
           : never
     }[keyof ObjectType & string];
 
-export type PathValue<T, P extends string> = P extends `${infer Key}.${infer Rest}`
-  ? Key extends keyof T
-    ? PathValue<T[Key], Rest>
-    : Key extends `${infer N extends number}`
-      ? N extends keyof T
-        ? PathValue<T[N], Rest>
+export type PathValue<T, P extends string> = P extends keyof T
+  ? T[P]
+  : P extends `${infer Key}.${infer Rest}`
+    ? Key extends keyof T
+      ? PathValue<T[Key], Rest>
+      : Key extends `${infer N extends number}`
+        ? N extends keyof T
+          ? PathValue<T[N], Rest>
+          : never
         : never
-      : never
-  : P extends keyof T
-    ? T[P]
     : P extends `${infer N extends number}`
       ? N extends keyof T
         ? T[N]
@@ -56,12 +56,12 @@ type UnionToIntersection<U> =
   (U extends any ? (k: U) => void : never) extends
     ((k: infer I) => void) ? I : never;
 
-type DeepPick<T, P extends string> = P extends `${infer K}.${infer Rest}`
-  ? K extends keyof T
-    ? { [Key in K]: DeepPick<T[K], Rest> }
-    : never
-  : P extends keyof T
-    ? { [Key in P]: T[P] }
+type DeepPick<T, P extends string> = P extends keyof T
+  ? { [Key in P]: T[P] }
+  : P extends `${infer K}.${infer Rest}`
+    ? K extends keyof T
+      ? { [Key in K]: DeepPick<T[K], Rest> }
+      : never
     : never;
 
 type DeepPickValue<T, P extends string> = P extends `${infer K}.${infer Rest}`
@@ -89,7 +89,7 @@ export type ScopeType<T extends Record<string, any>, F extends keyof T> = Scope<
 type EnsureObject<T> = T extends object ? T : {};
 
 export type TranslationObjectFor<
-  S extends Scope<T, Fallback> | Scope<T, Fallback>[] | undefined,
+  S extends ScopeType<T, Fallback>,
   T extends Record<string, any>,
   Fallback extends keyof T
 > =
@@ -158,36 +158,45 @@ type ScanParams<S extends string, Acc = {}> =
       ? ScanParams<After, Acc & TokenParams<Inner>>
       : Acc
     : Acc;
+type StripEscapedBraces<S extends string> =
+  S extends `${infer Before}\\{${infer Rest}`
+    ? StripEscapedBraces<`${Before}${Rest}`>
+    : S extends `${infer Before}\\}${infer Rest}`
+      ? StripEscapedBraces<`${Before}${Rest}`>
+      : S;
 export type ExtractInterpolationParams<T extends string> =
   string extends T
     ? { [key: string]: string | number | boolean | Date | undefined }
-    : ScanParams<T>;
+    : ScanParams<StripEscapedBraces<T>>;
 
 export type Simplify<T> = { [K in keyof T]: T[K] };
 export type Direction = "ltr" | "rtl";
 export type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
 export type ExactPluralForms = `=${number}`;
-export type PluralKeyForms = PluralForms | ExactPluralForms;
+export type OrdinalPluralForms = `ordinal_${PluralForms}`;
+export type PluralKeyForms = PluralForms | ExactPluralForms | OrdinalPluralForms;
 
 type IsPluralObject<V> =
   [V] extends [object]
     ? [keyof V] extends [never]
       ? false
-      : [keyof V] extends [PluralKeyForms] ? true : false
+      : [keyof V] extends [PluralKeyForms | "ordinal"] ? true : false
     : false;
 
 type ParamUnion<T> = [keyof T] extends [never] ? never : T;
 type ExtractPluralObjectParamsUnion<T> = {
   [K in keyof T]: T[K] extends string
     ? ParamUnion<ExtractInterpolationParams<T[K]>>
-    : never;
+    : T[K] extends object
+      ? ParamUnion<ExtractPluralObjectParamsUnion<T[K]>>
+      : never;
 }[keyof T];
 
 export type ExtractPluralObjectParams<T> =
   [T] extends [never]
     ? never
     : T extends Record<string, any>
-      ? Simplify<{ count: number } &
+      ? Simplify<{ count: number; ordinal?: boolean; type?: "cardinal" | "ordinal" } &
           ([UnionToIntersection<ExtractPluralObjectParamsUnion<T>>] extends [never]
             ? {}
             : UnionToIntersection<ExtractPluralObjectParamsUnion<T>>)
@@ -203,7 +212,7 @@ type ExtractSuffixParamsUnion<Base extends string, T> = {
 }[keyof T & string];
 
 type ExtractSuffixPluralParams<Base extends string, T> =
-  Simplify<{ count: number } &
+  Simplify<{ count: number; ordinal?: boolean; type?: "cardinal" | "ordinal" } &
     ([UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>] extends [never]
       ? {}
       : UnionToIntersection<ExtractSuffixParamsUnion<Base, T>>)
@@ -230,9 +239,9 @@ export type TemplateChunk =
 
 export type PluralParamsFor<K extends string, T> =
   string extends K
-    ? { count: number } & InterpolationOptions
+    ? PluralInterpolationOptions
     : string extends keyof T
-      ? { count: number } & InterpolationOptions
+      ? PluralInterpolationOptions
       : [PathValue<T, K>] extends [never]
         ? ExtractSuffixPluralParams<K, T>
         : IsPluralObject<PathValue<T, K>> extends true
@@ -309,9 +318,13 @@ export type PreFlattened<T> = FlattenDictionary<T>;
 export interface InterpolationOptions {
   [key: string]: string | number | Date | boolean | undefined;
   count?: number;
+  ordinal?: boolean;
+  type?: "cardinal" | "ordinal";
 }
 export interface PluralInterpolationOptions extends InterpolationOptions {
   count: number;
+  ordinal?: boolean;
+  type?: "cardinal" | "ordinal";
 }
 export interface FormatOptions<F extends Record<string, Formatter>, UseDefaultFormatter extends boolean> {
   formatter: keyof EffectiveFormatters<F, UseDefaultFormatter>;
@@ -409,15 +422,37 @@ export type EnforceParity<T, Fallback extends keyof T> = {
 };
 
 
-// - Language file typings
-//type PluralForms = "zero" | "one" | "two" | "few" | "many" | "other";
-//type ExactPluralForms = `=${number}`;
-//type PluralKeyForms = PluralForms | ExactPluralForms;
-type RequiredPlural = "one" | "other";
-type OptionalPlural = Exclude<PluralForms, RequiredPlural>;
-type ObjectPlural = {
-  [K in RequiredPlural]: string;
-} & Partial<Record<OptionalPlural, string>> & Partial<Record<ExactPluralForms, string>>;
+/* =========================================================================
+ * Language-Aware Unicode CLDR Plural Categories
+ * ========================================================================= */
+
+export type OtherOnlyLanguages =
+  | "ja" | "zh" | "ko" | "vi" | "th" | "id" | "ms" | "tr" | "hu" | "my" | "km" | "lo" | "ka" | "fa" | "az"
+  | `${"ja" | "zh" | "ko" | "vi" | "th" | "id" | "ms" | "tr" | "hu" | "my" | "km" | "lo" | "ka" | "fa" | "az"}-${string}`
+  | `${"ja" | "zh" | "ko" | "vi" | "th" | "id" | "ms" | "tr" | "hu" | "my" | "km" | "lo" | "ka" | "fa" | "az"}_${string}`;
+export type SlavicLanguages =
+  | "ru" | "uk" | "be" | "pl" | "cs" | "sk" | "hr" | "sr" | "bs"
+  | `${"ru" | "uk" | "be" | "pl" | "cs" | "sk" | "hr" | "sr" | "bs"}-${string}`
+  | `${"ru" | "uk" | "be" | "pl" | "cs" | "sk" | "hr" | "sr" | "bs"}_${string}`;
+export type ArabicLanguage = "ar" | `ar-${string}` | `ar_${string}`;
+
+export type RequiredPluralsForLanguage<L extends string = string> =
+  string extends L
+    ? "one" | "other"
+    : Lowercase<L> extends OtherOnlyLanguages
+      ? "other"
+      : Lowercase<L> extends ArabicLanguage
+        ? "zero" | "one" | "two" | "few" | "many" | "other"
+        : Lowercase<L> extends SlavicLanguages
+          ? "one" | "few" | "many" | "other"
+          : "one" | "other";
+
+export type OptionalPluralsForLanguage<L extends string = string> =
+  Exclude<PluralForms, RequiredPluralsForLanguage<L>>;
+export type ObjectPlural<L extends string = string> = {
+  [K in RequiredPluralsForLanguage<L>]: string;
+} & Partial<Record<OptionalPluralsForLanguage<L>, string>> & Partial<Record<ExactPluralForms, string>>;
+
 type Primitive = string | number | boolean | null | undefined;
 type StrKey<T> = Extract<keyof T, string | number>;
 type PluralObjectKeys<T> = {
@@ -443,8 +478,8 @@ type PlainStringKeys<T> = {
 
 /**
  * Type utility to strictly type-check secondary translation files against a fallback language object.
- * Enforces `one` and `other` plurals, makes non-essential grammatical plurals (`zero`, `few`, `many`) optional,
- * and recursively validates namespace structures.
+ * Language-aware: Enforces CLDR-correct plural categories per language (e.g. `ja`/`zh` only require `other`,
+ * `ru`/`pl` require `one`/`few`/`many`/`other`, `en`/`de` require `one`/`other`).
  *
  * @example
  * ```ts
@@ -458,25 +493,25 @@ type PlainStringKeys<T> = {
  * };
  * ```
  */
-export type LangWithPlurals<T> =
-  // 1. If primitive → keep original type
+export type LangWithPlurals<T, L extends string = string> =
+  // If primitive → keep original type
   T extends Primitive ? T :
-  // 2. If array → recursively handle each type
-  T extends (infer U)[] ? LangWithPlurals<U>[] :
-  // 3. Namespace and plurals handle
+  // If array → recursively handle each type
+  T extends (infer U)[] ? LangWithPlurals<U, L>[] :
+  // Namespace and plurals handle
   {
-    [K in NamespaceKeys<T>]: LangWithPlurals<T[K]>;
+    [K in NamespaceKeys<T>]: LangWithPlurals<T[K], L>;
   } & {
-    [K in PluralObjectKeys<T>]: ObjectPlural;
+    [K in PluralObjectKeys<T>]: ObjectPlural<L>;
   } & {
-    [B in SuffixBaseUnion<T> as `${B}_${RequiredPlural}`]: string;
+    [B in SuffixBaseUnion<T> as `${B}_${RequiredPluralsForLanguage<L>}`]: string;
   } & {
-    [B in SuffixBaseUnion<T> as `${B}_${OptionalPlural}`]?: string;
+    [B in SuffixBaseUnion<T> as `${B}_${OptionalPluralsForLanguage<L>}`]?: string;
   } & {
     [B in SuffixBaseUnion<T> as `${B}_${ExactPluralForms}`]?: string;
   } & {
     [K in PlainStringKeys<T>]: T[K];
   } & {
-  // 4. Keep primitive typed keys for autocomplete
+  // Keep primitive typed keys for autocomplete
     [K in Exclude<StrKey<T>, NamespaceKeys<T> | PluralObjectKeys<T> | PlainStringKeys<T> | SuffixKey<T>>]: T[K];
   };

@@ -1,4 +1,4 @@
-import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, g as IsEmptyParams, I as InterpolationOptions, h as PluralParamsFor, i as ParamsFor, j as PathValue, D as Direction } from './LocL-DJ5CfHdW.js';
+import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, g as IsEmptyParams, I as InterpolationOptions, h as PluralParamsFor, i as ParamsFor, j as PathValue, D as Direction } from './LocL-Dlwcpdya.js';
 import { DefaultResources, DefaultFallback } from './react.js';
 import 'react';
 
@@ -27,6 +27,12 @@ interface I18nextTranslation<T extends Record<string, any> = DefaultResources, F
 }
 interface I18nextCompat<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, Tr = TranslationObjectFor<undefined, T, Fallback>, PK extends string = PluralKeys<undefined, T, Fallback>> {
     t: I18nextTranslation<T, Fallback, Tr, PK>;
+    ordinal<K extends I18nextKey<Tr, PK>>(key: K, values: {
+        count: number;
+    } & InterpolationOptions): string;
+    ordinal(key: string, values: {
+        count: number;
+    } & InterpolationOptions): string;
     exists<K extends I18nextKey<Tr, PK>>(key: K, options?: {
         ns?: string;
         [key: string]: any;

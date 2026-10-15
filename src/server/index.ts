@@ -1,6 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { LocL } from "../LocL.js";
 import { ScopeType, Language, Direction, LocaleMetadata, NestedKeyOf, PluralKeys, TranslationObjectFor, TArgs, TResult, InterpolationOptions } from "../types.js";
+import { resolveRouteLocale, createI18nMiddleware, handleI18nRouting, getHreflangLinks, type HreflangLink } from "../detector/middleware.js";
+
+export { resolveRouteLocale, createI18nMiddleware, handleI18nRouting, getHreflangLinks, type HreflangLink };
 
 /* =========================================================================
  * Global Server Registry & Request Storage
@@ -72,6 +75,7 @@ export type ServerTranslator<
   t: LocL<T, Fallback, S, any, any, StrictParams>["t"];
   tt: LocL<T, Fallback, S, any, any, StrictParams>["tt"];
   plural: LocL<T, Fallback, S, any, any, StrictParams>["plural"];
+  ordinal: LocL<T, Fallback, S, any, any, StrictParams>["ordinal"];
   rich: LocL<T, Fallback, S, any, any, StrictParams>["rich"];
   format: LocL<T, Fallback, S, any, any, StrictParams>["format"];
   get: LocL<T, Fallback, S, any, any, StrictParams>["get"];
@@ -100,7 +104,7 @@ export interface LocLServerOptions<
   /** Whether to automatically load missing namespaces via translator.load(). Defaults to true. */
   autoLoad?: boolean;
   /** Optional custom AsyncLocalStorage instance */
-  storage?: AsyncLocalStorage<ServerRequestContext<T, Fallback>>;
+  storage?: AsyncLocalStorage<ServerRequestContext<T, Fallback>> | AsyncLocalStorage<ServerRequestContext>;
 }
 
 export type GetTranslatorOptions<
@@ -118,56 +122,27 @@ export interface LocLServerSuite<
   StrictParams extends boolean = true
 > {
   getTranslator: {
-    // getTranslator() -> root translator
     (): Promise<ServerTranslator<T, Fallback, undefined, StrictParams>>;
-    // getTranslator({ locale: "en" }) -> root with custom locale
-    (
-      options: { locale?: Language<T> | (string & {}) }
-    ): Promise<ServerTranslator<T, Fallback, undefined, StrictParams>>;
-    // getTranslator("dashboard", { locale: "en" }) -> scope + options
-    <S extends ScopeType<T, Fallback>>(
-      scope: S,
-      options?: { locale?: Language<T> | (string & {}) }
-    ): Promise<ServerTranslator<T, Fallback, S, StrictParams>>;
-    // getTranslator({ scope: "dashboard", locale: "en" }) -> single options object
-    <S extends ScopeType<T, Fallback>>(
-      options: { scope: S; locale?: Language<T> | (string & {}) }
-    ): Promise<ServerTranslator<T, Fallback, S, StrictParams>>;
-    // Dynamic/lazy-loaded namespaces
-    (
-      scope: string | string[],
-      options?: { locale?: Language<T> | (string & {}) }
-    ): Promise<ServerTranslator<T, Fallback, any, StrictParams>>;
-    (
-      options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }
-    ): Promise<ServerTranslator<T, Fallback, any, StrictParams>>;
+    (options: { locale?: Language<T> | (string & {}) }): Promise<ServerTranslator<T, Fallback, undefined, StrictParams>>;
+    <S extends ScopeType<T, Fallback>>(scope: S, options?: { locale?: Language<T> | (string & {}) }): Promise<ServerTranslator<T, Fallback, S, StrictParams>>;
+    <S extends ScopeType<T, Fallback>>(options: { scope: S; locale?: Language<T> | (string & {}) }): Promise<ServerTranslator<T, Fallback, S, StrictParams>>;
+    (scope: string | string[], options?: { locale?: Language<T> | (string & {}) }): Promise<ServerTranslator<T, Fallback, any, StrictParams>>;
+    (options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }): Promise<ServerTranslator<T, Fallback, any, StrictParams>>;
   };
   getTranslations: LocLServerSuite<T, Fallback, StrictParams>["getTranslator"];
   getSyncTranslator: {
     (): ServerTranslator<T, Fallback, undefined, StrictParams>;
-    (
-      options: { locale?: Language<T> | (string & {}) }
-    ): ServerTranslator<T, Fallback, undefined, StrictParams>;
-    <S extends ScopeType<T, Fallback>>(
-      scope: S,
-      options?: { locale?: Language<T> | (string & {}) }
-    ): ServerTranslator<T, Fallback, S, StrictParams>;
-    <S extends ScopeType<T, Fallback>>(
-      options: { scope: S; locale?: Language<T> | (string & {}) }
-    ): ServerTranslator<T, Fallback, S, StrictParams>;
-    (
-      scope: string | string[],
-      options?: { locale?: Language<T> | (string & {}) }
-    ): ServerTranslator<T, Fallback, any, StrictParams>;
-    (
-      options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }
-    ): ServerTranslator<T, Fallback, any, StrictParams>;
+    (options: { locale?: Language<T> | (string & {}) }): ServerTranslator<T, Fallback, undefined, StrictParams>;
+    <S extends ScopeType<T, Fallback>>(scope: S, options?: { locale?: Language<T> | (string & {}) }): ServerTranslator<T, Fallback, S, StrictParams>;
+    <S extends ScopeType<T, Fallback>>(options: { scope: S; locale?: Language<T> | (string & {}) }): ServerTranslator<T, Fallback, S, StrictParams>;
+    (scope: string | string[], options?: { locale?: Language<T> | (string & {}) }): ServerTranslator<T, Fallback, any, StrictParams>;
+    (options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }): ServerTranslator<T, Fallback, any, StrictParams>;
   };
   runWithLocale: <R>(locale: string, fn: () => R) => R;
   runWithTranslator: <R>(translator: LocL<any, any, any, any, any, any>, fn: () => R) => R;
   getLocale: () => string;
   setLocale: (locale: string) => void;
-  storage: AsyncLocalStorage<ServerRequestContext<T, Fallback>>;
+  storage: AsyncLocalStorage<ServerRequestContext>;
   translator: LocL<T, Fallback, any, any, any, StrictParams>;
 }
 
@@ -187,6 +162,7 @@ export function createServerTranslator<
   tFn.t = translator.t.bind(translator);
   tFn.tt = translator.tt.bind(translator);
   tFn.plural = translator.plural.bind(translator);
+  tFn.ordinal = translator.ordinal.bind(translator);
   tFn.rich = translator.rich.bind(translator);
   tFn.format = translator.format.bind(translator);
   tFn.get = translator.get.bind(translator);
@@ -211,22 +187,13 @@ export function createServerTranslator<
 
 function parseGetTranslatorArgs(arg1?: unknown, arg2?: { locale?: string }): { scope?: any; locale?: string } {
   if (typeof arg1 === "string" || Array.isArray(arg1)) {
-    return {
-      scope: arg1,
-      locale: arg2?.locale
-    };
+    return { scope: arg1, locale: arg2?.locale };
   }
   if (arg1 && typeof arg1 === "object") {
     const opts = arg1 as { scope?: any; locale?: string };
-    return {
-      scope: opts.scope,
-      locale: opts.locale
-    };
+    return { scope: opts.scope, locale: opts.locale };
   }
-  return {
-    scope: undefined,
-    locale: undefined
-  };
+  return { scope: undefined, locale: undefined };
 }
 
 /* =========================================================================
@@ -265,21 +232,21 @@ export function createLocLServer<
     throw new Error("[LocL/server] `createLocLServer` requires a LocL instance or resources configuration.");
   }
 
-  const storage = (opts.storage ?? serverStorage) as AsyncLocalStorage<ServerRequestContext<T, Fallback>>;
+  const storage = (opts.storage ?? serverStorage) as AsyncLocalStorage<ServerRequestContext>;
 
   function runWithLocale<R>(locale: string, fn: () => R): R {
-    const current = storage.getStore();
+    const current = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
     const next: ServerRequestContext<T, Fallback> = {
-      ...current,
+      ...(current && typeof current === "object" ? current : {}),
       locale
     };
     return storage.run(next, fn);
   }
 
   function runWithTranslator<R>(trans: LocL<any, any, any, any, any, any>, fn: () => R): R {
-    const current = storage.getStore();
+    const current = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
     const next: ServerRequestContext<T, Fallback> = {
-      ...current,
+      ...(current && typeof current === "object" ? current : {}),
       translator: trans,
       locale: trans.getLanguage()
     };
@@ -287,12 +254,12 @@ export function createLocLServer<
   }
 
   function getLocale(): string {
-    const store = storage.getStore();
+    const store = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
     return store?.locale ?? baseTranslator.getLanguage();
   }
 
   function setLocale(locale: string): void {
-    const store = storage.getStore();
+    const store = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
     if (store) {
       store.locale = locale;
     }
@@ -300,7 +267,7 @@ export function createLocLServer<
 
   async function resolveTranslatorInstance(arg1?: any, arg2?: any): Promise<{ translator: LocL<any, any, any, any, any, any>; locale: string }> {
     const { scope, locale: explicitLocale } = parseGetTranslatorArgs(arg1, arg2);
-    const store = storage.getStore();
+    const store = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
 
     let targetLocale = explicitLocale ?? store?.locale;
     if (!targetLocale && opts.getLocale) {
@@ -314,8 +281,8 @@ export function createLocLServer<
     let instance: LocL<any, any, any, any, any, any> = activeBase;
     if (targetLocale !== activeBase.getLanguage() || scope !== undefined) {
       instance = activeBase.withConfig({
-        language: targetLocale as any,
-        scope: scope as any
+        language: targetLocale,
+        scope: scope
       });
     }
 
@@ -345,7 +312,7 @@ export function createLocLServer<
 
   function getSyncTranslator(arg1?: any, arg2?: any) {
     const { scope, locale: explicitLocale } = parseGetTranslatorArgs(arg1, arg2);
-    const store = storage.getStore();
+    const store = storage.getStore() as ServerRequestContext<T, Fallback> | undefined;
     const targetLocale = explicitLocale ?? store?.locale ?? (store?.translator ?? baseTranslator).getLanguage();
     const activeBase = store?.translator ?? baseTranslator;
 
@@ -409,7 +376,7 @@ export function runWithLocale<R>(locale: string, fn: () => R): R {
     return defaultServerInstance.runWithLocale(locale, fn);
   }
   const current = serverStorage.getStore();
-  return serverStorage.run({ ...current, locale }, fn);
+  return serverStorage.run({ ...(current && typeof current === "object" ? current : {}), locale }, fn);
 }
 
 export function runWithTranslator<R>(translator: LocL<any, any, any, any, any, any>, fn: () => R): R {
@@ -417,7 +384,7 @@ export function runWithTranslator<R>(translator: LocL<any, any, any, any, any, a
     return defaultServerInstance.runWithTranslator(translator, fn);
   }
   const current = serverStorage.getStore();
-  return serverStorage.run({ ...current, translator, locale: translator.getLanguage() }, fn);
+  return serverStorage.run({ ...(current && typeof current === "object" ? current : {}), translator, locale: translator.getLanguage() }, fn);
 }
 
 export function getLocale(): string {
@@ -433,50 +400,6 @@ export function setLocale(locale: string): void {
     store.locale = locale;
   }
 }
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(): Promise<ServerTranslator<T, Fallback, undefined>>;
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  options: { locale?: Language<T> | (string & {}) }
-): Promise<ServerTranslator<T, Fallback, undefined>>;
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>,
-  S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
->(
-  scope: S,
-  options?: { locale?: Language<T> | (string & {}) }
-): Promise<ServerTranslator<T, Fallback, S>>;
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>,
-  S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
->(
-  options: { scope: S; locale?: Language<T> | (string & {}) }
-): Promise<ServerTranslator<T, Fallback, S>>;
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  scope: string | string[],
-  options?: { locale?: Language<T> | (string & {}) }
-): Promise<ServerTranslator<T, Fallback, any>>;
-
-export async function getTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }
-): Promise<ServerTranslator<T, Fallback, any>>;
 
 export async function getTranslator<
   T extends Record<string, any> = DefaultServerResources,
@@ -499,50 +422,6 @@ export async function getTranslations<
 ): Promise<ServerTranslator<T, Fallback, any>> {
   return getTranslator(scopeOrOptions as any, options);
 }
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(): ServerTranslator<T, Fallback, undefined>;
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  options: { locale?: Language<T> | (string & {}) }
-): ServerTranslator<T, Fallback, undefined>;
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>,
-  S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
->(
-  scope: S,
-  options?: { locale?: Language<T> | (string & {}) }
-): ServerTranslator<T, Fallback, S>;
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>,
-  S extends ScopeType<T, Fallback> = ScopeType<T, Fallback>
->(
-  options: { scope: S; locale?: Language<T> | (string & {}) }
-): ServerTranslator<T, Fallback, S>;
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  scope: string | string[],
-  options?: { locale?: Language<T> | (string & {}) }
-): ServerTranslator<T, Fallback, any>;
-
-export function getSyncTranslator<
-  T extends Record<string, any> = DefaultServerResources,
-  Fallback extends keyof T & string = DefaultServerFallback<T>
->(
-  options: { scope?: string | string[]; locale?: Language<T> | (string & {}) }
-): ServerTranslator<T, Fallback, any>;
 
 export function getSyncTranslator<
   T extends Record<string, any> = DefaultServerResources,
