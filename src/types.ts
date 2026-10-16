@@ -144,7 +144,11 @@ type TokenBody<Inner extends string> =
       ? TrimStart<AfterKeyword> extends `,${infer Cases}`
         ? Param<Field, string> & CaseParams<Cases>
         : VariableParams<Inner>
-      : VariableParams<Inner>
+      : TrimStart<Rest> extends `plural${infer AfterKeyword}`
+        ? TrimStart<AfterKeyword> extends `,${infer Cases}`
+          ? Param<Field, number> & CaseParams<Cases>
+          : VariableParams<Inner>
+        : VariableParams<Inner>
     : VariableParams<Inner>;
 type CaseParams<Cases extends string, Acc = {}> =
   Cases extends `${string}{${infer Rest}`
@@ -230,7 +234,8 @@ export type FormatterCall = {
 export type TemplateChunk =
   | { type: "lit"; value: string }
   | { type: "var"; name: string; raw: string; formatters: FormatterCall[] }
-  | { type: "select"; field: string; cases: Record<string, string> };
+  | { type: "select"; field: string; cases: Record<string, string> }
+  | { type: "plural"; field: string; cases: Record<string, string>; offset: number };
 
 
 /* =========================================================================

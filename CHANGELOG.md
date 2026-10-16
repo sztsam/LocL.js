@@ -2,6 +2,71 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.5.0] — 2026-10-16
+
+### Added
+
+- **ICU Inline Plural Syntax & Offset Support (`{count, plural, ...}`)**:
+  - Full inline ICU MessageFormat plural syntax support inside translation templates: `{count, plural, =0 {No items} =1 {One item} one {# item} other {# items}}`.
+  - Exact quantity selectors (`=0`, `=1`, `=N`) and standard Unicode CLDR categories (`zero`, `one`, `two`, `few`, `many`, `other`).
+  - Supports `offset:N` syntax (e.g. `{count, plural, offset:1 =0 {No users} =1 {You} one {You and # other} other {You and # others}}`).
+  - Automatic number substitution with `#`, formatted using native `Intl.NumberFormat` for the active language. Literal `#` characters can be escaped with `\#`.
+  - Nested template interpolation inside plural cases (e.g. `{count, plural, one {Item: {name}} other {Items: {name}}}`).
+  - Compile-time TypeScript type inference: template parsing infers `{ count: number }` for inline plural parameters alongside any nested variable tokens.
+- **Automated AI & Machine Translation CLI (`locl translate` / `locl-js/cli`)**:
+  - Added `locl translate --target <locales> [options]` command to automatically backfill missing translations via machine and AI translation providers.
+  - Multi-provider support:
+    - **DeepL** (`--provider deepl`): Native API integration supporting free and pro endpoints (`DEEPL_API_KEY`).
+    - **OpenAI** (`--provider openai`): GPT models (default `gpt-4o-mini`, `--model`, `OPENAI_API_KEY`) with structured JSON schema output.
+    - **Google Cloud Translation** (`--provider google`): Google Translate v2 REST API (`GOOGLE_TRANSLATE_API_KEY`).
+    - **Ollama** (`--provider ollama`): Local offline LLM execution (default model `llama3`, configurable `--ollama-host`, default `http://localhost:11434`).
+    - **Custom Translator**: Programmatic async translator hook (`customTranslator`).
+  - Robust Token Masking (`maskTokens`, `unmaskTokens`): Automatically detects and masks variables (`{{var}}`, `{var | fmt}`) and JSX/HTML tags (`<bold>...</bold>`, `<br />`) as `__LOCL_TOK_N__` before sending to translation APIs, guaranteeing placeholders and markup are never altered or translated.
+  - Batching & concurrency: Automatically batches strings (`--batch-size`, default: 50) to optimize API usage and rate limits.
+  - Flags: `--target, -t`, `--provider, -p`, `--api-key, -k`, `--model`, `--ollama-host`, `--force` (re-translate existing keys), `--dry-run`, `--base, -b`, `--locales, -l`.
+  - Programmatic exports: `translateTranslations`, `maskTokens`, `unmaskTokens`, `translateBatchWithProvider`, and types `TranslateOptions`, `TranslateResult`, `TranslationProvider`.
+- **Parameter & Tag Parity Linting (`locl check --lint-params` / `--lint`)**:
+  - Added template token and markup linting to `locl check`.
+  - Compares interpolation parameters (e.g., `{name}`, `{count}`) and XML/JSX tags (e.g., `<bold>`, `<a>`) across all target language translations against the base language.
+  - Fails CI execution with exit code 1 when mismatches are detected and provides actionable reports detailing conflicting keys, missing parameters, and inconsistent tags.
+- **Over-The-Air (OTA) Remote Loader with Stale-While-Revalidate (`createRemoteLoader`)**:
+  - Exported `createRemoteLoader` from `locl-js` for dynamic remote dictionary loading and continuous OTA content delivery.
+  - Stale-While-Revalidate (SWR): Serves cached translations immediately from local storage for instantaneous boot times while revalidating and refreshing translations in the background.
+  - Configurable storage backends: `"localStorage"` (browser default), `"sessionStorage"`, `"memory"`, or custom `RemoteLoaderStorage` (`getItem`, `setItem`, `removeItem`).
+  - Flexible endpoint resolution: URL template string (`https://cdn.example.com/locales/{lang}/{ns}.json`) or dynamic callback function `(lang, ns) => string`.
+  - Configurable cache TTL (`maxAge`, default: 24h), storage key prefix (`storagePrefix`), custom request headers or async header resolver function, and `onSuccess` / `onError` lifecycle callbacks.
+  - Programmatic cache invalidation: `loader.clearCache(lang?, ns?)`.
+- **First-Class Svelte Store Integration (`locl-js/svelte`)**:
+  - Dedicated Svelte package export: `import { createLocLSvelte } from "locl-js/svelte"`.
+  - Adheres to standard Svelte store contract with `subscribe()`, allowing idiomatic `$t("key")` reactive subscriptions in Svelte 4 and Svelte 5 (`svelte/store`).
+  - Automatically triggers component re-renders whenever `translator.changeLanguage()` is called.
+- **First-Class Vue 3 Composable Integration (`locl-js/vue`)**:
+  - Dedicated Vue package export: `import { createLocLVue } from "locl-js/vue"`.
+  - Exposes reactive `{ t, language, translator }` composable seamlessly integrated with Vue 3's reactivity model.
+  - Supports optional custom `shallowRef` wrapper or works out of the box with zero external dependencies.
+- **Vite Plugin & Hot Module Replacement (`locl-js/vite`)**:
+  - Dedicated Vite package export: `import { loclVitePlugin, setupLocLHmr } from "locl-js/vite"`.
+  - Watches translation JSON files in the locales directory and dispatches HMR events (`locl:update`) over Vite's development WebSocket server.
+  - Live-updates in-memory translations and re-renders active UI views instantly without full page reloads.
+- **SSR Hydration & Localized Routing in React (`locl-js/react`)**:
+  - `<LocLHydrate state={dehydratedState} translator={...} />`: Injects `<script id="__LOCL_DATA__" type="application/json">` for client hydration and initializes client-side translator state and resources without layout shifts or flash of unlocalized content.
+  - `<Link href="..." locale="..." prefixStrategy="...">`: Localization-aware anchor component that automatically rewrites internal links according to routing prefix strategies (`"as-needed"`, `"always"`, `"never"`).
+  - `useLocalizedPath(prefixStrategy?)`: React hook returning a path localization helper `(pathname, localeOverride?) => string`.
+  - Exposed directly on `createLocLReact`: `suite.Hydrate`, `suite.Link`, `suite.useLocalizedPath`.
+- **Server Dehydration Helper (`locl-js/server`)**:
+  - Added `dehydrate(translatorOrSuite?)`: Serializes active server translator state, locale, resources, and direction into a `DehydratedLocLState` payload for client hydration.
+  - Added `getLocalizedPath(pathname, locale, defaultLocale, prefixStrategy, locales?)` helper to `locl-js/detector` and `locl-js/server`.
+- **Extended Built-in Formatters (Lists & Display Names)**:
+  - `list`: Formats arrays using native `Intl.ListFormat`. Supports `{items | list}`, `{items | list:de,disjunction}`, and style options (`long`, `short`, `narrow`).
+  - `languageName`: Localizes language codes into human-readable display names via `Intl.DisplayNames`. Example: `{lang | languageName:en}` → `"German"`, `{lang | languageName:de}` → `"Deutsch"`.
+  - `regionName`: Localizes country and region codes into display names. Example: `{country | regionName:en}` → `"United States"`.
+  - `currencyName`: Localizes ISO 4217 currency codes into display names. Example: `{curr | currencyName:en}` → `"US Dollar"`.
+  - `displayName`: Generalized display name formatter supporting any `Intl.DisplayNames` type (`language`, `region`, `currency`, `script`, `calendar`). Example: `{code | displayName:language,en}`.
+  - High-performance LRU-style instance caching for `Intl.ListFormat` and `Intl.DisplayNames`.
+- **Package Exports & Optional Peer Dependencies**:
+  - Added subpath exports `./vite`, `./svelte`, and `./vue` in `package.json`.
+  - Added optional peer dependencies for `svelte` (`>=4.0.0 || >=5.0.0`), `vue` (`>=3.0.0`), and `vite` (`>=4.0.0 || >=5.0.0 || >=6.0.0`).
+
 ## [2.4.0] — 2026-10-15
 
 ### Added

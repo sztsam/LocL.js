@@ -1,5 +1,6 @@
 import React, { ReactElement, ReactNode } from 'react';
-import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, h as PluralParamsFor, g as IsEmptyParams, i as ParamsFor, j as PathValue, I as InterpolationOptions, a as LocL, e as Language, D as Direction, R as ResourceLoader, k as Scope } from './LocL-Dlwcpdya.js';
+import { S as ScopeType, N as NestedKeyOf, T as TranslationObjectFor, P as PluralKeys, f as PluralParamsFor, e as IsEmptyParams, g as ParamsFor, h as PathValue, I as InterpolationOptions, L as LocL, D as Direction, c as Language, R as ResourceLoader, m as Scope } from './LocL-Dnobyznm.js';
+import { P as PrefixStrategy } from './middleware-DHb1prPZ.js';
 
 type TransKey<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> = (NestedKeyOf<TranslationObjectFor<S, T, Fallback>> | PluralKeys<S, T, Fallback>) & string;
 type TransValues<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>, K extends string> = K extends PluralKeys<S, T, Fallback> ? PluralParamsFor<K, TranslationObjectFor<S, T, Fallback>> : IsEmptyParams<ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>>> extends true ? InterpolationOptions | undefined : ParamsFor<PathValue<TranslationObjectFor<S, T, Fallback>, K>> & InterpolationOptions;
@@ -67,6 +68,24 @@ type DefaultFallback<T = DefaultResources> = LocLRegister extends {
 } ? FB : [keyof T & string] extends [never] ? string : keyof T & string;
 declare const LocLContext: React.Context<LocL<any, any, any, any, any, true> | null>;
 type TranslatorApi<T extends Record<string, any>, Fallback extends keyof T & string, S extends ScopeType<T, Fallback>> = Pick<LocL<T, Fallback, S>, "t" | "tt" | "plural" | "ordinal" | "rich" | "format" | "get" | "getObj" | "getDirection" | "isRTL" | "getMetadata">;
+interface LocLHydrateProps {
+    state: {
+        locale: string;
+        resources: Record<string, any>;
+        direction?: Direction;
+    };
+    children?: ReactNode;
+    translator?: LocL<any, any, any, any, any>;
+}
+declare function LocLHydrate({ state, children, translator: customTranslator }: LocLHydrateProps): ReactElement;
+interface LinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+    href: string;
+    locale?: string;
+    prefixStrategy?: PrefixStrategy;
+    children?: ReactNode;
+}
+declare function Link({ href, locale, prefixStrategy, ...rest }: LinkProps): ReactElement;
+declare function useLocalizedPath(prefixStrategy?: PrefixStrategy): (pathname: string, localeOverride?: string) => string;
 interface LocLProviderProps<T extends Record<string, any> = DefaultResources, Fallback extends keyof T & string = DefaultFallback<T>, S extends ScopeType<T, Fallback> = undefined> {
     translator: LocL<T, Fallback, S, any, any>;
     children: ReactNode;
@@ -108,6 +127,9 @@ interface LocLReactSuite<T extends Record<string, any>, Fallback extends keyof T
         <S extends ScopeType<T, Fallback>>(scope: S, options?: UseTranslationOptions, customTranslator?: LocL<any, any, any, any, any>): UseTranslationResult<T, Fallback, S>;
     };
     Trans: <S extends ScopeType<T, Fallback> = undefined, K extends TransKey<T, Fallback, S> = TransKey<T, Fallback, S>>(props: TransProps<T, Fallback, S, K>) => ReactElement;
+    Hydrate: (props: LocLHydrateProps) => ReactElement;
+    Link: (props: LinkProps) => ReactElement;
+    useLocalizedPath: (prefixStrategy?: PrefixStrategy) => (pathname: string, localeOverride?: string) => string;
     translator: LocL<T, Fallback, any, any, any>;
 }
 /**
@@ -124,4 +146,4 @@ interface LocLReactSuite<T extends Record<string, any>, Fallback extends keyof T
  */
 declare function createLocLReact<T extends Record<string, any>, Fallback extends keyof T & string>(defaultTranslator: LocL<T, Fallback, any, any, any>): LocLReactSuite<T, Fallback>;
 
-export { type BoundLocLProviderProps, type DefaultFallback, type DefaultResources, LocLContext, LocLProvider, type LocLProviderProps, type LocLReactSuite, type LocLRegister, Trans, type TransKey, type TransProps, type TransValues, type TranslatorApi, type UseLocLResult, type UseTranslationOptions, type UseTranslationResult, createLocLReact, useLocL, useTranslation };
+export { type BoundLocLProviderProps, type DefaultFallback, type DefaultResources, Link, type LinkProps, LocLContext, LocLHydrate, type LocLHydrateProps, LocLProvider, type LocLProviderProps, type LocLReactSuite, type LocLRegister, Trans, type TransKey, type TransProps, type TransValues, type TranslatorApi, type UseLocLResult, type UseTranslationOptions, type UseTranslationResult, createLocLReact, useLocL, useLocalizedPath, useTranslation };

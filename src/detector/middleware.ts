@@ -148,6 +148,33 @@ export function getHreflangLinks(baseUrl: string, pathname: string, locales: rea
   return links;
 }
 
+export function getLocalizedPath(pathname: string, locale: string, defaultLocale: string, prefixStrategy: PrefixStrategy = "as-needed", locales?: readonly string[]): string {
+  const cleanPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const segments = cleanPath.split("/").filter(Boolean);
+  const first = segments[0]?.toLowerCase();
+
+  const isLocaleInPath = locales
+    ? locales.some((l) => l.toLowerCase() === first)
+    : (first === locale.toLowerCase() ||
+      first === defaultLocale.toLowerCase() ||
+      (first !== undefined && /^[a-z]{2}(-[a-z0-9]+)*$/i.test(first)));
+
+  const pathWithoutLocale = isLocaleInPath
+    ? "/" + segments.slice(1).join("/")
+    : cleanPath;
+
+  if (prefixStrategy === "as-needed") {
+    if (locale.toLowerCase() === defaultLocale.toLowerCase()) {
+      return pathWithoutLocale;
+    }
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  if (prefixStrategy === "always") {
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  return pathWithoutLocale;
+}
+
 export function formatCookieHeader(name: string, value: string, options?: I18nRoutingOptions["cookieOptions"]): string {
   const path = options?.path ?? "/";
   const maxAge = options?.maxAge ?? 31536000; // 1 year

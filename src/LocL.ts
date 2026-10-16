@@ -668,6 +668,8 @@ export class LocL<
         output += this.evaluateVariableChunk(chunk, values);
       } else if (chunk.type === "select") {
         output += this.evaluateSelectChunk(chunk, values);
+      } else if (chunk.type === "plural") {
+        output += this.evaluateInlinePluralChunk(chunk, values);
       }
     }
 
@@ -712,8 +714,7 @@ export class LocL<
           start = i;
         }
         depth++;
-      }
-      else if (text[i] === "}") {
+      } else if (text[i] === "}") {
         if (depth > 0) {
           depth--;
           if (depth === 0 && start >= 0) {
@@ -729,14 +730,31 @@ export class LocL<
               const cases = this.parseSelectCases(selectMatch[2], isPseudo && useAccents);
               chunks.push({ type: "select", field, cases });
             } else {
-              const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
-              const formatters: FormatterCall[] = pipeParts.map((segment) => {
-                const colonIdx = segment.indexOf(":");
-                return colonIdx === -1
-                  ? { name: segment.trim(), args: [] }
-                  : { name: segment.slice(0, colonIdx).trim(), args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim()) };
-              });
-              chunks.push({ type: "var", name, raw, formatters });
+              const pluralMatch = inner.match(/^\s*([^,]+),\s*plural\s*,\s*([\s\S]+)$/);
+              if (pluralMatch) {
+                const field = pluralMatch[1].trim();
+                let body = pluralMatch[2];
+                let offset = 0;
+                const offsetMatch = body.match(/^\s*offset\s*:\s*(\d+)\s*([\s\S]+)$/);
+                if (offsetMatch) {
+                  offset = parseInt(offsetMatch[1], 10);
+                  body = offsetMatch[2];
+                }
+                const cases = this.parseSelectCases(body, isPseudo && useAccents);
+                chunks.push({ type: "plural", field, cases, offset });
+              } else {
+                const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
+                const formatters: FormatterCall[] = pipeParts.map((segment) => {
+                  const colonIdx = segment.indexOf(":");
+                  return colonIdx === -1
+                    ? { name: segment.trim(), args: [] }
+                    : {
+                      name: segment.slice(0, colonIdx).trim(),
+                      args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim())
+                    };
+                });
+                chunks.push({ type: "var", name, raw, formatters });
+              }
             }
 
             lastIndex = i + 1;
@@ -789,6 +807,29 @@ export class LocL<
   private evaluateSelectChunk(chunk: TemplateChunk & { type: "select" }, values?: InterpolationOptions): string {
     const val = values ? String(values[chunk.field] ?? "other") : "other";
     const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
+  }
+
+  private evaluateInlinePluralChunk(chunk: TemplateChunk & { type: "plural" }, values?: InterpolationOptions): string {
+    const rawCount = values ? values[chunk.field] : undefined;
+    const count = typeof rawCount === "number" ? rawCount : Number(rawCount) || 0;
+    const countForRules = count - chunk.offset;
+    const exactKey = `=${count}`;
+
+    let caseText: string | undefined;
+    if (exactKey in chunk.cases) {
+      caseText = chunk.cases[exactKey];
+    } else {
+      const category = this.getPluralRules(this.language, "cardinal").select(countForRules);
+      caseText = chunk.cases[category] ?? chunk.cases.other ?? "";
+    }
+
+    if (caseText.includes("#")) {
+      const formattedNum = this.getNumberFormat(this.language).format(countForRules);
+      caseText = caseText.replace(/(^|[^\\])#/g, (_match, prefix) => `${prefix}${formattedNum}`);
+      caseText = caseText.replace(/\\#/g, "#");
+    }
+
     return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
   }
 

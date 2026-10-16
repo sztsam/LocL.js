@@ -1,6 +1,7 @@
-import { a as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, g as IsEmptyParams, I as InterpolationOptions, h as PluralParamsFor, i as ParamsFor, j as PathValue, D as Direction } from './LocL-Dlwcpdya.js';
+import { L as LocL, T as TranslationObjectFor, P as PluralKeys, N as NestedKeyOf, e as IsEmptyParams, I as InterpolationOptions, f as PluralParamsFor, g as ParamsFor, h as PathValue, D as Direction } from './LocL-Dnobyznm.js';
 import { DefaultResources, DefaultFallback } from './react.js';
 import 'react';
+import './middleware-DHb1prPZ.js';
 
 type NormalizeKey<K extends string> = K extends `${infer NS}:${infer Rest}` ? `${NS}.${Rest}` : K;
 type ColonKeys<K extends string> = K extends `${infer NS}.${infer Rest}` ? `${NS}:${Rest}` | `${NS}.${Rest}` : K;

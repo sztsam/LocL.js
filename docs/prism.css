@@ -1,0 +1,125 @@
+/* ==========================================================================
+   LocL.js Documentation Prism Syntax Highlighting Theme (Adaptive)
+   ========================================================================== */
+
+code[class*="language-"],
+pre[class*="language-"] {
+  color: var(--code-text);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.65;
+  direction: ltr;
+  text-align: left;
+  white-space: pre;
+  word-spacing: normal;
+  word-break: normal;
+  -moz-tab-size: 2;
+  -o-tab-size: 2;
+  tab-size: 2;
+  -webkit-hyphens: none;
+  -moz-hyphens: none;
+  -ms-hyphens: none;
+  hyphens: none;
+}
+
+/* Light Mode Tokens (Crisp, High-Contrast Typography) */
+:root {
+  --token-comment: #64748b;
+  --token-punct: #64748b;
+  --token-keyword: #7c3aed;
+  --token-string: #059669;
+  --token-function: #2563eb;
+  --token-number: #d97706;
+  --token-operator: #0284c7;
+  --token-tag: #dc2626;
+  --token-attr: #9333ea;
+  --token-class: #0d9488;
+  --token-property: #334155;
+}
+
+/* Dark Mode Tokens (Luminous Slate & Pastel Accents) */
+[data-theme="dark"] {
+  --token-comment: #94a3b8;
+  --token-punct: #cbd5e1;
+  --token-keyword: #c084fc;
+  --token-string: #34d399;
+  --token-function: #60a5fa;
+  --token-number: #fbbf24;
+  --token-operator: #38bdf8;
+  --token-tag: #f87171;
+  --token-attr: #a78bfa;
+  --token-class: #2dd4bf;
+  --token-property: #cbd5e1;
+}
+
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
+  color: var(--token-comment);
+  font-style: italic;
+}
+
+.token.punctuation {
+  color: var(--token-punct);
+}
+
+.token.property {
+  color: var(--token-property);
+}
+
+.token.boolean,
+.token.number,
+.token.constant,
+.token.symbol {
+  color: var(--token-number);
+}
+
+.token.tag {
+  color: var(--token-tag);
+}
+
+.token.attr-name {
+  color: var(--token-attr);
+}
+
+.token.string,
+.token.char,
+.token.builtin {
+  color: var(--token-string);
+}
+
+.token.operator,
+.token.entity,
+.token.url {
+  color: var(--token-operator);
+}
+
+.token.atrule,
+.token.attr-value,
+.token.keyword {
+  color: var(--token-keyword);
+  font-weight: 600;
+}
+
+.token.function {
+  color: var(--token-function);
+}
+
+.token.class-name {
+  color: var(--token-class);
+}
+
+.token.regex,
+.token.important,
+.token.variable {
+  color: var(--token-number);
+}
+
+.token.bold {
+  font-weight: bold;
+}
+
+.token.italic {
+  font-style: italic;
+}

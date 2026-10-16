@@ -2,6 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { flattenDictionary, unflattenDictionary } from "../index.js";
 
+export interface ParamMismatch {
+  key: string;
+  baseParams: string[];
+  targetParams: string[];
+}
+export interface TagMismatch {
+  key: string;
+  baseTags: string[];
+  targetTags: string[];
+}
+
 export interface CheckOptions {
   /** Locales directory path (default: "locales") */
   localesDir?: string;
@@ -11,6 +22,8 @@ export interface CheckOptions {
   fix?: boolean;
   /** Fail on any extraneous keys in secondary files */
   strict?: boolean;
+  /** Fail if translation parameters or tags mismatch between base and target */
+  lintParams?: boolean;
 }
 
 export interface CheckLocaleResult {
@@ -19,6 +32,8 @@ export interface CheckLocaleResult {
   empty: string[];
   total: number;
   fixed?: number;
+  paramMismatches?: ParamMismatch[];
+  tagMismatches?: TagMismatch[];
 }
 
 export interface CheckResult {
@@ -26,6 +41,19 @@ export interface CheckResult {
   baseLang: string;
   totalBaseKeys: number;
   locales: Record<string, CheckLocaleResult>;
+}
+
+function extractTemplateTokens(str: any): string[] {
+  if (typeof str !== "string") { return []; }
+  const matches = str.match(/\{+([^{}|,]+)(?:[^{}]*)\}+/g);
+  if (!matches) { return []; }
+  return Array.from(new Set(matches.map((m) => m.replace(/^[{}]+|[{}]+$/g, "").split(/[,|]/)[0].trim()))).sort();
+}
+function extractXmlTags(str: any): string[] {
+  if (typeof str !== "string") { return []; }
+  const matches = str.match(/<\/?[a-zA-Z0-9_-]+(?:\s+[^>]*)?\/?>/g);
+  if (!matches) { return []; }
+  return Array.from(new Set(matches.map((t) => t.replace(/\s+[^>]*\/?/, "").replace(/[<>/]/g, "")))).sort();
 }
 
 export function checkTranslations(options: CheckOptions = {}): CheckResult {
@@ -75,11 +103,31 @@ export function checkTranslations(options: CheckOptions = {}): CheckResult {
       fs.writeFileSync(targetPath, JSON.stringify(fixedOutput, null, 2) + "\n", "utf8");
       fixedCount = missing.length;
     }
+    
+    const paramMismatches: ParamMismatch[] = [];
+    const tagMismatches: TagMismatch[] = [];
+
+    for (const k of baseKeys) {
+      const baseParams = extractTemplateTokens(flatBase[k]);
+      const targetParams = extractTemplateTokens(flatTarget[k]);
+      if (baseParams.join(",") !== targetParams.join(",")) {
+        paramMismatches.push({ key: k, baseParams, targetParams });
+      }
+
+      const baseTags = extractXmlTags(flatBase[k]);
+      const targetTags = extractXmlTags(flatTarget[k]);
+      if (baseTags.join(",") !== targetTags.join(",")) {
+        tagMismatches.push({ key: k, baseTags, targetTags });
+      }
+    }
 
     if (missing.length > 0 && !options.fix) {
       overallSuccess = false;
     }
     if (options.strict && (extraneous.length > 0 || empty.length > 0)) {
+      overallSuccess = false;
+    }
+    if (options.lintParams && (paramMismatches.length > 0 || tagMismatches.length > 0)) {
       overallSuccess = false;
     }
 
@@ -88,7 +136,9 @@ export function checkTranslations(options: CheckOptions = {}): CheckResult {
       extraneous,
       empty,
       total: Object.keys(flatTarget).length,
-      fixed: fixedCount
+      fixed: fixedCount,
+      paramMismatches,
+      tagMismatches
     };
   }
 

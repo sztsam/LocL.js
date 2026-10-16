@@ -197,4 +197,89 @@ describe('defaultFormatters', () => {
       expect(defaultFormatters.padEnd('1')).toBe('1');
     });
   });
+
+  describe('list', () => {
+    it('should format arrays using conjunction by default', () => {
+      expect(defaultFormatters.list(['Alice', 'Bob', 'Charlie'], ['en-US'])).toBe('Alice, Bob, and Charlie');
+      expect(defaultFormatters.list(['Alice', 'Bob', 'Charlie'], ['de-DE'])).toBe('Alice, Bob und Charlie');
+    });
+
+    it('should support disjunction and unit types', () => {
+      expect(defaultFormatters.list(['Apple', 'Banana'], ['en-US', 'disjunction'])).toBe('Apple or Banana');
+    });
+
+    it('should handle single elements and non-array input', () => {
+      expect(defaultFormatters.list('Alice', ['en-US'])).toBe('Alice');
+    });
+  });
+
+  describe('display names (languageName, regionName, currencyName, displayName)', () => {
+    it('should format language names', () => {
+      expect(defaultFormatters.languageName('de', ['en-US'])).toBe('German');
+      expect(defaultFormatters.languageName('de', ['de-DE'])).toBe('Deutsch');
+      expect(defaultFormatters.languageName('invalid_code')).toBe('invalid_code');
+    });
+
+    it('should format region names', () => {
+      expect(defaultFormatters.regionName('US', ['en-US'])).toBe('United States');
+      expect(defaultFormatters.regionName('DE', ['en-US'])).toBe('Germany');
+      expect(defaultFormatters.regionName('invalid')).toBe('invalid');
+    });
+
+    it('should format currency names', () => {
+      expect(defaultFormatters.currencyName('USD', ['en-US'])).toBe('US Dollar');
+      expect(defaultFormatters.currencyName('EUR', ['en-US'])).toBe('Euro');
+      expect(defaultFormatters.currencyName('invalid')).toBe('invalid');
+    });
+
+    it('should support generalized displayName formatter', () => {
+      expect(defaultFormatters.displayName('fr', ['language', 'en-US'])).toBe('French');
+      expect(defaultFormatters.displayName('FR', ['region', 'en-US'])).toBe('France');
+    });
+  });
+
+  describe("formatters default args, caching, and fallback branches", () => {
+    it("should cover list default args, custom parameters, and cache hit", () => {
+      expect(defaultFormatters.list(["A", "B"])).toBeDefined();
+      expect(defaultFormatters.list(["A", "B"])).toBeDefined(); // cache hit
+      expect(defaultFormatters.list(["A", "B"], ["en-US"])).toBeDefined();
+      expect(defaultFormatters.list(["A", "B"], ["en-US", "unit"])).toBeDefined();
+      expect(defaultFormatters.list(["A", "B"], ["en-US", "unit", "narrow"])).toBeDefined();
+    });
+
+    it("should cover languageName, regionName, currencyName, and displayName default args and cache hits", () => {
+      // languageName cache miss and hit
+      expect(defaultFormatters.languageName("it")).toBeDefined();
+      expect(defaultFormatters.languageName("it")).toBeDefined();
+
+      // regionName cache miss and hit
+      expect(defaultFormatters.regionName("IT")).toBeDefined();
+      expect(defaultFormatters.regionName("IT")).toBeDefined();
+
+      // currencyName cache miss and hit
+      expect(defaultFormatters.currencyName("EUR")).toBeDefined();
+      expect(defaultFormatters.currencyName("EUR")).toBeDefined();
+
+      // displayName default args and custom type cache miss/hit
+      expect(defaultFormatters.displayName("it")).toBeDefined();
+      expect(defaultFormatters.displayName("Latn", ["script", "en-US"])).toBe("Latin");
+      expect(defaultFormatters.displayName("Latn", ["script", "en-US"])).toBe("Latin"); // cache hit
+    });
+
+    it("should catch errors in display names with invalid types and locales", () => {
+      expect(defaultFormatters.displayName("de", ["invalid_type"])).toBe("de");
+      expect(defaultFormatters.languageName("de", ["invalid_locale_#$@!"])).toBe("de");
+      expect(defaultFormatters.regionName("US", ["invalid_locale_#$@!"])).toBe("US");
+      expect(defaultFormatters.currencyName("USD", ["invalid_locale_#$@!"])).toBe("USD");
+    });
+
+    it("should cover || code fallback branch when dn.of returns undefined", () => {
+      const ofSpy = jest.spyOn(Intl.DisplayNames.prototype, "of").mockReturnValue(undefined);
+      expect(defaultFormatters.languageName("de", ["en-GB"])).toBe("de");
+      expect(defaultFormatters.regionName("GB", ["en-GB"])).toBe("GB");
+      expect(defaultFormatters.currencyName("GBP", ["en-GB"])).toBe("GBP");
+      expect(defaultFormatters.displayName("de", ["language", "en-GB"])).toBe("de");
+      ofSpy.mockRestore();
+    });
+  });
 });

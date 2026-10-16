@@ -2,6 +2,7 @@ import React, { createContext, useContext, useSyncExternalStore, ReactNode, Reac
 import { LocL } from "../LocL.js";
 import { ScopeType, Language, Scope, ResourceLoader, Direction } from "../types.js";
 import { Trans, type TransProps, type TransKey, type TransValues } from "./Trans.js";
+import { getLocalizedPath, type PrefixStrategy } from "../detector/middleware.js";
 
 export { Trans, type TransProps, type TransKey, type TransValues };
 
@@ -204,6 +205,65 @@ function useScopedTranslation<
   };
 }
 
+export interface LocLHydrateProps {
+  state: {
+    locale: string;
+    resources: Record<string, any>;
+    direction?: Direction;
+  };
+  children?: ReactNode;
+  translator?: LocL<any, any, any, any, any>;
+}
+
+export function LocLHydrate({ state, children, translator: customTranslator }: LocLHydrateProps): ReactElement {
+  const contextTranslator = useContext(LocLContext);
+  const translator = customTranslator ?? contextTranslator;
+
+  if (translator && state) {
+    if (state.resources && state.locale && state.resources[state.locale]) {
+      translator.addResources(state.locale, state.resources[state.locale]);
+    }
+    if (state.locale && translator.getLanguage() !== state.locale) {
+      translator.changeLanguage(state.locale);
+    }
+  }
+
+  return (
+    <>
+      <script
+        id="__LOCL_DATA__"
+        type="application/json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(state) }}
+      />
+      {children}
+    </>
+  );
+}
+
+export interface LinkProps extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  href: string;
+  locale?: string;
+  prefixStrategy?: PrefixStrategy;
+  children?: ReactNode;
+}
+
+export function Link({ href, locale, prefixStrategy = "as-needed", ...rest }: LinkProps): ReactElement {
+  const translator = useContext(LocLContext);
+  const activeLocale = locale ?? (translator?.getLanguage() || "en");
+  const fallbackLocale = (translator as any)?.fallbackLanguage || "en";
+  const localizedHref = getLocalizedPath(href, activeLocale, fallbackLocale, prefixStrategy);
+
+  return <a href={localizedHref} {...rest} />;
+}
+
+export function useLocalizedPath(prefixStrategy: PrefixStrategy = "as-needed") {
+  const translator = useContext(LocLContext);
+  const activeLocale = translator?.getLanguage() || "en";
+  const fallbackLocale = (translator as any)?.fallbackLanguage || "en";
+  return (pathname: string, localeOverride?: string) =>
+    getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+}
+
 /* =========================================================================
  * Standard Context Provider & Hooks
  * ========================================================================= */
@@ -337,6 +397,9 @@ export interface LocLReactSuite<
   >(
     props: TransProps<T, Fallback, S, K>
   ) => ReactElement;
+  Hydrate: (props: LocLHydrateProps) => ReactElement;
+  Link: (props: LinkProps) => ReactElement;
+  useLocalizedPath: (prefixStrategy?: PrefixStrategy) => (pathname: string, localeOverride?: string) => string;
   translator: LocL<T, Fallback, any, any, any>;
 }
 
@@ -407,12 +470,36 @@ export function createLocLReact<
     );
   }
 
+  function useBoundLocalizedPath(prefixStrategy: PrefixStrategy = "as-needed") {
+    const contextTranslator = useContext(BoundContext);
+    const translator = contextTranslator ?? defaultTranslator;
+    const activeLocale = translator.getLanguage();
+    const fallbackLocale = (translator as any).fallbackLanguage;
+    return (pathname: string, localeOverride?: string) =>
+      getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+  }
+
+  function BoundLink({ href, locale, prefixStrategy = "as-needed", ...rest }: LinkProps): ReactElement {
+    const getPath = useBoundLocalizedPath(prefixStrategy);
+    return <a href={getPath(href, locale)} {...rest} />;
+  }
+
+  function BoundHydrate(props: LocLHydrateProps): ReactElement {
+    const contextTranslator = useContext(BoundContext);
+    const activeTranslator = props.translator ?? contextTranslator ?? defaultTranslator;
+
+    return <LocLHydrate {...props} translator={activeTranslator} />;
+  }
+
   return {
     LocLContext: BoundContext,
     LocLProvider: BoundLocLProvider,
     useLocL: useBoundLocL,
     useTranslation: useBoundTranslation as LocLReactSuite<T, Fallback>["useTranslation"],
     Trans: BoundTrans,
+    Hydrate: BoundHydrate,
+    Link: BoundLink,
+    useLocalizedPath: useBoundLocalizedPath,
     translator: defaultTranslator
   };
 }

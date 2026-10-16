@@ -23,6 +23,7 @@ __export(server_exports, {
   createI18nMiddleware: () => createI18nMiddleware,
   createLocLServer: () => createLocLServer,
   createServerTranslator: () => createServerTranslator,
+  dehydrate: () => dehydrate,
   getHreflangLinks: () => getHreflangLinks,
   getLocale: () => getLocale,
   getServerTranslator: () => getServerTranslator,
@@ -41,6 +42,8 @@ module.exports = __toCommonJS(server_exports);
 var import_node_async_hooks = require("async_hooks");
 
 // src/formatters.ts
+var listFormatCache = /* @__PURE__ */ new Map();
+var displayNamesCache = /* @__PURE__ */ new Map();
 var defaultFormatters = {
   /**
    * Converts a string to uppercase.
@@ -212,6 +215,107 @@ var defaultFormatters = {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padEnd(length, fill);
+  },
+  /**
+   * Formats a list of items using native `Intl.ListFormat`.
+   * @example
+   * `{users | list}` -> "Alice, Bob, and Charlie"
+   * `{users | list:de,disjunction}` -> "Alice, Bob oder Charlie"
+   */
+  list: (val, args = []) => {
+    const locales = args[0] || void 0;
+    const type = args[1] || "conjunction";
+    const style = args[2] || "long";
+    const items = Array.isArray(val) ? val.map((v) => String(v)) : [String(val)];
+    const key = `${locales || "default"}::${type}::${style}`;
+    let fmt = listFormatCache.get(key);
+    if (!fmt) {
+      fmt = new Intl.ListFormat(locales, { type, style });
+      listFormatCache.set(key, fmt);
+    }
+    return fmt.format(items);
+  },
+  /**
+   * Formats a language code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{lang | languageName:en}` -> "German"
+   * `{lang | languageName:de}` -> "Deutsch"
+   */
+  languageName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::language`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "language" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Formats a region/country code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{country | regionName:en}` -> "United States"
+   */
+  regionName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::region`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "region" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Formats a currency code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{curr | currencyName:en}` -> "US Dollar"
+   */
+  currencyName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::currency`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "currency" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Generalized display name resolver using `Intl.DisplayNames`.
+   * @example
+   * `{code | displayName:language,en}`
+   */
+  displayName: (val, args = []) => {
+    const type = args[0] || "language";
+    const locale = args[1] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::${type}`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
   }
 };
 
@@ -810,6 +914,8 @@ var LocL = class _LocL {
         output += this.evaluateVariableChunk(chunk, values);
       } else if (chunk.type === "select") {
         output += this.evaluateSelectChunk(chunk, values);
+      } else if (chunk.type === "plural") {
+        output += this.evaluateInlinePluralChunk(chunk, values);
       }
     }
     if (this.pseudoOptions?.enabled && !isNested) {
@@ -863,12 +969,29 @@ var LocL = class _LocL {
               const cases = this.parseSelectCases(selectMatch[2], isPseudo && useAccents);
               chunks.push({ type: "select", field, cases });
             } else {
-              const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
-              const formatters = pipeParts.map((segment) => {
-                const colonIdx = segment.indexOf(":");
-                return colonIdx === -1 ? { name: segment.trim(), args: [] } : { name: segment.slice(0, colonIdx).trim(), args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim()) };
-              });
-              chunks.push({ type: "var", name, raw, formatters });
+              const pluralMatch = inner.match(/^\s*([^,]+),\s*plural\s*,\s*([\s\S]+)$/);
+              if (pluralMatch) {
+                const field = pluralMatch[1].trim();
+                let body = pluralMatch[2];
+                let offset = 0;
+                const offsetMatch = body.match(/^\s*offset\s*:\s*(\d+)\s*([\s\S]+)$/);
+                if (offsetMatch) {
+                  offset = parseInt(offsetMatch[1], 10);
+                  body = offsetMatch[2];
+                }
+                const cases = this.parseSelectCases(body, isPseudo && useAccents);
+                chunks.push({ type: "plural", field, cases, offset });
+              } else {
+                const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
+                const formatters = pipeParts.map((segment) => {
+                  const colonIdx = segment.indexOf(":");
+                  return colonIdx === -1 ? { name: segment.trim(), args: [] } : {
+                    name: segment.slice(0, colonIdx).trim(),
+                    args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim())
+                  };
+                });
+                chunks.push({ type: "var", name, raw, formatters });
+              }
             }
             lastIndex = i + 1;
             start = -1;
@@ -921,6 +1044,25 @@ var LocL = class _LocL {
   evaluateSelectChunk(chunk, values) {
     const val = values ? String(values[chunk.field] ?? "other") : "other";
     const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
+  }
+  evaluateInlinePluralChunk(chunk, values) {
+    const rawCount = values ? values[chunk.field] : void 0;
+    const count = typeof rawCount === "number" ? rawCount : Number(rawCount) || 0;
+    const countForRules = count - chunk.offset;
+    const exactKey = `=${count}`;
+    let caseText;
+    if (exactKey in chunk.cases) {
+      caseText = chunk.cases[exactKey];
+    } else {
+      const category = this.getPluralRules(this.language, "cardinal").select(countForRules);
+      caseText = chunk.cases[category] ?? chunk.cases.other ?? "";
+    }
+    if (caseText.includes("#")) {
+      const formattedNum = this.getNumberFormat(this.language).format(countForRules);
+      caseText = caseText.replace(/(^|[^\\])#/g, (_match, prefix) => `${prefix}${formattedNum}`);
+      caseText = caseText.replace(/\\#/g, "#");
+    }
     return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
   }
   parseSelectCases(casesBody, pseudoAccents = false) {
@@ -1893,11 +2035,30 @@ async function getTranslations(scopeOrOptions, options) {
 function getSyncTranslator(scopeOrOptions, options) {
   return getDefaultSuite().getSyncTranslator(scopeOrOptions, options);
 }
+function dehydrate(translatorOrSuite) {
+  let activeTranslator = null;
+  if (translatorOrSuite && "translator" in translatorOrSuite && translatorOrSuite.translator instanceof LocL) {
+    activeTranslator = translatorOrSuite.translator;
+  } else if (translatorOrSuite instanceof LocL) {
+    activeTranslator = translatorOrSuite;
+  } else if (defaultServerInstance) {
+    activeTranslator = defaultServerInstance.translator;
+  }
+  const locale = activeTranslator ? activeTranslator.getLanguage() : getLocale();
+  const resources = activeTranslator ? { [locale]: activeTranslator.resources?.[locale] ?? {} } : {};
+  const direction = activeTranslator ? activeTranslator.getDirection(locale) : "ltr";
+  return {
+    locale,
+    resources,
+    direction
+  };
+}
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   createI18nMiddleware,
   createLocLServer,
   createServerTranslator,
+  dehydrate,
   getHreflangLinks,
   getLocale,
   getServerTranslator,

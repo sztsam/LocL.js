@@ -1,5 +1,80 @@
-import { S as ScopeType, F as Formatter, L as LocLConfig, a as LocL, E as EnforceParity } from './LocL-Dlwcpdya.cjs';
-export { b as LangWithPlurals } from './LocL-Dlwcpdya.cjs';
+import { S as ScopeType, j as Formatter, k as LocLConfig, L as LocL, E as EnforceParity } from './LocL-Dnobyznm.cjs';
+export { l as LangWithPlurals } from './LocL-Dnobyznm.cjs';
+
+interface RemoteLoaderStorage {
+    getItem: (key: string) => string | null | Promise<string | null>;
+    setItem: (key: string, value: string) => void | Promise<void>;
+    removeItem?: (key: string) => void | Promise<void>;
+}
+type StorageType = "localStorage" | "sessionStorage" | "memory" | RemoteLoaderStorage;
+interface RemoteLoaderOptions {
+    /**
+     * Remote endpoint URL template string or custom resolver function.
+     * Supports `{lang}` and `{ns}` placeholders.
+     *
+     * @example
+     * "https://cdn.example.com/locales/{lang}/{ns}.json"
+     * (lang, ns) => `https://api.example.com/translations/${lang}${ns ? `?ns=${ns}` : ""}`
+     */
+    endpoint: string | ((lang: string, ns?: string) => string);
+    /**
+     * Cache storage: "localStorage" (default in browser), "sessionStorage", "memory", or custom storage object.
+     */
+    storage?: StorageType;
+    /**
+     * Storage key prefix. Defaults to "locl_ota_".
+     */
+    storagePrefix?: string;
+    /**
+     * Cache time-to-live in milliseconds. Defaults to 24 hours (86,400,000 ms).
+     */
+    maxAge?: number;
+    /**
+     * When true, immediately returns stale cached translations while fetching fresh translations in the background.
+     * Defaults to true.
+     */
+    staleWhileRevalidate?: boolean;
+    /**
+     * Custom fetch implementation (defaults to global fetch).
+     */
+    fetch?: typeof fetch;
+    /**
+     * Custom HTTP headers or header resolver function.
+     */
+    headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>);
+    /**
+     * Callback fired when fresh translations are fetched from the remote source.
+     */
+    onSuccess?: (lang: string, ns: string | undefined, data: Record<string, any>) => void;
+    /**
+     * Callback fired when remote fetch fails.
+     */
+    onError?: (err: Error, lang: string, ns: string | undefined) => void;
+}
+interface RemoteLoaderInstance {
+    (lang: string, ns?: string): Promise<Record<string, any>>;
+    clearCache: (lang?: string, ns?: string) => Promise<void>;
+}
+/**
+ * Creates an Over-The-Air (OTA) remote translation loader with Stale-While-Revalidate (SWR) caching.
+ *
+ * Provides instantaneous boot times from local storage cache, silent background updates,
+ * and seamless offline fallback.
+ *
+ * @example
+ * ```ts
+ * const translator = initLocL({
+ *   resources: bundledFallback,
+ *   fallbackLanguage: "en",
+ *   loader: createRemoteLoader({
+ *     endpoint: "https://cdn.example.com/locales/{lang}/{ns}.json",
+ *     maxAge: 1000 * 60 * 60 * 24, // 24 hours
+ *     staleWhileRevalidate: true
+ *   })
+ * });
+ * ```
+ */
+declare function createRemoteLoader(options: RemoteLoaderOptions): RemoteLoaderInstance;
 
 /**
  * Initializes a new LocL instance.
@@ -106,4 +181,4 @@ declare function flattenDictionary(obj: Record<string, any>, prefix?: string): R
  */
 declare function unflattenDictionary(flat: Record<string, any>): Record<string, any>;
 
-export { LocL, LocLConfig, defineFastResources, defineResources, defineStrictResources, flattenDictionary, initLocL, unflattenDictionary };
+export { LocL, LocLConfig, type RemoteLoaderOptions, createRemoteLoader, defineFastResources, defineResources, defineStrictResources, flattenDictionary, initLocL, unflattenDictionary };

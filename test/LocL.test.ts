@@ -699,7 +699,7 @@ describe('initLocL', () => {
     // Browser document synchronization when document is defined
     const mockElement = { setAttribute: jest.fn() };
     // @ts-expect-error
-    (global).document = { documentElement: mockElement };
+    global.document = { documentElement: mockElement };
     const tSync = initLocL({ resources, fallbackLanguage: "en" });
     expect(mockElement.setAttribute).toHaveBeenCalledWith("dir", "ltr");
     expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "en");
@@ -707,7 +707,7 @@ describe('initLocL', () => {
     tSync.changeLanguage("de");
     expect(mockElement.setAttribute).toHaveBeenCalledWith("lang", "de");
     // @ts-expect-error
-    delete (global).document;
+    delete global.document;
   });
 
   it("should cover buildScopedTranslationObject non-string non-array scope warning and caching", () => {
@@ -835,6 +835,48 @@ describe('initLocL', () => {
       bold: "BOLDED"
     });
     expect(nfChunks.join("")).toBe("Hello BOLDED");
+  });
+
+  it("should evaluate inline ICU plural expressions with # replacement and offset", () => {
+    const t = initLocL({
+      resources: {
+        en: {
+          cart: "{count, plural, =0 {Cart empty} one {# item} other {# items}}",
+          followers: "{count, plural, offset:1 =0 {No followers} =1 {You} one {You and # other} other {You and # others}}",
+          escapedHash: "{count, plural, other {Item \\# with # count}}",
+          noOther: "{count, plural, one {One}}",
+          nestedInPlural: "{count, plural, other {User {name} has # items}}"
+        }
+      },
+      fallbackLanguage: "en"
+    });
+
+    expect(t.t("cart", { count: 0 })).toBe("Cart empty");
+    expect(t.t("cart", { count: 1 })).toBe("1 item");
+    expect(t.t("cart", { count: 5 })).toBe("5 items");
+    // @ts-expect-error
+    expect(t.t("cart", { count: "10" })).toBe("10 items");
+    // @ts-expect-error
+    expect(t.t("cart", { count: "abc" })).toBe("Cart empty");
+    // @ts-expect-error
+    expect(t.t("cart")).toBe("Cart empty");
+
+    expect(t.t("followers", { count: 0 })).toBe("No followers");
+    expect(t.t("followers", { count: 1 })).toBe("You");
+    expect(t.t("followers", { count: 2 })).toBe("You and 1 other");
+    expect(t.t("followers", { count: 5 })).toBe("You and 4 others");
+
+    expect(t.t("escapedHash", { count: 3 })).toBe("Item # with 3 count");
+    expect(t.t("noOther", { count: 5 })).toBe("");
+    expect(t.t("nestedInPlural", { count: 2, name: "Alice" })).toBe("User Alice has 2 items");
+
+    // test inline plural with pseudo-localization enabled
+    const tPseudoPlural = initLocL({
+      resources: { en: { items: "{count, plural, =0 {None} one {# item} other {# items}}" } },
+      fallbackLanguage: "en",
+      pseudoLocalization: true
+    });
+    expect(tPseudoPlural.t("items", { count: 1 })).toContain("1 íţéɱ");
   });
 
   it("should cover ICU select with nested parameters, no other case, and trailing whitespace in casesBody", () => {
@@ -1018,6 +1060,43 @@ describe('initLocL', () => {
     // setPseudoLocalization with enabled: false
     tPseudo.setPseudoLocalization({ enabled: false });
     expect(tPseudo.t("welcome", { name: "Alice" })).toBe("Welcome, Alice! <bold>Click</bold>");
+  });
+
+  it("should cover applyPseudoAccents branches for tags, double curly, and single curly braces", () => {
+    const translator = initLocL({ resources, fallbackLanguage: "en" });
+    // @ts-expect-error
+    const fn = (text: string) => translator.applyPseudoAccents(text);
+
+    // HTML tags branches
+    expect(fn("<tag>content</tag>")).toBe("<tag>çöñţéñţ</tag>");
+    expect(fn("</close>")).toBe("</close>");
+    expect(fn("5 < 10")).toBe("5 < 10");
+    expect(fn("<tag without close")).toBe("<ţáğ ŵíţḩöúţ çļöšé");
+    expect(fn("<tag <another>")).toBe("<ţáğ <another>");
+    expect(fn("<tag> <another>")).toBe("<tag> <another>");
+
+    // Double curly branches
+    expect(fn("Hello {{name}}")).toBe("Ḩéļļö {{name}}");
+    expect(fn("Hello {{unclosed")).toBe("Ḩéļļö {{úñçļöšéđ");
+    expect(fn("Hello {{a{b}}")).toBe("Ḩéļļö {{á{b}}");
+    expect(fn("Hello {{a}b}}")).toBe("Ḩéļļö {{a}ḅ}}");
+    expect(fn("Hello {a{b}")).toBe("Ḩéļļö {á{b}");
+
+    // Single curly branches
+    expect(fn("Hello {name}")).toBe("Ḩéļļö {name}");
+    expect(fn("Hello {unclosed")).toBe("Ḩéļļö {úñçļöšéđ");
+    expect(fn("Hello {a{b}")).toBe("Ḩéļļö {á{b}");
+
+    // Boundary checks & unmapped characters
+    expect(fn("End with {" + "{")).toBe("Éñđ ŵíţḩ {{");
+    expect(fn("End with {")).toBe("Éñđ ŵíţḩ {");
+    expect(fn("123 !?")).toBe("123 !?");
+
+    // chunk.type === "select"
+    // @ts-expect-error
+    translator.templateCache.set("raw::unknown_chunk_type", [{ type: "unknown" }]);
+    // @ts-expect-error
+    expect(translator.evaluateTemplate("unknown_chunk_type")).toBe("");
   });
 
   it("should cover formatter returning undefined fallback to token.raw", () => {

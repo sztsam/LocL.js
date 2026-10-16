@@ -1,0 +1,1414 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocL.js Documentation — Fast, Zero-Dependency TypeScript i18n</title>
+  <meta name="description" content="Comprehensive documentation for LocL.js v2.5.0: Ultra-fast TypeScript i18n with ICU inline plurals, automated AI translation CLI, React Server Components (RSC), Svelte store, Vue 3 composables, and Vite HMR.">
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./prism.css">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="header">
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <button class="header-btn mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle mobile navigation">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      </button>
+      <a href="#" class="header-brand">
+        <span class="header-logo">🌐</span>
+        <span class="header-title">LocL.js</span>
+        <span class="header-version">v2.5.0</span>
+      </a>
+    </div>
+
+    <div class="header-actions">
+      <button class="search-trigger" id="searchTrigger">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Search documentation...</span>
+        <span class="search-shortcut">⌘K</span>
+      </button>
+
+      <button class="header-btn" id="themeToggle" aria-label="Toggle dark/light theme">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+      </button>
+
+      <a href="https://github.com/sztsam/LocL.js" target="_blank" rel="noopener noreferrer" class="header-btn" aria-label="GitHub Repository">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+      </a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Left Navigation Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Getting Started</div>
+        <ul class="sidebar-nav">
+          <li><a href="#quickstart" class="sidebar-link active">⚡ Installation & Quick Start</a></li>
+          <li><a href="#playground" class="sidebar-link">🎮 Live Playground</a></li>
+          <li><a href="#configuration" class="sidebar-link">⚙️ Configuration Options</a></li>
+          <li><a href="#scopes" class="sidebar-link">🔍 Scopes & Namespaces</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Pluralization & ICU</div>
+        <ul class="sidebar-nav">
+          <li><a href="#plurals-icu" class="sidebar-link">🔀 ICU Inline Plurals & Offsets</a></li>
+          <li><a href="#plurals-exact" class="sidebar-link">🔢 Exact Values (=0, =1, =N)</a></li>
+          <li><a href="#plurals-ordinal" class="sidebar-link">🥇 Native Ordinals (1st, 2nd)</a></li>
+          <li><a href="#plurals-cldr" class="sidebar-link">🌍 CLDR Language Parity</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Developer CLI Pipeline</div>
+        <ul class="sidebar-nav">
+          <li><a href="#cli" class="sidebar-link">🛠️ CLI Setup & Scripts</a></li>
+          <li><a href="#cli-extract" class="sidebar-link">📥 Key Extraction (extract)</a></li>
+          <li><a href="#cli-check" class="sidebar-link">🛡️ Parity & Parameter Linting (check)</a></li>
+          <li><a href="#cli-translate" class="sidebar-link">🤖 Automated AI Translation (translate)</a></li>
+          <li><a href="#cli-compile" class="sidebar-link">📦 AOT Bundle Compiler (compile)</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">React & Server Components</div>
+        <ul class="sidebar-nav">
+          <li><a href="#react" class="sidebar-link">⚛️ React Context & Hooks</a></li>
+          <li><a href="#react-trans" class="sidebar-link">🏷️ &lt;Trans /&gt; Component</a></li>
+          <li><a href="#react-navigation" class="sidebar-link">🔗 &lt;Link /&gt; & useLocalizedPath</a></li>
+          <li><a href="#react-hydrate" class="sidebar-link">💧 SSR &lt;LocLHydrate /&gt;</a></li>
+          <li><a href="#server" class="sidebar-link">🖥️ React Server Components (RSC)</a></li>
+          <li><a href="#server-dehydrate" class="sidebar-link">📦 Server State Dehydration</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Framework Adapters</div>
+        <ul class="sidebar-nav">
+          <li><a href="#frameworks-svelte" class="sidebar-link">🧡 Svelte Store ($t)</a></li>
+          <li><a href="#frameworks-vue" class="sidebar-link">💚 Vue 3 Composable</a></li>
+          <li><a href="#frameworks-vite" class="sidebar-link">⚡ Vite Plugin & HMR</a></li>
+          <li><a href="#frameworks-solid" class="sidebar-link">🔷 Solid.js & Vanilla JS</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Formatters & Delivery</div>
+        <ul class="sidebar-nav">
+          <li><a href="#formatters" class="sidebar-link">📋 Built-in Formatters</a></li>
+          <li><a href="#formatters-chaining" class="sidebar-link">⛓️ Multi-Pipe Chaining</a></li>
+          <li><a href="#remote-loader" class="sidebar-link">📡 OTA Remote Loader (SWR)</a></li>
+          <li><a href="#detector" class="sidebar-link">🌐 Language Detector & Routing</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-group">
+        <div class="sidebar-group-title">Reference & Migration</div>
+        <ul class="sidebar-nav">
+          <li><a href="#migration" class="sidebar-link">🔄 Drop-in i18next Migration</a></li>
+          <li><a href="#api-reference" class="sidebar-link">📑 Full API Reference</a></li>
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-badge-row">
+          <span class="hero-badge highlight">v2.5.0 Release</span>
+          <span class="hero-badge">100% Test Coverage (255/255)</span>
+          <span class="hero-badge">0 Runtime Dependencies</span>
+          <span class="hero-badge">10x–20x Throughput Boost</span>
+        </div>
+        <h1 class="hero-title">Ultra-Fast TypeScript <span class="hero-gradient">i18n Engineered</span> for Modern Stacks</h1>
+        <p class="hero-subtitle">
+          Compiled template token execution, native ICU inline plurals, automated AI translation CLI, React Server Components (RSC), Svelte 4 & 5, Vue 3, Vite HMR, and Stale-While-Revalidate Over-The-Air delivery.
+        </p>
+        <div class="hero-cta">
+          <a href="#quickstart" class="btn btn-primary">Get Started in 5 Min</a>
+          <a href="#playground" class="btn btn-secondary">Open Live Playground</a>
+          <a href="#api-reference" class="btn btn-secondary">Full API Reference</a>
+        </div>
+      </section>
+
+      <!-- Section: Quick Start -->
+      <section id="quickstart" class="doc-section">
+        <h2>⚡ Installation &amp; Quick Start</h2>
+        <p>LocL.js is distributed as an ESM + CommonJS hybrid package with complete TypeScript declarations and zero external dependencies.</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>bash</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-bash"><code class="language-bash"># Using npm
+npm install locl-js
+
+# Using pnpm
+pnpm add locl-js
+
+# Using bun
+bun add locl-js</code></pre>
+        </div>
+
+        <h3>1. Define Dictionaries with <code>defineResources</code></h3>
+        <p><code>defineResources</code> leverages TypeScript 5 <code>&lt;const T&gt;</code> generic inference to preserve string literal types and automatically extract template placeholders without requiring verbose <code>as const</code> annotations:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — src/i18n.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { initLocL, defineResources } from "locl-js";
+
+export const resources = defineResources({
+  en: {
+    welcome: "Welcome back, {name}!",
+    cart: {
+      "=0": "Your shopping cart is empty.",
+      one: "You have 1 item in your cart.",
+      other: "You have {count} items in your cart."
+    },
+    social: "{count, plural, offset:1 =0 {No likes yet} =1 {You liked this} other {You and # others liked this}}",
+    auth: { login: "Log In", register: "Sign Up" }
+  },
+  de: {
+    welcome: "Willkommen zurück, {name}!",
+    cart: {
+      "=0": "Ihr Warenkorb ist leer.",
+      one: "Sie haben 1 Artikel im Warenkorb.",
+      other: "Sie haben {count} Artikel im Warenkorb."
+    },
+    social: "{count, plural, offset:1 =0 {Keine Likes} =1 {Dir gefällt das} other {Dir und # weiteren gefällt das}}",
+    auth: { login: "Anmelden", register: "Registrieren" }
+  }
+});
+
+export const translator = initLocL({
+  resources,
+  fallbackLanguage: "en",
+  language: "en"
+});</code></pre>
+        </div>
+
+        <h3>2. Basic Translation Execution</h3>
+        <p>Translate keys with type safety, automatic variable extraction, and instant language switching:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">// 1. Parameter interpolation (strictly typed: requires { name: string })
+translator.t("welcome", { name: "Alice" }); 
+// =&gt; "Welcome back, Alice!"
+
+// 2. Object plurals (exact '=0' overrides category)
+translator.t("cart", { count: 0 }); // =&gt; "Your shopping cart is empty."
+translator.t("cart", { count: 5 }); // =&gt; "You have 5 items in your cart."
+
+// 3. ICU inline plurals with offset and # formatting
+translator.t("social", { count: 3 }); 
+// =&gt; "You and 2 others liked this"
+
+// 4. Change language (syncs DOM &amp; notifies all reactive subscribers)
+translator.changeLanguage("de");
+translator.t("welcome", { name: "Alice" }); 
+// =&gt; "Willkommen zurück, Alice!"</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Live Playground -->
+      <section id="playground" class="doc-section">
+        <h2>🎮 Interactive Playground</h2>
+        <p>Test LocL's template engine directly in your browser. Select a preset or type your own translation template with ICU plurals, offsets, or formatters:</p>
+
+        <div class="playground-card">
+          <div class="playground-header">
+            <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Interactive Presets:</span>
+            <div class="playground-presets">
+              <button class="preset-chip active" data-preset="icuPlural">ICU Plural & Offset</button>
+              <button class="preset-chip" data-preset="listFormatter">List Formatter</button>
+              <button class="preset-chip" data-preset="displayNames">Display Names</button>
+              <button class="preset-chip" data-preset="multiPipe">Multi-Pipe Chaining</button>
+            </div>
+          </div>
+
+          <div class="playground-grid">
+            <div class="playground-input-group">
+              <label for="pgTemplate">Translation Template</label>
+              <textarea id="pgTemplate" class="playground-textarea" rows="4"></textarea>
+            </div>
+            <div class="playground-input-group">
+              <label for="pgValues">Values (JSON)</label>
+              <textarea id="pgValues" class="playground-textarea" rows="4"></textarea>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; align-items: center; margin-bottom: 12px;">
+            <label for="pgLang" style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted);">Active Locale:</label>
+            <select id="pgLang" class="playground-input" style="width: auto; padding: 4px 10px;">
+              <option value="en">en (English)</option>
+              <option value="de">de (German)</option>
+              <option value="fr">fr (French)</option>
+              <option value="es">es (Spanish)</option>
+              <option value="ja">ja (Japanese)</option>
+              <option value="ar">ar (Arabic)</option>
+            </select>
+          </div>
+
+          <label style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px;">Live Rendered Output</label>
+          <div id="pgOutput" class="playground-output-box"></div>
+        </div>
+      </section>
+
+      <!-- Section: Configuration Options -->
+      <section id="configuration" class="doc-section">
+        <h2>⚙️ Configuration Options (`initLocL`)</h2>
+        <p>The <code>initLocL(config)</code> factory configures the global or scoped translator behavior. Every option is strictly typed in TypeScript:</p>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Option</th>
+                <th>Type</th>
+                <th>Default</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>resources</code></td>
+                <td><code>Record&lt;string, any&gt;</code></td>
+                <td><code>{}</code></td>
+                <td>Initial in-memory translation dictionaries indexed by language code.</td>
+              </tr>
+              <tr>
+                <td><code>fallbackLanguage</code></td>
+                <td><code>string</code></td>
+                <td><code>"en"</code></td>
+                <td>Language to fall back to when a key is missing in the active language.</td>
+              </tr>
+              <tr>
+                <td><code>language</code></td>
+                <td><code>string</code></td>
+                <td><code>fallbackLanguage</code></td>
+                <td>Initial active language code.</td>
+              </tr>
+              <tr>
+                <td><code>loader</code></td>
+                <td><code>ResourceLoader</code></td>
+                <td><code>undefined</code></td>
+                <td>Asynchronous loader for dynamic bundles or namespaces.</td>
+              </tr>
+              <tr>
+                <td><code>formatters</code></td>
+                <td><code>Record&lt;string, Formatter&gt;</code></td>
+                <td><code>{}</code></td>
+                <td>Custom formatter functions accessible via pipe syntax (<code>{val \| custom}</code>).</td>
+              </tr>
+              <tr>
+                <td><code>strictParams</code></td>
+                <td><code>boolean</code></td>
+                <td><code>true</code></td>
+                <td>Set to <code>false</code> for large dictionaries (10,000+ keys) to bypass recursive type-literal parsing and maximize <code>tsc</code> compile speeds.</td>
+              </tr>
+              <tr>
+                <td><code>onMissingKey</code></td>
+                <td><code>(key, lang, chain) =&gt; void</code></td>
+                <td><code>undefined</code></td>
+                <td>Telemetry hook fired when an unlocalized key is encountered in production.</td>
+              </tr>
+              <tr>
+                <td><code>pseudoLocalization</code></td>
+                <td><code>boolean \| PseudoOptions</code></td>
+                <td><code>false</code></td>
+                <td>QA layout testing mode that wraps strings in accented expansion markers (e.g. <code>[!!! Ḩéļļö !!!]</code>).</td>
+              </tr>
+              <tr>
+                <td><code>autoSyncDocument</code></td>
+                <td><code>boolean</code></td>
+                <td><code>true</code></td>
+                <td>Automatically updates browser <code>&lt;html dir="..." lang="..."&gt;</code> attributes on language changes.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">const translator = initLocL({
+  resources,
+  fallbackLanguage: "en",
+  strictParams: true,
+  onMissingKey: (key, lang, chain) =&gt; {
+    // Send to Datadog or Sentry:
+    console.warn(`[i18n telemetry] Missing key "${key}" in "${lang}". Fallback chain:`, chain);
+  },
+  pseudoLocalization: false,
+  autoSyncDocument: true
+});</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Scopes -->
+      <section id="scopes" class="doc-section">
+        <h2>🔍 Scopes &amp; Namespaces (`withConfig`)</h2>
+        <p>Create lightweight, isolated translator proxies for specific namespaces or pinned languages without duplicating in-memory resource trees:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">// 1. Scoped proxy: resolves keys relative to "dashboard"
+const dashboardT = translator.withConfig({ scope: "dashboard" });
+dashboardT.t("title"); // Resolves "dashboard.title"
+
+// 2. Language-pinned proxy: always renders German regardless of global language
+const deTranslator = translator.withConfig({ language: "de" });
+deTranslator.t("welcome", { name: "Hans" }); // Always in German
+
+// 3. Multi-scope union: combines multiple namespaces
+const multiT = translator.withConfig({ scope: ["auth", "dashboard"] });
+multiT.t("dashboard.title");
+multiT.t("auth.login");</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: ICU Inline Plurals -->
+      <section id="plurals-icu" class="doc-section">
+        <h2>🔀 ICU Inline Plural Syntax &amp; Offsets</h2>
+        <p>LocL v2.5.0 supports standard inline ICU MessageFormat plural expressions. Templates are tokenized once and cached in an execution plan, providing 10x–20x runtime throughput compared to per-call regex scanning.</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">const en = {
+  cart: "{count, plural, =0 {Your cart is empty} =1 {You have 1 item} other {You have # items}}",
+  likes: "{count, plural, offset:1 =0 {No likes} =1 {You liked this} one {You and # other person} other {You and # other people}}",
+  upload: "{count, plural, one {{user} uploaded # file} other {{user} uploaded # files}}"
+};
+
+// 1. Number substitution with '#' formatted via native Intl.NumberFormat:
+translator.t("cart", { count: 0 });    // =&gt; "Your cart is empty"
+translator.t("cart", { count: 1 });    // =&gt; "You have 1 item"
+translator.t("cart", { count: 1250 }); // =&gt; "You have 1,250 items"
+
+// 2. Offsets: adjusts count before plural rule evaluation and '#' replacement:
+translator.t("likes", { count: 0 }); // =&gt; "No likes"
+translator.t("likes", { count: 1 }); // =&gt; "You liked this"
+translator.t("likes", { count: 2 }); // =&gt; "You and 1 other person" (2 - 1 = 1 -&gt; 'one')
+translator.t("likes", { count: 7 }); // =&gt; "You and 6 other people" (7 - 1 = 6 -&gt; 'other')
+
+// 3. Nested variable extraction:
+translator.t("upload", { user: "Alice", count: 3 }); 
+// =&gt; "Alice uploaded 3 files"</code></pre>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">💡 Escaped Hash Symbol</div>
+          <p>If your translation requires a literal <code>#</code> character without numeric substitution, escape it as <code>\#</code>.</p>
+        </div>
+      </section>
+
+      <!-- Section: Plurals Exact -->
+      <section id="plurals-exact" class="doc-section">
+        <h2>🔢 Plural Exact Quantities (=0, =1, =N)</h2>
+        <p>Define explicit numeric overrides that take precedence over linguistic grammatical categories:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">const en = {
+  inbox: {
+    "=0": "Inbox zero! No unread messages.",
+    "=1": "You have exactly one urgent message.",
+    one: "You have 1 message.",
+    other: "You have {count} messages."
+  }
+};
+
+translator.t("inbox", { count: 0 }); // =&gt; "Inbox zero! No unread messages."
+translator.t("inbox", { count: 1 }); // =&gt; "You have exactly one urgent message."
+translator.t("inbox", { count: 5 }); // =&gt; "You have 5 messages."</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Plurals Ordinal -->
+      <section id="plurals-ordinal" class="doc-section">
+        <h2>🥇 Native Ordinal Plurals (1st, 2nd, 3rd)</h2>
+        <p>Format ordinal rankings using native <code>Intl.PluralRules({ type: "ordinal" })</code>:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">const en = {
+  rank: {
+    one: "{count}st place",
+    two: "{count}nd place",
+    few: "{count}rd place",
+    other: "{count}th place"
+  }
+};
+
+translator.ordinal("rank", { count: 1 });  // =&gt; "1st place"
+translator.ordinal("rank", { count: 2 });  // =&gt; "2nd place"
+translator.ordinal("rank", { count: 3 });  // =&gt; "3rd place"
+translator.ordinal("rank", { count: 21 }); // =&gt; "21st place"
+translator.ordinal("rank", { count: 104 }); // =&gt; "104th place"
+
+// Or using translator.t() with ordinal flag:
+translator.t("rank", { count: 2, ordinal: true }); // =&gt; "2nd place"</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Plurals CLDR -->
+      <section id="plurals-cldr" class="doc-section">
+        <h2>🌍 Language-Aware CLDR Plural Validation</h2>
+        <p>Linguistic plural categories vary drastically between languages. LocL's <code>LangWithPlurals&lt;T, L&gt;</code> type enforces CLDR compliance at compile time:</p>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Family</th>
+                <th>Locales</th>
+                <th>Required CLDR Categories</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Other-only</strong></td>
+                <td><code>ja</code>, <code>zh</code>, <code>ko</code>, <code>vi</code>, <code>th</code>, <code>id</code>, <code>tr</code>, <code>hu</code></td>
+                <td><code>other</code></td>
+              </tr>
+              <tr>
+                <td><strong>Two-form</strong></td>
+                <td><code>en</code>, <code>de</code>, <code>es</code>, <code>it</code>, <code>pt</code>, <code>nl</code>, <code>el</code></td>
+                <td><code>one</code>, <code>other</code></td>
+              </tr>
+              <tr>
+                <td><strong>Slavic (Four-form)</strong></td>
+                <td><code>ru</code>, <code>uk</code>, <code>pl</code>, <code>cs</code>, <code>sk</code></td>
+                <td><code>one</code>, <code>few</code>, <code>many</code>, <code>other</code></td>
+              </tr>
+              <tr>
+                <td><strong>Arabic (Six-form)</strong></td>
+                <td><code>ar</code></td>
+                <td><code>zero</code>, <code>one</code>, <code>two</code>, <code>few</code>, <code>many</code>, <code>other</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: CLI Overview -->
+      <section id="cli" class="doc-section">
+        <h2>🛠️ Developer CLI Overview (`locl`)</h2>
+        <p>LocL includes an end-to-end command-line toolkit accessible via <code>npx locl</code> or npm scripts:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>json — package.json</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-json"><code class="language-json">{
+  "scripts": {
+    "i18n:extract": "locl extract",
+    "i18n:check": "locl check",
+    "i18n:lint": "locl check --lint-params",
+    "i18n:translate": "locl translate",
+    "i18n:status": "locl status",
+    "i18n:compile": "locl compile"
+  }
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: CLI Extract -->
+      <section id="cli-extract" class="doc-section">
+        <h2>📥 Key Extraction (`locl extract`)</h2>
+        <p>Scans your source files (<code>.ts</code>, <code>.tsx</code>, <code>.js</code>, <code>.jsx</code>, <code>.vue</code>, <code>.svelte</code>) and synchronizes detected keys into your base language file (<code>locales/en.json</code>):</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>bash</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-bash"><code class="language-bash"># Basic scan of src/, app/, pages/, components/
+npx locl extract
+
+# Custom source directories and file extensions
+npx locl extract --src src,components --ext ts,tsx,vue --locales locales --base en
+
+# Prune orphaned keys no longer used in code
+npx locl extract --clean
+
+# Generate flat dot-notated JSON instead of nested objects
+npx locl extract --flat
+
+# Provide fallback placeholder value for newly created keys
+npx locl extract --default "TODO"</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: CLI Check -->
+      <section id="cli-check" class="doc-section">
+        <h2>🛡️ Parity &amp; Parameter Linting (`locl check`)</h2>
+        <p>Verifies that all secondary language dictionaries implement every key present in the base language dictionary:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>bash</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-bash"><code class="language-bash"># Fails in CI with exit code 1 if keys are missing
+npx locl check --locales locales --base en
+
+# Deep linting: checks that template tokens and XML/JSX tags match 1:1
+npx locl check --lint-params
+
+# Strict mode: fails if orphaned or empty string keys are found
+npx locl check --strict
+
+# Automated backfill: populates missing keys copying base values
+npx locl check --fix</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: CLI Translate -->
+      <section id="cli-translate" class="doc-section">
+        <h2>🤖 Automated AI Machine Translation (`locl translate`)</h2>
+        <p>Automatically backfills missing translations from your base dictionary using modern AI and machine translation providers:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>bash</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-bash"><code class="language-bash"># DeepL translation (default provider):
+npx locl translate --target es,de
+
+# OpenAI (default model: gpt-4o-mini):
+npx locl translate --target es,fr --provider openai --model gpt-4o
+
+# Local Ollama instance (e.g. Llama 3) with zero cloud fees:
+npx locl translate --target de,ja --provider ollama --model llama3
+
+# Google Cloud Translation API:
+npx locl translate --target zh,it --provider google
+
+# Force re-translation:
+npx locl translate --target es --force
+
+# Dry run preview:
+npx locl translate --target es --dry-run</code></pre>
+        </div>
+
+        <div class="callout callout-info">
+          <div class="callout-title">🛡️ Smart Token & Tag Masking</div>
+          <p>Machine translation APIs often mangle variables (turning <code>{count}</code> into <code>{cuenta}</code>) or corrupt HTML tags. LocL shields all placeholders (<code>{name}</code>, <code>{{name}}</code>, <code>{var | upper}</code>) and JSX tags (<code>&lt;bold&gt;...&lt;/bold&gt;</code>) as <code>__LOCL_TOK_0__</code> before invoking APIs, restoring them with 100% precision in the translated output.</p>
+        </div>
+      </section>
+
+      <!-- Section: CLI Compile -->
+      <section id="cli-compile" class="doc-section">
+        <h2>📦 Ahead-of-Time Bundle Compilation (`locl compile`)</h2>
+        <p>Bundles separate JSON files into a single optimized TypeScript or JavaScript file for zero runtime network delay:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>bash</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-bash"><code class="language-bash"># Compile to TypeScript bundle
+npx locl compile --format ts --output src/locales.compiled.ts
+
+# Compile to ESM or CommonJS
+npx locl compile --format esm --output dist/locales.js
+npx locl compile --format cjs --output dist/locales.cjs</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: React Setup -->
+      <section id="react" class="doc-section">
+        <h2>⚛️ React Context &amp; Hooks (`locl-js/react`)</h2>
+        <p>Official React bindings powered by <code>useSyncExternalStore</code> for concurrent rendering safety:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx — src/i18n-react.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">import { initLocL, defineResources } from "locl-js";
+import { createLocLReact } from "locl-js/react";
+
+export const translator = initLocL({
+  resources: defineResources({
+    en: {
+      welcome: "Welcome, {name}!",
+      user: { title: "Profile", greeting: "Hello, {name}!" }
+    },
+    de: {
+      welcome: "Willkommen, {name}!",
+      user: { title: "Profil", greeting: "Hallo, {name}!" }
+    }
+  }),
+  fallbackLanguage: "en"
+});
+
+export const {
+  LocLProvider,
+  useTranslation,
+  useLocL,
+  Trans,
+  Hydrate,
+  Link,
+  useLocalizedPath
+} = createLocLReact(translator);</code></pre>
+        </div>
+
+        <p>In application components:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">export function Header() {
+  const { t, language, changeLanguage, direction } = useTranslation();
+
+  return (
+    &lt;header dir={direction}&gt;
+      &lt;h1&gt;{t("welcome", { name: "Alice" })}&lt;/h1&gt;
+      &lt;button onClick={() =&gt; changeLanguage("de")}&gt;Deutsch ({language})&lt;/button&gt;
+    &lt;/header&gt;
+  );
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: React Trans -->
+      <section id="react-trans" class="doc-section">
+        <h2>🏷️ The <code>&lt;Trans /&gt;</code> Component</h2>
+        <p>Safely interpolate formatting tags, links, and self-closing tags into React elements without <code>dangerouslySetInnerHTML</code>:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">&lt;Trans
+  i18nKey="notice" // "Please &lt;bold&gt;read&lt;/bold&gt; our &lt;link href="/terms"&gt;terms&lt;/link&gt;.&lt;br /&gt;Thank you!"
+  values={{ name: "Alice" }}
+  components={{
+    bold: &lt;strong className="font-bold text-primary" /&gt;,
+    link: &lt;a href="/terms" target="_blank" className="underline" /&gt;,
+    br: &lt;br /&gt;
+  }}
+  fallback="Please read our terms."
+/&gt;</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: React Navigation -->
+      <section id="react-navigation" class="doc-section">
+        <h2>🔗 Localized Navigation (<code>&lt;Link /&gt;</code> &amp; <code>useLocalizedPath</code>)</h2>
+        <p>Automatically rewrite URLs to respect active languages and routing prefix strategies (<code>"as-needed"</code>, <code>"always"</code>, <code>"never"</code>):</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">import { Link, useLocalizedPath } from "./i18n-react";
+
+export function Navigation() {
+  const getPath = useLocalizedPath("as-needed");
+
+  return (
+    &lt;nav&gt;
+      {/* If 'en' is default: href="/about". If 'de' is active: href="/de/about" */}
+      &lt;Link href="/about"&gt;About Us&lt;/Link&gt;
+
+      {/* Explicit target locale */}
+      &lt;Link href="/pricing" locale="fr"&gt;Tarifs&lt;/Link&gt;
+
+      {/* Force prefix even on default locale */}
+      &lt;Link href="/contact" prefixStrategy="always"&gt;Contact&lt;/Link&gt;
+
+      {/* Programmatic path helper */}
+      &lt;button onClick={() =&gt; window.location.href = getPath("/dashboard")}&gt;
+        Dashboard
+      &lt;/button&gt;
+    &lt;/nav&gt;
+  );
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: React Hydrate -->
+      <section id="react-hydrate" class="doc-section">
+        <h2>💧 SSR Hydration &amp; Zero-Flicker Bootstrapping (<code>&lt;LocLHydrate /&gt;</code>)</h2>
+        <p>Eliminate hydration mismatches and unlocalized flash in SSR and Next.js applications by embedding the server's dehydrated translation payload:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx — src/components/ClientRoot.tsx ("use client")</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">import React from "react";
+import { LocLProvider, LocLHydrate } from "locl-js/react";
+import { translator } from "@/i18n";
+
+export function ClientRoot({ state, children }: { state: any; children: React.ReactNode }) {
+  return (
+    &lt;LocLProvider translator={translator}&gt;
+      &lt;LocLHydrate state={state}&gt;
+        {children}
+      &lt;/LocLHydrate&gt;
+    &lt;/LocLProvider&gt;
+  );
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: React Server Components -->
+      <section id="server" class="doc-section">
+        <h2>🖥️ React Server Components (RSC) (`locl-js/server`)</h2>
+        <p>Headless async request isolation via Node's native <code>AsyncLocalStorage</code> without <code>"use client"</code> directives:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — src/i18n-server.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { initLocL, defineResources } from "locl-js";
+import { createLocLServer } from "locl-js/server";
+
+export const translator = initLocL({
+  resources: defineResources({
+    en: { title: "Dashboard", greeting: "Welcome, {name}!" },
+    de: { title: "Übersicht", greeting: "Willkommen, {name}!" }
+  }),
+  fallbackLanguage: "en"
+});
+
+export const {
+  getTranslator,
+  getTranslations,
+  runWithLocale,
+  getLocale,
+  setLocale
+} = createLocLServer(translator);</code></pre>
+        </div>
+
+        <p>In Server Components:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx — app/[locale]/page.tsx (Server Component)</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">import { getTranslator } from "@/i18n-server";
+
+export default async function Page() {
+  const t = await getTranslator();
+
+  return (
+    &lt;main&gt;
+      &lt;h1&gt;{t("title")}&lt;/h1&gt;
+      &lt;p&gt;{t("greeting", { name: "Alice" })}&lt;/p&gt;
+    &lt;/main&gt;
+  );
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Server Dehydrate -->
+      <section id="server-dehydrate" class="doc-section">
+        <h2>📦 Server State Dehydration (`dehydrate`)</h2>
+        <p>Extract server translator state to pass down to client hydration components:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>tsx — app/[locale]/layout.tsx (Server Component Layout)</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-tsx"><code class="language-tsx">import { getTranslator, dehydrate } from "@/i18n-server";
+import { ClientRoot } from "@/components/ClientRoot";
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const t = await getTranslator();
+  const dehydratedState = dehydrate(t); // { locale: "de", resources: { de: { ... } }, direction: "ltr" }
+
+  return (
+    &lt;html lang={dehydratedState.locale} dir={dehydratedState.direction}&gt;
+      &lt;body&gt;
+        &lt;ClientRoot state={dehydratedState}&gt;
+          {children}
+        &lt;/ClientRoot&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Svelte -->
+      <section id="frameworks-svelte" class="doc-section">
+        <h2>🧡 Svelte Store Integration (`locl-js/svelte`)</h2>
+        <p>Wraps any <code>LocL</code> translator into a native Svelte readable store supporting <code>$t()</code> auto-subscription in Svelte 4 and Svelte 5:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>svelte — src/App.svelte</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-html"><code class="language-html">&lt;script lang="ts"&gt;
+  import { createLocLSvelte } from "locl-js/svelte";
+  import { translator } from "./i18n";
+
+  // Creates auto-subscribing readable store
+  const t = createLocLSvelte(translator);
+&lt;/script&gt;
+
+&lt;!-- Reactive $t prefix --&gt;
+&lt;main&gt;
+  &lt;h1&gt;{$t("welcome", { name: "Svelte" })}&lt;/h1&gt;
+  &lt;button on:click={() =&gt; translator.changeLanguage("de")}&gt;Deutsch&lt;/button&gt;
+&lt;/main&gt;</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Vue -->
+      <section id="frameworks-vue" class="doc-section">
+        <h2>💚 Vue 3 Composable Integration (`locl-js/vue`)</h2>
+        <p>Seamless Composition API bindings integrating into Vue's reactivity graph:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>vue — src/App.vue</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-html"><code class="language-html">&lt;script setup lang="ts"&gt;
+import { shallowRef } from "vue";
+import { createLocLVue } from "locl-js/vue";
+import { translator } from "./i18n";
+
+// Binds into Vue's reactivity system
+const { t, language } = createLocLVue(translator, shallowRef);
+&lt;/script&gt;
+
+&lt;template&gt;
+  &lt;main&gt;
+    &lt;h1&gt;{{ t("welcome", { name: "Vue" }) }}&lt;/h1&gt;
+    &lt;p&gt;Active Locale: {{ language }}&lt;/p&gt;
+    &lt;button @click="translator.changeLanguage('es')"&gt;Español&lt;/button&gt;
+  &lt;/main&gt;
+&lt;/template&gt;</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Vite -->
+      <section id="frameworks-vite" class="doc-section">
+        <h2>⚡ Vite Plugin &amp; Hot Module Replacement (`locl-js/vite`)</h2>
+        <p>Hot-reloads translation JSON files in development via WebSocket without full page refreshes:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — vite.config.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { defineConfig } from "vite";
+import { loclVitePlugin } from "locl-js/vite";
+
+export default defineConfig({
+  plugins: [
+    loclVitePlugin({ localesDir: "locales" })
+  ]
+});</code></pre>
+        </div>
+
+        <p>In client code:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — src/i18n.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { initLocL } from "locl-js";
+import { setupLocLHmr } from "locl-js/vite";
+
+export const translator = initLocL({ /* ... */ });
+
+if (import.meta.hot) {
+  setupLocLHmr(translator, import.meta.hot);
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Solid -->
+      <section id="frameworks-solid" class="doc-section">
+        <h2>🔷 Solid.js &amp; Vanilla JavaScript</h2>
+        <p>LocL implements the standard reactive store contract via <code>translator.subscribe()</code>:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">// Vanilla JS / Node.js
+const unsubscribe = translator.subscribe((newLang, prevLang, meta) =&gt; {
+  console.log(`Language changed from ${prevLang} to ${newLang} (Direction: ${meta.direction})`);
+});
+
+translator.changeLanguage("fr");
+unsubscribe();</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Built-in Formatters -->
+      <section id="formatters" class="doc-section">
+        <h2>📋 Built-in Formatters</h2>
+        <p>Native <code>Intl</code> pipelines with zero third-party dependencies:</p>
+
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Formatter</th>
+                <th>Description</th>
+                <th>Example Syntax</th>
+                <th>Output</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>list</code></td>
+                <td>Native <code>Intl.ListFormat</code> for arrays</td>
+                <td><code>{users \| list:en,conjunction}</code></td>
+                <td><code>"Alice, Bob, and Charlie"</code></td>
+              </tr>
+              <tr>
+                <td><code>languageName</code></td>
+                <td>Localized language display name via <code>Intl.DisplayNames</code></td>
+                <td><code>{lang \| languageName:en}</code></td>
+                <td><code>"German"</code></td>
+              </tr>
+              <tr>
+                <td><code>regionName</code></td>
+                <td>Localized country/region display name</td>
+                <td><code>{country \| regionName:en}</code></td>
+                <td><code>"United States"</code></td>
+              </tr>
+              <tr>
+                <td><code>currencyName</code></td>
+                <td>Localized currency display name</td>
+                <td><code>{curr \| currencyName:en}</code></td>
+                <td><code>"US Dollar"</code></td>
+              </tr>
+              <tr>
+                <td><code>displayName</code></td>
+                <td>Generic <code>Intl.DisplayNames</code> resolver</td>
+                <td><code>{code \| displayName:language,fr}</code></td>
+                <td><code>"allemand"</code></td>
+              </tr>
+              <tr>
+                <td><code>currency</code></td>
+                <td><code>Intl.NumberFormat</code> currency</td>
+                <td><code>{val \| currency:EUR,de-DE}</code></td>
+                <td><code>"1.234,56 €"</code></td>
+              </tr>
+              <tr>
+                <td><code>date</code></td>
+                <td><code>Intl.DateTimeFormat</code> date/time</td>
+                <td><code>{val \| date:en-US,short}</code></td>
+                <td><code>"10/16/26"</code></td>
+              </tr>
+              <tr>
+                <td><code>relativeDate</code></td>
+                <td>Formats relative time</td>
+                <td><code>{val \| relativeDate:en-US}</code></td>
+                <td><code>"2 days ago"</code></td>
+              </tr>
+              <tr>
+                <td><code>upper</code></td>
+                <td>Uppercase string</td>
+                <td><code>{val \| upper}</code></td>
+                <td><code>"HELLO"</code></td>
+              </tr>
+              <tr>
+                <td><code>lower</code></td>
+                <td>Lowercase string</td>
+                <td><code>{val \| lower}</code></td>
+                <td><code>"hello"</code></td>
+              </tr>
+              <tr>
+                <td><code>trim</code></td>
+                <td>Strip leading/trailing whitespace</td>
+                <td><code>{val \| trim}</code></td>
+                <td><code>"hello"</code></td>
+              </tr>
+              <tr>
+                <td><code>truncate</code></td>
+                <td>Truncate string with suffix</td>
+                <td><code>{val \| truncate:10,...}</code></td>
+                <td><code>"Hello..."</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Chaining -->
+      <section id="formatters-chaining" class="doc-section">
+        <h2>⛓️ Multi-Pipe Formatter Chaining</h2>
+        <p>Chain multiple formatters sequentially from left to right using pipe (<code>|</code>) operators:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">const en = {
+  user: "User: {name | trim | upper | truncate:8, ...}"
+};
+
+// Input: "   alexander   "
+// Step 1: trim     -&gt; "alexander"
+// Step 2: upper    -&gt; "ALEXANDER"
+// Step 3: truncate -&gt; "ALEXA..."
+translator.t("user", { name: "   alexander   " }); 
+// =&gt; "User: ALEXA..."</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Remote Loader -->
+      <section id="remote-loader" class="doc-section">
+        <h2>📡 Over-The-Air (OTA) Remote Loader (`createRemoteLoader`)</h2>
+        <p>Deliver continuous translation updates from a CDN or backend API without deploying new application releases using Stale-While-Revalidate (SWR):</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { initLocL, createRemoteLoader } from "locl-js";
+
+const loader = createRemoteLoader({
+  endpoint: "https://cdn.example.com/locales/{lang}/{ns}.json",
+  storage: "localStorage", // "localStorage", "sessionStorage", "memory", or custom
+  maxAge: 1000 * 60 * 60 * 24, // 24 hours
+  staleWhileRevalidate: true,
+  onSuccess: (lang, ns, data) =&gt; {
+    console.log(`[OTA] Updated translations for ${lang}`);
+  }
+});
+
+export const translator = initLocL({
+  resources: { en: initialFallback },
+  fallbackLanguage: "en",
+  loader
+});
+
+// Clear cache on tenant switch or logout:
+await loader.clearCache();</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Detector -->
+      <section id="detector" class="doc-section">
+        <h2>🌐 Language Detection &amp; Route Middleware (`locl-js/detector`)</h2>
+        <p>Universal browser detection, RFC 7231 <code>Accept-Language</code> parsing, BCP 47 negotiation, and Web Standard routing middleware:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — middleware.ts (Next.js App Router / Astro)</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { createI18nMiddleware } from "locl-js/detector";
+
+export const middleware = createI18nMiddleware({
+  locales: ["en", "de", "fr"],
+  defaultLocale: "en",
+  prefixStrategy: "as-needed", // "/dashboard" for default, "/de/dashboard" for German
+  cookieName: "NEXT_LOCALE"
+});
+
+export const config = {
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"]
+};</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Migration -->
+      <section id="migration" class="doc-section">
+        <h2>🔄 Migrating from i18next (`locl-js/compat`)</h2>
+        <p>Migrate existing <code>i18next</code> codebases with zero callsites refactored:</p>
+
+        <div class="code-wrapper">
+          <div class="code-header">
+            <span>typescript — src/i18n.ts</span>
+            <button class="copy-btn"><span>📋 Copy</span></button>
+          </div>
+          <pre class="language-typescript"><code class="language-typescript">import { initLocL, defineResources } from "locl-js";
+import { toI18next } from "locl-js/compat";
+
+const locl = initLocL({ resources, fallbackLanguage: "en" });
+
+// Drop-in i18next instance:
+export const i18n = toI18next(locl);
+export default i18n;
+
+// Colon namespace &amp; plural conventions work 100% out of the box:
+i18n.t("auth:login");
+i18n.t("cart", { count: 3 });</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: API Reference -->
+      <section id="api-reference" class="doc-section">
+        <h2>📑 Full API Reference</h2>
+        <p>Exhaustive TypeScript API reference for all exported modules in LocL.js v2.5.0.</p>
+
+        <h3>Core Package (`locl-js`)</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">initLocL&lt;T, Fallback, S, F, Strict&gt;</span>(config: LocLConfig): LocL
+          </div>
+          <p>Initializes and returns a new <code>LocL</code> translator instance with pre-compiled template plans.</p>
+          <table class="param-table">
+            <thead><tr><th>Parameter</th><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>config</code></td><td><span class="type-pill">LocLConfig</span></td><td>Configuration options including resources, fallbackLanguage, loader, formatters, and telemetry hooks.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">defineResources</span>&lt;const T&gt;(resources: T): T
+          </div>
+          <p>Identity helper that preserves literal string types without requiring manual <code>as const</code> annotations.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">defineStrictResources</span>&lt;const T&gt;(resources: T): T
+          </div>
+          <p>Identity helper that enforces complete translation parity across all secondary languages against the fallback language at compile time.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">createRemoteLoader</span>(options: RemoteLoaderOptions): RemoteLoaderInstance
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Creates an Over-The-Air remote translation loader featuring Stale-While-Revalidate (SWR) caching and offline resilience.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">flattenDictionary</span>(obj: Record&lt;string, any&gt;): Record&lt;string, any&gt;
+          </div>
+          <p>Flattens a deeply nested dictionary into a single-level dot-notated object while preserving plural objects (<code>{ one, other }</code>).</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">unflattenDictionary</span>(flat: Record&lt;string, any&gt;): Record&lt;string, any&gt;
+          </div>
+          <p>Reconstructs deeply nested dictionary objects from dot-notated keys while protecting against prototype pollution.</p>
+        </div>
+
+        <h3>`LocL` Instance Methods</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.t</span>(key: string, values?: object, format?: object): string
+          </div>
+          <p>Translates a key, handles interpolation, formatters, ICU inline plurals, and exact quantity rules.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.plural</span>(key: string, values: { count: number }, format?: object): string
+          </div>
+          <p>Translates a key with cardinal plural rule evaluation.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.ordinal</span>(key: string, values: { count: number }, format?: object): string
+          </div>
+          <p>Translates a key using native ordinal rules (<code>1st</code>, <code>2nd</code>, <code>3rd</code>).</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.changeLanguage</span>(lang: string): void
+          </div>
+          <p>Updates active language, synchronizes document attributes in browser, and notifies subscribers.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.getDirection</span>(lang?: string): "ltr" | "rtl"
+          </div>
+          <p>Returns the script direction (<code>"ltr"</code> or <code>"rtl"</code>) for the active or queried locale.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.withConfig</span>(config: { scope?: string | string[], language?: string }): LocL
+          </div>
+          <p>Returns a lightweight, cached proxy instance scoped to a namespace or pinned to a specific language.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translator.subscribe</span>(listener: (newLang, prevLang, meta) =&gt; void): () =&gt; void
+          </div>
+          <p>Subscribes to language and resource updates. Returns an unsubscribe function.</p>
+        </div>
+
+        <h3>React Bindings (`locl-js/react`)</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">createLocLReact</span>(translator: LocL): LocLReactSuite
+          </div>
+          <p>Returns a pre-bound React suite containing <code>LocLProvider</code>, <code>useTranslation</code>, <code>useLocL</code>, <code>Trans</code>, <code>Hydrate</code>, <code>Link</code>, and <code>useLocalizedPath</code>.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">&lt;LocLHydrate state={dehydratedState} /&gt;</span>
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Embeds the server's dehydrated JSON payload and initializes client translator resources without UI layout shifts.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">&lt;Link href="..." locale? prefixStrategy? /&gt;</span>
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Localization-aware anchor element that automatically rewrites internal links according to routing prefix strategies.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">useLocalizedPath</span>(prefixStrategy?: PrefixStrategy): (pathname, localeOverride?) =&gt; string
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>React hook returning a helper function to generate localized URL paths.</p>
+        </div>
+
+        <h3>Server &amp; RSC (`locl-js/server`)</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">createLocLServer</span>(translator: LocL, options?: object): LocLServerSuite
+          </div>
+          <p>Factory returning request-isolated server utilities (<code>getTranslator</code>, <code>runWithLocale</code>, <code>getLocale</code>, <code>setLocale</code>).</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">dehydrate</span>(translatorOrSuite?: LocL | ServerTranslator | LocLServerSuite): DehydratedLocLState
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Serializes active server translator state, locale, resources, and direction into a payload for client hydration.</p>
+        </div>
+
+        <h3>Framework Adapters</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">createLocLSvelte</span>(translator: LocL): SvelteReadableStore
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Exported from <code>locl-js/svelte</code>. Wraps a translator into a native Svelte readable store supporting <code>$t()</code> auto-subscription in Svelte 4 & 5.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">createLocLVue</span>(translator: LocL, shallowRefFn?: Function): VueComposable
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Exported from <code>locl-js/vue</code>. Wraps a translator into a Vue 3 Composition API composable exposing <code>{ t, language, translator }</code>.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">loclVitePlugin</span>(options?: LocLVitePluginOptions): VitePlugin
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Exported from <code>locl-js/vite</code>. Vite development plugin that watches locale JSON files and pushes <code>locl:update</code> HMR WebSocket events.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">setupLocLHmr</span>(translator: any, hot: any): () =&gt; void
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Exported from <code>locl-js/vite</code>. Client development helper that connects <code>import.meta.hot</code> to hot-reload translations live in the browser.</p>
+        </div>
+
+        <h3>CLI Tooling (`locl-js/cli`)</h3>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">translateTranslations</span>(options: TranslateOptions): Promise&lt;TranslateResult&gt;
+            <span class="tag-badge badge-new">New in 2.5.0</span>
+          </div>
+          <p>Programmatically triggers machine translation for missing keys using DeepL, OpenAI, Google, Ollama, or custom translators with smart token masking.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">checkTranslations</span>(options: CheckOptions): CheckResult
+          </div>
+          <p>Verifies translation parity, missing keys, extraneous keys, and deep parameter/tag matching (<code>lintParams: true</code>) across languages in CI.</p>
+        </div>
+
+        <div class="api-card">
+          <div class="api-signature">
+            <span class="api-method-name">extractKeys</span>(options: ExtractOptions): Promise&lt;ExtractResult&gt;
+          </div>
+          <p>Scans codebases and synchronizes translation keys into JSON dictionaries.</p>
+        </div>
+      </section>
+    </main>
+
+  <!-- Search Modal Backdrop -->
+  <div class="search-modal-backdrop" id="searchModalBackdrop">
+    <div class="search-modal">
+      <input type="text" class="search-modal-input" id="searchInput" placeholder="Search documentation, methods, and flags..." autocomplete="off">
+      <ul class="search-results-list" id="searchResultsList"></ul>
+    </div>
+  </div>
+
+  <script src="./prism.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

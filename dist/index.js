@@ -1,4 +1,6 @@
 // src/formatters.ts
+var listFormatCache = /* @__PURE__ */ new Map();
+var displayNamesCache = /* @__PURE__ */ new Map();
 var defaultFormatters = {
   /**
    * Converts a string to uppercase.
@@ -170,6 +172,107 @@ var defaultFormatters = {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padEnd(length, fill);
+  },
+  /**
+   * Formats a list of items using native `Intl.ListFormat`.
+   * @example
+   * `{users | list}` -> "Alice, Bob, and Charlie"
+   * `{users | list:de,disjunction}` -> "Alice, Bob oder Charlie"
+   */
+  list: (val, args = []) => {
+    const locales = args[0] || void 0;
+    const type = args[1] || "conjunction";
+    const style = args[2] || "long";
+    const items = Array.isArray(val) ? val.map((v) => String(v)) : [String(val)];
+    const key = `${locales || "default"}::${type}::${style}`;
+    let fmt = listFormatCache.get(key);
+    if (!fmt) {
+      fmt = new Intl.ListFormat(locales, { type, style });
+      listFormatCache.set(key, fmt);
+    }
+    return fmt.format(items);
+  },
+  /**
+   * Formats a language code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{lang | languageName:en}` -> "German"
+   * `{lang | languageName:de}` -> "Deutsch"
+   */
+  languageName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::language`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "language" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Formats a region/country code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{country | regionName:en}` -> "United States"
+   */
+  regionName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::region`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "region" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Formats a currency code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{curr | currencyName:en}` -> "US Dollar"
+   */
+  currencyName: (val, args = []) => {
+    const locale = args[0] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::currency`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "currency" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+  /**
+   * Generalized display name resolver using `Intl.DisplayNames`.
+   * @example
+   * `{code | displayName:language,en}`
+   */
+  displayName: (val, args = []) => {
+    const type = args[0] || "language";
+    const locale = args[1] || void 0;
+    const code = String(val);
+    const key = `${locale || "default"}::${type}`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
   }
 };
 
@@ -768,6 +871,8 @@ var LocL = class _LocL {
         output += this.evaluateVariableChunk(chunk, values);
       } else if (chunk.type === "select") {
         output += this.evaluateSelectChunk(chunk, values);
+      } else if (chunk.type === "plural") {
+        output += this.evaluateInlinePluralChunk(chunk, values);
       }
     }
     if (this.pseudoOptions?.enabled && !isNested) {
@@ -821,12 +926,29 @@ var LocL = class _LocL {
               const cases = this.parseSelectCases(selectMatch[2], isPseudo && useAccents);
               chunks.push({ type: "select", field, cases });
             } else {
-              const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
-              const formatters = pipeParts.map((segment) => {
-                const colonIdx = segment.indexOf(":");
-                return colonIdx === -1 ? { name: segment.trim(), args: [] } : { name: segment.slice(0, colonIdx).trim(), args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim()) };
-              });
-              chunks.push({ type: "var", name, raw, formatters });
+              const pluralMatch = inner.match(/^\s*([^,]+),\s*plural\s*,\s*([\s\S]+)$/);
+              if (pluralMatch) {
+                const field = pluralMatch[1].trim();
+                let body = pluralMatch[2];
+                let offset = 0;
+                const offsetMatch = body.match(/^\s*offset\s*:\s*(\d+)\s*([\s\S]+)$/);
+                if (offsetMatch) {
+                  offset = parseInt(offsetMatch[1], 10);
+                  body = offsetMatch[2];
+                }
+                const cases = this.parseSelectCases(body, isPseudo && useAccents);
+                chunks.push({ type: "plural", field, cases, offset });
+              } else {
+                const [name, ...pipeParts] = inner.split("|").map((s) => s.trim());
+                const formatters = pipeParts.map((segment) => {
+                  const colonIdx = segment.indexOf(":");
+                  return colonIdx === -1 ? { name: segment.trim(), args: [] } : {
+                    name: segment.slice(0, colonIdx).trim(),
+                    args: segment.slice(colonIdx + 1).split(",").map((a) => a.trim())
+                  };
+                });
+                chunks.push({ type: "var", name, raw, formatters });
+              }
             }
             lastIndex = i + 1;
             start = -1;
@@ -879,6 +1001,25 @@ var LocL = class _LocL {
   evaluateSelectChunk(chunk, values) {
     const val = values ? String(values[chunk.field] ?? "other") : "other";
     const caseText = chunk.cases[val] ?? chunk.cases.other ?? "";
+    return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
+  }
+  evaluateInlinePluralChunk(chunk, values) {
+    const rawCount = values ? values[chunk.field] : void 0;
+    const count = typeof rawCount === "number" ? rawCount : Number(rawCount) || 0;
+    const countForRules = count - chunk.offset;
+    const exactKey = `=${count}`;
+    let caseText;
+    if (exactKey in chunk.cases) {
+      caseText = chunk.cases[exactKey];
+    } else {
+      const category = this.getPluralRules(this.language, "cardinal").select(countForRules);
+      caseText = chunk.cases[category] ?? chunk.cases.other ?? "";
+    }
+    if (caseText.includes("#")) {
+      const formattedNum = this.getNumberFormat(this.language).format(countForRules);
+      caseText = caseText.replace(/(^|[^\\])#/g, (_match, prefix) => `${prefix}${formattedNum}`);
+      caseText = caseText.replace(/\\#/g, "#");
+    }
     return caseText.includes("{") ? this.evaluateTemplate(caseText, values, true) : caseText;
   }
   parseSelectCases(casesBody, pseudoAccents = false) {
@@ -1315,6 +1456,122 @@ var LocL = class _LocL {
   }
 };
 
+// src/loader.ts
+var memoryStore = /* @__PURE__ */ new Map();
+function resolveStorage(type) {
+  if (type && typeof type === "object") {
+    return type;
+  }
+  if (type === "sessionStorage" && typeof window !== "undefined" && window.sessionStorage) {
+    return {
+      getItem: (k) => window.sessionStorage.getItem(k),
+      setItem: (k, v) => window.sessionStorage.setItem(k, v),
+      removeItem: (k) => window.sessionStorage.removeItem(k)
+    };
+  }
+  if ((type === "localStorage" || type === void 0) && typeof window !== "undefined" && window.localStorage) {
+    return {
+      getItem: (k) => window.localStorage.getItem(k),
+      setItem: (k, v) => window.localStorage.setItem(k, v),
+      removeItem: (k) => window.localStorage.removeItem(k)
+    };
+  }
+  return {
+    getItem: (k) => memoryStore.get(k) ?? null,
+    setItem: (k, v) => {
+      memoryStore.set(k, v);
+    },
+    removeItem: (k) => {
+      memoryStore.delete(k);
+    }
+  };
+}
+function createRemoteLoader(options) {
+  const prefix = options.storagePrefix ?? "locl_ota_";
+  const maxAge = options.maxAge ?? 864e5;
+  const swr = options.staleWhileRevalidate !== false;
+  const storage = resolveStorage(options.storage);
+  const fetchFn = options.fetch ?? (typeof fetch !== "undefined" ? fetch : void 0);
+  function getCacheKey(lang, ns) {
+    return `${prefix}${lang}_${ns ?? "root"}`;
+  }
+  function resolveUrl(lang, ns) {
+    if (typeof options.endpoint === "function") {
+      return options.endpoint(lang, ns);
+    }
+    let url = options.endpoint.replace(/\{lang\}/g, encodeURIComponent(lang));
+    if (ns) {
+      url = url.replace(/\{ns\}/g, encodeURIComponent(ns));
+    } else {
+      url = url.replace(/\/?\{ns\}/g, "");
+    }
+    return url;
+  }
+  async function fetchFresh(lang, ns) {
+    if (!fetchFn) {
+      throw new Error("[LocL/remoteLoader] No fetch implementation available.");
+    }
+    const url = resolveUrl(lang, ns);
+    let headers = {};
+    if (options.headers) {
+      headers = typeof options.headers === "function" ? await options.headers() : options.headers;
+    }
+    const res = await fetchFn(url, { headers });
+    if (!res.ok) {
+      throw new Error(`[LocL/remoteLoader] HTTP ${res.status} ${res.statusText} fetching "${url}"`);
+    }
+    const data = await res.json();
+    const payload = data && typeof data === "object" && !Array.isArray(data) ? data : {};
+    await storage.setItem(getCacheKey(lang, ns), JSON.stringify({
+      timestamp: Date.now(),
+      data: payload
+    }));
+    options.onSuccess?.(lang, ns, payload);
+    return payload;
+  }
+  const loader = async function load(lang, ns) {
+    const key = getCacheKey(lang, ns);
+    let cachedRecord = null;
+    try {
+      const raw = await storage.getItem(key);
+      if (raw) {
+        cachedRecord = JSON.parse(raw);
+      }
+    } catch {
+    }
+    if (cachedRecord && typeof cachedRecord.timestamp === "number" && cachedRecord.data) {
+      const isExpired = Date.now() - cachedRecord.timestamp > maxAge;
+      if (!isExpired) {
+        return cachedRecord.data;
+      }
+      if (swr) {
+        fetchFresh(lang, ns).catch((err) => {
+          options.onError?.(err instanceof Error ? err : new Error(String(err)), lang, ns);
+        });
+        return cachedRecord.data;
+      }
+    }
+    try {
+      return await fetchFresh(lang, ns);
+    } catch (err) {
+      if (cachedRecord?.data) {
+        return cachedRecord.data;
+      }
+      const error = err instanceof Error ? err : new Error(String(err));
+      options.onError?.(error, lang, ns);
+      throw error;
+    }
+  };
+  loader.clearCache = async (lang, ns) => {
+    if (lang) {
+      await storage.removeItem?.(getCacheKey(lang, ns));
+    } else {
+      memoryStore.clear();
+    }
+  };
+  return loader;
+}
+
 // src/index.ts
 function initLocL(config) {
   return new LocL(config);
@@ -1378,6 +1635,7 @@ function unflattenDictionary(flat) {
 }
 export {
   LocL,
+  createRemoteLoader,
   defineFastResources,
   defineResources,
   defineStrictResources,

@@ -2,9 +2,10 @@ import { extractKeys, type ExtractOptions, type ExtractResult } from "./extract.
 import { checkTranslations, type CheckOptions, type CheckResult } from "./check.js";
 import { compileTranslations, type CompileOptions, type CompileResult } from "./compile.js";
 import { getTranslationStatus, type StatusOptions, type StatusResult } from "./status.js";
+import { translateTranslations, maskTokens, unmaskTokens, translateBatchWithProvider, type TranslateOptions, type TranslateResult, type TranslationProvider } from "./translate.js";
 
-export { extractKeys, checkTranslations, compileTranslations, getTranslationStatus };
-export type { ExtractOptions, ExtractResult, CheckOptions, CheckResult, CompileOptions, CompileResult, StatusOptions, StatusResult };
+export { extractKeys, checkTranslations, compileTranslations, getTranslationStatus, translateTranslations, maskTokens, unmaskTokens, translateBatchWithProvider };
+export type { ExtractOptions, ExtractResult, CheckOptions, CheckResult, CompileOptions, CompileResult, StatusOptions, StatusResult, TranslateOptions, TranslateResult };
 
 export async function runCli(argv: string[] = process.argv.slice(2)): Promise<number> {
   const command = argv[0];
@@ -17,21 +18,26 @@ Usage:
   locl <command> [options]
 
 Commands:
-  extract    Scans source files (.ts, .tsx, .vue, .svelte) and syncs keys to JSON
-  check      Verifies translation parity across secondary languages in CI
-  status     Displays visual coverage matrix and percentage completion
-  compile    Ahead-of-Time (AOT) compiles dictionaries into optimized bundles
+  extract      Scans source files (.ts, .tsx, .vue, .svelte) and syncs keys to JSON
+  check        Verifies translation parity across secondary languages in CI
+  status       Displays visual coverage matrix and percentage completion
+  translate    Automated AI/machine translation for missing keys (DeepL, OpenAI, Google, Ollama)
+  compile      Ahead-of-Time (AOT) compiles dictionaries into optimized bundles
 
 Options:
+  --target, -t     Target languages for translation (e.g. es,de,fr)
+  --provider, -p   Translation provider: deepl | openai | google | ollama (default: deepl)
+  --api-key, -k    API key override for provider
   --src, -s        Source directory to scan (default: src, app, components)
   --locales, -l    Locales directory (default: locales)
   --base, -b       Base language code (default: en)
   --output, -o     Output file path
   --format, -f     Compilation format: ts | esm | cjs | json (default: ts)
   --fix            Auto-adds missing keys to secondary languages
+  --force          Forces re-translation of existing keys
   --strict         Fails if extraneous or empty keys are found
   --clean          Removes orphaned keys from translation file
-  --dry-run        Runs extraction without writing to disk
+  --dry-run        Runs extraction/translation without writing to disk
   --flat           Generates single-level dot keys
   --version, -v    Displays version
 `);
@@ -39,7 +45,7 @@ Options:
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("2.4.0");
+    console.log("2.5.0");
     return 0;
   }
 
@@ -54,6 +60,9 @@ Options:
   const src = parseFlag("--src") || parseFlag("-s");
   const output = parseFlag("--output") || parseFlag("-o");
   const format = (parseFlag("--format") || parseFlag("-f") || "ts") as CompileOptions["format"];
+  const target = parseFlag("--target") || parseFlag("-t");
+  const provider = (parseFlag("--provider") || parseFlag("-p") || "deepl") as TranslationProvider;
+  const apiKey = parseFlag("--api-key") || parseFlag("-k");
 
   try {
     if (command === "extract") {
@@ -78,7 +87,8 @@ Options:
         localesDir,
         baseLang,
         fix: hasFlag("--fix"),
-        strict: hasFlag("--strict")
+        strict: hasFlag("--strict"),
+        lintParams: hasFlag("--lint-params") || hasFlag("--lint")
       });
 
       console.log(`\nLocL Parity Report (Base: ${res.baseLang}, ${res.totalBaseKeys} keys):`);
@@ -91,10 +101,33 @@ Options:
       }
 
       if (!res.success) {
-        console.error("\n❌ [LocL] Parity check failed. Use --fix to automatically backfill missing keys.");
+        console.error("\n❌ [LocL] Parity check failed. Use --fix or 'locl translate' to automatically backfill missing keys.");
         return 1;
       }
       console.log("\n✔ [LocL] All language dictionaries are in parity.");
+      return 0;
+    }
+
+    if (command === "translate") {
+      if (!target) {
+        console.error("❌ [LocL] Missing required argument: --target <locales> (e.g. locl translate --target es,de)");
+        return 1;
+      }
+      const res = await translateTranslations({
+        target,
+        localesDir,
+        baseLang,
+        provider,
+        apiKey,
+        dryRun: hasFlag("--dry-run"),
+        force: hasFlag("--force")
+      });
+
+      console.log(`\nLocL Auto-Translation Report (Provider: ${res.provider}, Base: ${res.baseLang}):`);
+      for (const [lang, info] of Object.entries(res.locales)) {
+        console.log(`  • [${lang}] Translated ${info.translated} keys (${info.skipped} skipped, ${info.total} total) -> ${info.file}`);
+      }
+      console.log("\n✔ [LocL] Auto-translation complete.");
       return 0;
     }
 

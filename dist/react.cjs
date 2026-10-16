@@ -31,11 +31,14 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/react/index.tsx
 var react_exports = {};
 __export(react_exports, {
+  Link: () => Link,
   LocLContext: () => LocLContext,
+  LocLHydrate: () => LocLHydrate,
   LocLProvider: () => LocLProvider,
   Trans: () => Trans,
   createLocLReact: () => createLocLReact,
   useLocL: () => useLocL,
+  useLocalizedPath: () => useLocalizedPath,
   useTranslation: () => useTranslation
 });
 module.exports = __toCommonJS(react_exports);
@@ -131,6 +134,25 @@ function Trans(props) {
     return renderNodes(raw, components);
   }, [raw, components]);
   return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(import_jsx_runtime.Fragment, { children: nodes });
+}
+
+// src/detector/middleware.ts
+function getLocalizedPath(pathname, locale, defaultLocale, prefixStrategy = "as-needed", locales) {
+  const cleanPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const segments = cleanPath.split("/").filter(Boolean);
+  const first = segments[0]?.toLowerCase();
+  const isLocaleInPath = locales ? locales.some((l) => l.toLowerCase() === first) : first === locale.toLowerCase() || first === defaultLocale.toLowerCase() || first !== void 0 && /^[a-z]{2}(-[a-z0-9]+)*$/i.test(first);
+  const pathWithoutLocale = isLocaleInPath ? "/" + segments.slice(1).join("/") : cleanPath;
+  if (prefixStrategy === "as-needed") {
+    if (locale.toLowerCase() === defaultLocale.toLowerCase()) {
+      return pathWithoutLocale;
+    }
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  if (prefixStrategy === "always") {
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  return pathWithoutLocale;
 }
 
 // src/react/index.tsx
@@ -244,6 +266,42 @@ function useScopedTranslation(base, scope, options) {
     ready: isReady
   };
 }
+function LocLHydrate({ state, children, translator: customTranslator }) {
+  const contextTranslator = (0, import_react2.useContext)(LocLContext);
+  const translator = customTranslator ?? contextTranslator;
+  if (translator && state) {
+    if (state.resources && state.locale && state.resources[state.locale]) {
+      translator.addResources(state.locale, state.resources[state.locale]);
+    }
+    if (state.locale && translator.getLanguage() !== state.locale) {
+      translator.changeLanguage(state.locale);
+    }
+  }
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsxs)(import_jsx_runtime2.Fragment, { children: [
+    /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(
+      "script",
+      {
+        id: "__LOCL_DATA__",
+        type: "application/json",
+        dangerouslySetInnerHTML: { __html: JSON.stringify(state) }
+      }
+    ),
+    children
+  ] });
+}
+function Link({ href, locale, prefixStrategy = "as-needed", ...rest }) {
+  const translator = (0, import_react2.useContext)(LocLContext);
+  const activeLocale = locale ?? (translator?.getLanguage() || "en");
+  const fallbackLocale = translator?.fallbackLanguage || "en";
+  const localizedHref = getLocalizedPath(href, activeLocale, fallbackLocale, prefixStrategy);
+  return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("a", { href: localizedHref, ...rest });
+}
+function useLocalizedPath(prefixStrategy = "as-needed") {
+  const translator = (0, import_react2.useContext)(LocLContext);
+  const activeLocale = translator?.getLanguage() || "en";
+  const fallbackLocale = translator?.fallbackLanguage || "en";
+  return (pathname, localeOverride) => getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+}
 function LocLProvider({ translator, children }) {
   return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(LocLContext.Provider, { value: translator, children });
 }
@@ -289,21 +347,43 @@ function createLocLReact(defaultTranslator) {
       }
     );
   }
+  function useBoundLocalizedPath(prefixStrategy = "as-needed") {
+    const contextTranslator = (0, import_react2.useContext)(BoundContext);
+    const translator = contextTranslator ?? defaultTranslator;
+    const activeLocale = translator.getLanguage();
+    const fallbackLocale = translator.fallbackLanguage;
+    return (pathname, localeOverride) => getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+  }
+  function BoundLink({ href, locale, prefixStrategy = "as-needed", ...rest }) {
+    const getPath = useBoundLocalizedPath(prefixStrategy);
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)("a", { href: getPath(href, locale), ...rest });
+  }
+  function BoundHydrate(props) {
+    const contextTranslator = (0, import_react2.useContext)(BoundContext);
+    const activeTranslator = props.translator ?? contextTranslator ?? defaultTranslator;
+    return /* @__PURE__ */ (0, import_jsx_runtime2.jsx)(LocLHydrate, { ...props, translator: activeTranslator });
+  }
   return {
     LocLContext: BoundContext,
     LocLProvider: BoundLocLProvider,
     useLocL: useBoundLocL,
     useTranslation: useBoundTranslation,
     Trans: BoundTrans,
+    Hydrate: BoundHydrate,
+    Link: BoundLink,
+    useLocalizedPath: useBoundLocalizedPath,
     translator: defaultTranslator
   };
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  Link,
   LocLContext,
+  LocLHydrate,
   LocLProvider,
   Trans,
   createLocLReact,
   useLocL,
+  useLocalizedPath,
   useTranslation
 });
