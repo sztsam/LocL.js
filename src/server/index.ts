@@ -433,3 +433,31 @@ export function getSyncTranslator<
 ): ServerTranslator<T, Fallback, any> {
   return getDefaultSuite().getSyncTranslator(scopeOrOptions as any, options);
 }
+
+
+export interface DehydratedLocLState {
+  locale: string;
+  resources: Record<string, any>;
+  direction: Direction;
+}
+
+export function dehydrate(translatorOrSuite?: LocL<any, any, any, any, any, any> | ServerTranslator<any, any, any> | LocLServerSuite<any, any>): DehydratedLocLState {
+  let activeTranslator: LocL<any, any, any, any, any, any> | null = null;
+  if (translatorOrSuite && "translator" in translatorOrSuite && translatorOrSuite.translator instanceof LocL) {
+    activeTranslator = translatorOrSuite.translator;
+  } else if (translatorOrSuite instanceof LocL) {
+    activeTranslator = translatorOrSuite;
+  } else if (defaultServerInstance) {
+    activeTranslator = defaultServerInstance.translator;
+  }
+
+  const locale = activeTranslator ? activeTranslator.getLanguage() : getLocale();
+  const resources = activeTranslator ? { [locale]: (activeTranslator as any).resources?.[locale] ?? {} } : {};
+  const direction = activeTranslator ? activeTranslator.getDirection(locale) : "ltr";
+
+  return {
+    locale,
+    resources,
+    direction
+  };
+}

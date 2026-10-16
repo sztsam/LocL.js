@@ -1,4 +1,6 @@
 import { initLocL } from "../src/index.js";
+import { createLocLSvelte } from "../src/svelte/index.js";
+import { createLocLVue } from "../src/vue/index.js";
 
 describe("Reactivity, Dynamic Resources, and Modern Features", () => {
   const resources = {
@@ -95,5 +97,29 @@ describe("Reactivity, Dynamic Resources, and Modern Features", () => {
     });
 
     expect(chunks.join("")).toBe("Click [A:here] or read [B:more].");
+  });
+
+  it("should support Svelte store and Vue composable adapters", () => {
+    const translator = initLocL({ resources, fallbackLanguage: "en" });
+
+    // Svelte store contract
+    const svelteStore = createLocLSvelte(translator);
+    let svelteT: any;
+    const unsub = svelteStore.subscribe((t) => { svelteT = t; });
+    expect(svelteT("welcome", { name: "Svelte" })).toBe("Hello, Svelte!");
+    translator.changeLanguage("de");
+    expect(svelteT("welcome", { name: "Svelte" })).toBe("Hallo, Svelte!");
+    unsub();
+
+    // Vue composable
+    const vueStore = createLocLVue(translator);
+    expect(vueStore.language.value).toBe("de");
+    expect(vueStore.t("welcome", { name: "Vue" })).toBe("Hallo, Vue!");
+    translator.changeLanguage("en");
+    expect(vueStore.language.value).toBe("en");
+
+    // Vue with custom shallowRefFn
+    const customVue = createLocLVue(translator, (val) => ({ value: val }));
+    expect(customVue.language.value).toBe("en");
   });
 });

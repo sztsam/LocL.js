@@ -1,5 +1,5 @@
-import { a as LocL } from './LocL-Dlwcpdya.js';
-export { H as HreflangLink, I as I18nRoutingOptions, P as PrefixStrategy, R as RouteResolution, c as createI18nMiddleware, f as formatCookieHeader, g as getHreflangLinks, h as handleI18nRouting, r as resolveRouteLocale } from './middleware-CgEwKV4U.js';
+import { L as LocL } from './LocL-Dnobyznm.js';
+export { H as HreflangLink, I as I18nRoutingOptions, P as PrefixStrategy, R as RouteResolution, c as createI18nMiddleware, f as formatCookieHeader, g as getHreflangLinks, a as getLocalizedPath, h as handleI18nRouting, r as resolveRouteLocale } from './middleware-DHb1prPZ.js';
 
 type DetectorType = "querystring" | "cookie" | "localStorage" | "sessionStorage" | "navigator" | "htmlTag" | (string & {});
 interface DetectorOptions {

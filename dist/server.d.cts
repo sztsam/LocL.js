@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { a as LocL, S as ScopeType, T as TranslationObjectFor, I as InterpolationOptions, N as NestedKeyOf, P as PluralKeys, c as TArgs, d as TResult, e as Language, D as Direction, f as LocaleMetadata } from './LocL-Dlwcpdya.cjs';
-export { H as HreflangLink, c as createI18nMiddleware, g as getHreflangLinks, h as handleI18nRouting, r as resolveRouteLocale } from './middleware-CgEwKV4U.cjs';
+import { L as LocL, S as ScopeType, T as TranslationObjectFor, I as InterpolationOptions, N as NestedKeyOf, P as PluralKeys, a as TArgs, b as TResult, c as Language, D as Direction, d as LocaleMetadata } from './LocL-Dnobyznm.cjs';
+export { H as HreflangLink, c as createI18nMiddleware, g as getHreflangLinks, h as handleI18nRouting, r as resolveRouteLocale } from './middleware-DHb1prPZ.cjs';
 
 /**
  * Global type registry for LocL Server.
@@ -139,5 +139,11 @@ declare function getTranslations<T extends Record<string, any> = DefaultServerRe
 declare function getSyncTranslator<T extends Record<string, any> = DefaultServerResources, Fallback extends keyof T & string = DefaultServerFallback<T>, S extends ScopeType<T, Fallback> = any>(scopeOrOptions?: S | string | string[] | GetTranslatorOptions<T, Fallback, any>, options?: {
     locale?: Language<T> | (string & {});
 }): ServerTranslator<T, Fallback, any>;
+interface DehydratedLocLState {
+    locale: string;
+    resources: Record<string, any>;
+    direction: Direction;
+}
+declare function dehydrate(translatorOrSuite?: LocL<any, any, any, any, any, any> | ServerTranslator<any, any, any> | LocLServerSuite<any, any>): DehydratedLocLState;
 
-export { type DefaultServerFallback, type DefaultServerResources, type GetTranslatorOptions, type LocLServerOptions, type LocLServerRegister, type LocLServerSuite, type ServerRequestContext, type ServerTranslator, createLocLServer, createServerTranslator, getLocale, getServerTranslator, getSyncTranslator, getTranslations, getTranslator, runWithLocale, runWithTranslator, serverStorage, setLocale, setServerTranslator };
+export { type DefaultServerFallback, type DefaultServerResources, type DehydratedLocLState, type GetTranslatorOptions, type LocLServerOptions, type LocLServerRegister, type LocLServerSuite, type ServerRequestContext, type ServerTranslator, createLocLServer, createServerTranslator, dehydrate, getLocale, getServerTranslator, getSyncTranslator, getTranslations, getTranslator, runWithLocale, runWithTranslator, serverStorage, setLocale, setServerTranslator };

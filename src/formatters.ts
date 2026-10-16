@@ -3,6 +3,10 @@
  */
 export type DefaultFormatters = typeof defaultFormatters;
 
+const listFormatCache = new Map<string, Intl.ListFormat>();
+const displayNamesCache = new Map<string, Intl.DisplayNames>();
+
+
 /**
  * A collection of default formatting functions that can be used in translations.
  * @example
@@ -193,5 +197,111 @@ export const defaultFormatters = {
     const length = parseInt(args[0]) || 0;
     const fill = args[1] || " ";
     return String(val).padEnd(length, fill);
+  },
+
+  /**
+   * Formats a list of items using native `Intl.ListFormat`.
+   * @example
+   * `{users | list}` -> "Alice, Bob, and Charlie"
+   * `{users | list:de,disjunction}` -> "Alice, Bob oder Charlie"
+   */
+  list: (val: any, args: string[] = []) => {
+    const locales = args[0] || undefined;
+    const type = (args[1] as Intl.ListFormatType) || "conjunction";
+    const style = (args[2] as Intl.ListFormatOptions["style"]) || "long";
+    const items = Array.isArray(val) ? val.map((v) => String(v)) : [String(val)];
+    const key = `${locales || "default"}::${type}::${style}`;
+    let fmt = listFormatCache.get(key);
+    if (!fmt) {
+      fmt = new Intl.ListFormat(locales, { type, style });
+      listFormatCache.set(key, fmt);
+    }
+    return fmt.format(items);
+  },
+
+  /**
+   * Formats a language code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{lang | languageName:en}` -> "German"
+   * `{lang | languageName:de}` -> "Deutsch"
+   */
+  languageName: (val: any, args: string[] = []) => {
+    const locale = args[0] || undefined;
+    const code = String(val);
+    const key = `${locale || "default"}::language`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "language" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+
+  /**
+   * Formats a region/country code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{country | regionName:en}` -> "United States"
+   */
+  regionName: (val: any, args: string[] = []) => {
+    const locale = args[0] || undefined;
+    const code = String(val);
+    const key = `${locale || "default"}::region`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "region" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+
+  /**
+   * Formats a currency code into its localized display name using `Intl.DisplayNames`.
+   * @example
+   * `{curr | currencyName:en}` -> "US Dollar"
+   */
+  currencyName: (val: any, args: string[] = []) => {
+    const locale = args[0] || undefined;
+    const code = String(val);
+    const key = `${locale || "default"}::currency`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type: "currency" });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
+  },
+
+  /**
+   * Generalized display name resolver using `Intl.DisplayNames`.
+   * @example
+   * `{code | displayName:language,en}`
+   */
+  displayName: (val: any, args: string[] = []) => {
+    const type = (args[0] as Intl.DisplayNamesOptions["type"]) || "language";
+    const locale = args[1] || undefined;
+    const code = String(val);
+    const key = `${locale || "default"}::${type}`;
+    try {
+      let dn = displayNamesCache.get(key);
+      if (!dn) {
+        dn = new Intl.DisplayNames(locale, { type });
+        displayNamesCache.set(key, dn);
+      }
+      return dn.of(code) || code;
+    } catch {
+      return code;
+    }
   }
 };

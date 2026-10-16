@@ -1,6 +1,6 @@
 {
   "name": "locl-js",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Ultra-fast, lightweight TypeScript internationalization (i18n) library with React bindings, React Server Components (RSC) support, and drop-in i18next compatibility.",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",
@@ -69,16 +69,58 @@
         "types": "./dist/cli/index.d.cts",
         "default": "./dist/cli/index.cjs"
       }
+    },
+    "./vite": {
+      "import": {
+        "types": "./dist/vite.d.ts",
+        "default": "./dist/vite.js"
+      },
+      "require": {
+        "types": "./dist/vite.d.cts",
+        "default": "./dist/vite.cjs"
+      }
+    },
+    "./svelte": {
+      "import": {
+        "types": "./dist/svelte.d.ts",
+        "default": "./dist/svelte.js"
+      },
+      "require": {
+        "types": "./dist/svelte.d.cts",
+        "default": "./dist/svelte.cjs"
+      }
+    },
+    "./vue": {
+      "import": {
+        "types": "./dist/vue.d.ts",
+        "default": "./dist/vue.js"
+      },
+      "require": {
+        "types": "./dist/vue.d.cts",
+        "default": "./dist/vue.cjs"
+      }
     }
   },
   "bin": {
     "locl": "./bin/locl.js"
   },
   "peerDependencies": {
-    "react": ">=18.0.0"
+    "react": ">=18.0.0",
+    "svelte": ">=4.0.0 || >=5.0.0",
+    "vue": ">=3.0.0",
+    "vite": ">=4.0.0 || >=5.0.0 || >=6.0.0"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    },
+    "vite": {
       "optional": true
     }
   },

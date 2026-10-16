@@ -61,6 +61,7 @@ interface RouteResolution {
     hreflangLinks?: HreflangLink[];
 }
 declare function getHreflangLinks(baseUrl: string, pathname: string, locales: readonly string[], defaultLocale: string, prefixStrategy?: PrefixStrategy): HreflangLink[];
+declare function getLocalizedPath(pathname: string, locale: string, defaultLocale: string, prefixStrategy?: PrefixStrategy, locales?: readonly string[]): string;
 declare function formatCookieHeader(name: string, value: string, options?: I18nRoutingOptions["cookieOptions"]): string;
 /**
  * Resolves routing metadata, prefix inspection, and automatic redirects for full-stack
@@ -93,4 +94,4 @@ declare function resolveRouteLocale(request: {
 declare function createI18nMiddleware(options: I18nRoutingOptions): (request: any) => Response;
 declare const handleI18nRouting: typeof createI18nMiddleware;
 
-export { type HreflangLink as H, type I18nRoutingOptions as I, type PrefixStrategy as P, type RouteResolution as R, createI18nMiddleware as c, formatCookieHeader as f, getHreflangLinks as g, handleI18nRouting as h, resolveRouteLocale as r };
+export { type HreflangLink as H, type I18nRoutingOptions as I, type PrefixStrategy as P, type RouteResolution as R, getLocalizedPath as a, createI18nMiddleware as c, formatCookieHeader as f, getHreflangLinks as g, handleI18nRouting as h, resolveRouteLocale as r };

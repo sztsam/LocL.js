@@ -94,8 +94,27 @@ function Trans(props) {
   return /* @__PURE__ */ jsx(Fragment, { children: nodes });
 }
 
+// src/detector/middleware.ts
+function getLocalizedPath(pathname, locale, defaultLocale, prefixStrategy = "as-needed", locales) {
+  const cleanPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const segments = cleanPath.split("/").filter(Boolean);
+  const first = segments[0]?.toLowerCase();
+  const isLocaleInPath = locales ? locales.some((l) => l.toLowerCase() === first) : first === locale.toLowerCase() || first === defaultLocale.toLowerCase() || first !== void 0 && /^[a-z]{2}(-[a-z0-9]+)*$/i.test(first);
+  const pathWithoutLocale = isLocaleInPath ? "/" + segments.slice(1).join("/") : cleanPath;
+  if (prefixStrategy === "as-needed") {
+    if (locale.toLowerCase() === defaultLocale.toLowerCase()) {
+      return pathWithoutLocale;
+    }
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  if (prefixStrategy === "always") {
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  return pathWithoutLocale;
+}
+
 // src/react/index.tsx
-import { jsx as jsx2 } from "react/jsx-runtime";
+import { Fragment as Fragment2, jsx as jsx2, jsxs } from "react/jsx-runtime";
 var LocLContext = createContext(null);
 function bindApi(translator) {
   return {
@@ -205,6 +224,42 @@ function useScopedTranslation(base, scope, options) {
     ready: isReady
   };
 }
+function LocLHydrate({ state, children, translator: customTranslator }) {
+  const contextTranslator = useContext2(LocLContext);
+  const translator = customTranslator ?? contextTranslator;
+  if (translator && state) {
+    if (state.resources && state.locale && state.resources[state.locale]) {
+      translator.addResources(state.locale, state.resources[state.locale]);
+    }
+    if (state.locale && translator.getLanguage() !== state.locale) {
+      translator.changeLanguage(state.locale);
+    }
+  }
+  return /* @__PURE__ */ jsxs(Fragment2, { children: [
+    /* @__PURE__ */ jsx2(
+      "script",
+      {
+        id: "__LOCL_DATA__",
+        type: "application/json",
+        dangerouslySetInnerHTML: { __html: JSON.stringify(state) }
+      }
+    ),
+    children
+  ] });
+}
+function Link({ href, locale, prefixStrategy = "as-needed", ...rest }) {
+  const translator = useContext2(LocLContext);
+  const activeLocale = locale ?? (translator?.getLanguage() || "en");
+  const fallbackLocale = translator?.fallbackLanguage || "en";
+  const localizedHref = getLocalizedPath(href, activeLocale, fallbackLocale, prefixStrategy);
+  return /* @__PURE__ */ jsx2("a", { href: localizedHref, ...rest });
+}
+function useLocalizedPath(prefixStrategy = "as-needed") {
+  const translator = useContext2(LocLContext);
+  const activeLocale = translator?.getLanguage() || "en";
+  const fallbackLocale = translator?.fallbackLanguage || "en";
+  return (pathname, localeOverride) => getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+}
 function LocLProvider({ translator, children }) {
   return /* @__PURE__ */ jsx2(LocLContext.Provider, { value: translator, children });
 }
@@ -250,20 +305,42 @@ function createLocLReact(defaultTranslator) {
       }
     );
   }
+  function useBoundLocalizedPath(prefixStrategy = "as-needed") {
+    const contextTranslator = useContext2(BoundContext);
+    const translator = contextTranslator ?? defaultTranslator;
+    const activeLocale = translator.getLanguage();
+    const fallbackLocale = translator.fallbackLanguage;
+    return (pathname, localeOverride) => getLocalizedPath(pathname, localeOverride ?? activeLocale, fallbackLocale, prefixStrategy);
+  }
+  function BoundLink({ href, locale, prefixStrategy = "as-needed", ...rest }) {
+    const getPath = useBoundLocalizedPath(prefixStrategy);
+    return /* @__PURE__ */ jsx2("a", { href: getPath(href, locale), ...rest });
+  }
+  function BoundHydrate(props) {
+    const contextTranslator = useContext2(BoundContext);
+    const activeTranslator = props.translator ?? contextTranslator ?? defaultTranslator;
+    return /* @__PURE__ */ jsx2(LocLHydrate, { ...props, translator: activeTranslator });
+  }
   return {
     LocLContext: BoundContext,
     LocLProvider: BoundLocLProvider,
     useLocL: useBoundLocL,
     useTranslation: useBoundTranslation,
     Trans: BoundTrans,
+    Hydrate: BoundHydrate,
+    Link: BoundLink,
+    useLocalizedPath: useBoundLocalizedPath,
     translator: defaultTranslator
   };
 }
 export {
+  Link,
   LocLContext,
+  LocLHydrate,
   LocLProvider,
   Trans,
   createLocLReact,
   useLocL,
+  useLocalizedPath,
   useTranslation
 };

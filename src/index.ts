@@ -1,7 +1,8 @@
 import { LocL, LocLConfig } from "./LocL.js";
+import { createRemoteLoader, RemoteLoaderOptions } from "./loader.js";
 import { ScopeType, Formatter, LangWithPlurals, EnforceParity } from "./types.js";
 
-export { LocL, type LocLConfig, type LangWithPlurals };
+export { LocL, type LocLConfig, type LangWithPlurals, createRemoteLoader, type RemoteLoaderOptions };
 
 /**
  * Initializes a new LocL instance.

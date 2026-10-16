@@ -1,4 +1,4 @@
-import { resolveRouteLocale, createI18nMiddleware, formatCookieHeader, handleI18nRouting, getHreflangLinks } from "../src/detector/middleware.js";
+import { resolveRouteLocale, createI18nMiddleware, formatCookieHeader, handleI18nRouting, getHreflangLinks, getLocalizedPath } from "../src/detector/middleware.js";
 
 describe("Next.js & Full-Stack Route Middleware Helper", () => {
   const options = {
@@ -216,6 +216,44 @@ describe("Next.js & Full-Stack Route Middleware Helper", () => {
       // Test prefixStrategy: "never" with root path "/" (exercises cleanPath || "/" fallback)
       const neverRootLinks = getHreflangLinks("https://example.com", "/", ["en", "de"], "en", "never");
       expect(neverRootLinks[0].href).toBe("https://example.com/");
+    
+      // Trailing slash in baseUrl exercises end-- and cleanBase.slice(0, end)
+      const links = getHreflangLinks("https://example.com/", "/about", ["en", "de"], "en");
+      expect(links[0].href).toBe("https://example.com/about");
+
+      // Multiple trailing slashes
+      const linksMulti = getHreflangLinks("https://example.com///", "/about", ["en", "de"], "en");
+      expect(linksMulti[0].href).toBe("https://example.com/about");
+
+      // Unknown/unmatched prefixStrategy in resolveRouteLocale exercises the else branch of strategy === "never"
+      const resUnknown = resolveRouteLocale(
+        { url: "https://example.com/about" },
+        // @ts-expect-error
+        { locales: ["en", "de"], defaultLocale: "en", prefixStrategy: "custom" }
+      );
+      expect(resUnknown.locale).toBe("en");
+    });
+
+    it("should resolve localized paths with getLocalizedPath", () => {
+      // Omit prefixStrategy to trigger default `prefixStrategy = "as-needed"`
+      expect(getLocalizedPath("/about", "de", "en")).toBe("/de/about");
+
+      // Root path "/" with "as-needed" (triggers pathWithoutLocale === "/" branch -> "/de")
+      expect(getLocalizedPath("/", "de", "en", "as-needed")).toBe("/de");
+
+      // Root path "/" with "always" (triggers pathWithoutLocale === "/" branch -> "/en")
+      expect(getLocalizedPath("/", "en", "en", "always")).toBe("/en");
+
+      // Standard paths
+      expect(getLocalizedPath("/about", "de", "en", "as-needed")).toBe("/de/about");
+      expect(getLocalizedPath("/about", "en", "en", "as-needed")).toBe("/about");
+      expect(getLocalizedPath("about", "en", "en", "as-needed")).toBe("/about");
+      expect(getLocalizedPath("/about", "de", "en", "always")).toBe("/de/about");
+      expect(getLocalizedPath("/about", "en", "en", "always")).toBe("/en/about");
+      expect(getLocalizedPath("/de/about", "en", "en", "never")).toBe("/about");
+
+      expect(getLocalizedPath("/de/about", "en", "en", "never", ["en", "de"])).toBe("/about");
+      expect(getLocalizedPath("/about", "en", "en", "never", ["en", "de"])).toBe("/about");
     });
   });
 });

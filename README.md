@@ -9,7 +9,15 @@
 ## Features ✨
 
 - **🚀 10x–20x Execution Throughput**: Compiled token cache memoizes template execution plans on first lookup, eliminating regex scanning and string splitting in the hot path.
-- **🛠️ Built-in Developer CLI (`locl`)**: Automatic key extraction from source files (`extract`), CI translation parity validation (`check`), visual coverage matrix reports (`status`), and Ahead-of-Time bundling (`compile`).
+- **🛠️ Built-in Developer CLI (`locl`)**: Automatic key extraction from source files (`extract`), CI translation parity validation (`check`), visual coverage matrix reports (`status`), automated machine translation (`translate`), and Ahead-of-Time bundling (`compile`).
+- **🤖 Automated AI & Machine Translation (`locl translate`)**: Batch translate missing keys via DeepL, OpenAI (GPT-4o), Google Cloud Translation, or local Ollama (Llama 3), with token masking ensuring `{name}` and `<bold>` tags are never altered.
+- **🛡️ Parameter & Tag Parity Linting (`locl check --lint-params`)**: CI linting that verifies variable placeholders (`{var}`) and XML/JSX tags (`<link>`) match 1:1 between base and secondary language translations.
+- **🔀 ICU Inline Plural Syntax & Offsets**: Standard ICU inline plural syntax `{count, plural, offset:1 =0 {...} one {# item} other {# items}}` with `#` number replacement, exact quantity selectors, and strict type safety.
+- **📡 Over-The-Air (OTA) Remote Loader (`createRemoteLoader`)**: High-performance remote bundle loader with Stale-While-Revalidate (SWR) caching, instant offline booting via localStorage/sessionStorage/memory, and background refreshes.
+- **⚡ Vite Plugin & Hot Module Replacement (`locl-js/vite`)**: Instant Hot Module Replacement for translation JSON dictionaries without full browser page reloads.
+- **🧡 First-Class Svelte & Vue 3 Integrations (`locl-js/svelte`, `locl-js/vue`)**: Native reactive stores and composables (`$t` in Svelte 4/5, `createLocLVue` with `ref` support).
+- **💧 SSR Hydration & Localized Links (`locl-js/react`)**: `<LocLHydrate />` for zero-flicker SSR hydration without layout shifts, alongside prefix-aware `<Link />` and `useLocalizedPath()`.
+- **📋 Extended Built-in Formatters**: Native `Intl.ListFormat` (`{items | list}`) and `Intl.DisplayNames` (`languageName`, `regionName`, `currencyName`, `displayName`).
 - **🌐 Universal Language Detector & Route Middleware (`locl-js/detector`)**: Browser detection across query parameters, cookies, storage, and navigator; RFC 7231 `Accept-Language` parsing; BCP 47 negotiation; and Web Standard middleware for Next.js App Router, Astro, and Node.js with automated prefix routing (`as-needed`, `always`, `never`) and SEO `hreflang` generation.
 - **🥇 Native Ordinal Pluralization (`1st`, `2nd`, `3rd`, `4th`)**: Support for ordinal numbers (`translator.ordinal()`) using native `Intl.PluralRules({ type: "ordinal" })` across dual-mode plural objects and suffix forms.
 - **🖥️ React Server Components & Full-Stack (`locl-js/server`)**: Headless async request isolation via Node's `AsyncLocalStorage` for React Server Components, Next.js App Router (no `"use client"`!), Astro, Remix, and backend routes.
@@ -65,6 +73,7 @@ const resources = defineResources({
       few: "{count}rd place",
       other: "{count}th place"
     },
+    liked: "{count, plural, offset:1 =0 {No likes} =1 {You liked this} other {You and # others}}",
     auth: { login: "Log In", register: "Sign Up" },
     dashboard: { welcome: "Welcome, {name}" },
   },
@@ -79,6 +88,7 @@ const resources = defineResources({
       one: "{count}er place",
       other: "{count}e place"
     },
+    liked: "{count, plural, offset:1 =0 {Aucun j'aime} =1 {Vous aimez ceci} other {Vous et # autres}}",
     auth: { login: "Se connecter", register: "S'inscrire" },
     dashboard: { welcome: "Bienvenue, {name}" },
   }
@@ -96,6 +106,10 @@ console.log(translator.t("hello", { name: "Alice" })); // "Hello, Alice!"
 console.log(translator.t("cart", { count: 0 })); // "Your cart is empty."
 console.log(translator.t("cart", { count: 1 })); // "You have 1 item."
 console.log(translator.plural("cart", { count: 5 })); // "You have 5 items."
+
+// ICU Inline Plurals with offset & # formatting
+console.log(translator.t("liked", { count: 1 })); // "You liked this"
+console.log(translator.t("liked", { count: 5 })); // "You and 4 others"
 
 // Ordinal Plurals (1st, 2nd, 3rd...)
 console.log(translator.ordinal("rank", { count: 1 })); // "1st place"
@@ -132,6 +146,7 @@ Add scripts to your `package.json`:
   "scripts": {
     "i18n:extract": "locl extract",
     "i18n:check": "locl check",
+    "i18n:translate": "locl translate",
     "i18n:status": "locl status",
     "i18n:compile": "locl compile"
   }
@@ -160,7 +175,7 @@ Extracts from:
 - Method calls: `t("key")`, `tt("key")`, `plural("key", ...)`, `ordinal("key", ...)`, `rich("key", ...)`, `get("key")`, `getObj("key")`
 - JSX components: `<Trans i18nKey="key" fallback="Default value" />`
 
-### 2. `locl check` (CI Translation Parity)
+### 2. `locl check` (CI Translation Parity & Parameter Linting)
 
 Validates that all secondary language files implement every key present in the base language dictionary. Perfect for pull requests and CI pipelines:
 
@@ -171,11 +186,62 @@ npx locl check --locales locales --base en
 # Strict mode: also fails on extraneous (orphaned) or empty string keys
 npx locl check --strict
 
+# Lint interpolation parameters and XML/JSX tags across languages
+npx locl check --lint-params
+
 # Automatically backfill missing keys from the base language
 npx locl check --fix
 ```
 
-### 3. `locl status` (Translation Matrix & Coverage)
+#### Parameter & Markup Tag Linting (`--lint-params` / `--lint`)
+
+Catches runtime bugs caused by mismatched placeholders or broken markup in translations. LocL extracts all template interpolation tokens (`{name}`, `{count | number}`) and XML/JSX tags (`<bold>`, `<link>`) from the base language and verifies that secondary languages match them exactly:
+
+```text
+LocL Parity Report (Base: en, 150 keys):
+  • [es] ✖ Parameter/Tag Mismatches detected:
+      Key: "welcome_message" -> Base params: ["name"], Target params: ["user"]
+      Key: "terms_agreement" -> Base tags: ["link"], Target tags: []
+```
+
+### 3. `locl translate` (Automated AI & Machine Translation)
+
+Automatically translates missing keys from your base language dictionary into target languages using modern AI and machine translation providers:
+
+```bash
+# Translate missing keys into Spanish and German using DeepL (default provider)
+npx locl translate --target es,de
+
+# Use OpenAI (default model: gpt-4o-mini)
+npx locl translate --target es,fr --provider openai
+
+# Use a local Ollama instance (e.g. llama3) with zero cloud dependencies or costs
+npx locl translate --target de,ja --provider ollama --model llama3
+
+# Use Google Cloud Translation API
+npx locl translate --target zh,it --provider google
+
+# Force re-translation of all keys even if already translated
+npx locl translate --target es --force
+
+# Dry run: preview translations without writing changes to disk
+npx locl translate --target es --dry-run
+```
+
+#### Supported Translation Providers & Credentials
+
+| Provider | `--provider` | Default Model / Endpoint | Environment Variable / Flag |
+| :--- | :--- | :--- | :--- |
+| **DeepL** | `deepl` *(default)* | DeepL API Free / Pro | `DEEPL_API_KEY` or `--api-key` |
+| **OpenAI** | `openai` | `gpt-4o-mini` (`--model`) | `OPENAI_API_KEY` or `--api-key` |
+| **Google Cloud** | `google` | Google Translate v2 REST API | `GOOGLE_TRANSLATE_API_KEY` or `--api-key` |
+| **Ollama** | `ollama` | `llama3` (`http://localhost:11434`) | `OLLAMA_HOST` or `--ollama-host` |
+
+#### Smart Token & Markup Masking
+
+Translation APIs often mangle variable tokens (turning `{count}` into `{cuenta}` or `{ contar }`) and corrupt markup tags (`<link>` into `<enlace>`). LocL automatically detects and shields all placeholders (`{name}`, `{{name}}`, `{var | formatter}`) and XML/JSX tags (`<bold>...</bold>`, `<br />`) with collision-proof masks (`__LOCL_TOK_0__`) before sending them to the provider, restoring them with pixel perfection in the translated result.
+
+### 4. `locl status` (Translation Matrix & Coverage)
 
 Displays a visual report of translation completion across all languages:
 
@@ -191,7 +257,7 @@ LocL Translation Coverage (Base: en, 150 keys):
   • [fr]  80% [████████████████░░░░] 120/150 keys (30 missing)
 ```
 
-### 4. `locl compile` (Ahead-of-Time Compilation)
+### 5. `locl compile` (Ahead-of-Time Compilation)
 
 Bundles JSON locale files into an optimized TypeScript or JavaScript file for production zero-overhead imports:
 
@@ -209,12 +275,35 @@ npx locl compile --format cjs --output dist/locales.cjs
 All CLI operations are available programmatically from `"locl-js/cli"`:
 
 ```typescript
-import { extractKeys, checkTranslations, compileTranslations, getTranslationStatus } from "locl-js/cli";
+import {
+  extractKeys,
+  checkTranslations,
+  compileTranslations,
+  getTranslationStatus,
+  translateTranslations,
+  maskTokens,
+  unmaskTokens,
+  translateBatchWithProvider
+} from "locl-js/cli";
 
-const checkResult = checkTranslations({ localesDir: "locales", baseLang: "en" });
+// Automated parity check in CI:
+const checkResult = checkTranslations({
+  localesDir: "locales",
+  baseLang: "en",
+  lintParams: true
+});
+
 if (!checkResult.success) {
-  console.error("Missing translations in:", checkResult.locales);
+  console.error("Missing translations or parameter mismatches:", checkResult.locales);
 }
+
+// Programmatic machine translation:
+await translateTranslations({
+  target: ["es", "de"],
+  provider: "openai",
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-4o-mini"
+});
 ```
 
 ---
@@ -514,7 +603,15 @@ export const translator = initLocL({
   fallbackLanguage: "en",
 });
 
-export const { LocLProvider, useTranslation, useLocL, Trans } = createLocLReact(translator);
+export const {
+  LocLProvider,
+  useTranslation,
+  useLocL,
+  Trans,
+  Hydrate,
+  Link,
+  useLocalizedPath
+} = createLocLReact(translator);
 ```
 
 In your application components:
@@ -622,6 +719,61 @@ Renders translations containing formatting tags (`<bold>read</bold>`, `<link hre
 
 ---
 
+### Localized Links & Routing (`<Link />` & `useLocalizedPath`)
+
+LocL provides localization-aware navigation utilities that automatically rewrite URLs to adhere to your routing prefix strategy (`"as-needed"`, `"always"`, or `"never"`):
+
+```tsx
+import { Link, useLocalizedPath } from "./i18n-react";
+
+export function Navigation() {
+  const getPath = useLocalizedPath(); // Respects active language and prefix strategy
+
+  return (
+    <nav>
+      {/* Rewrites to "/about" (if en is default) or "/de/about" (if de is active) */}
+      <Link href="/about">About Us</Link>
+
+      {/* Explicit locale override: links directly to "/es/pricing" */}
+      <Link href="/pricing" locale="es">Precios</Link>
+
+      {/* Prefix strategy override: forces prefix even on default locale ("/en/contact") */}
+      <Link href="/contact" prefixStrategy="always">Contact</Link>
+
+      {/* Programmatic path resolution */}
+      <button onClick={() => window.location.href = getPath("/dashboard")}>
+        Dashboard
+      </button>
+    </nav>
+  );
+}
+```
+
+---
+
+### SSR Hydration & Zero-Flicker Bootstrapping (`<LocLHydrate />`)
+
+When server-rendering (SSR) applications, `<LocLHydrate />` embeds the server's serialized translation payload (`__LOCL_DATA__`) and populates the client-side translator before component rendering. This prevents UI flashes of untranslated keys and eliminates hydration mismatches:
+
+```tsx
+// src/components/ClientRoot.tsx ("use client")
+import React from "react";
+import { LocLProvider, LocLHydrate } from "locl-js/react";
+import { translator } from "@/i18n";
+
+export function ClientRoot({ state, children }: { state: any; children: React.ReactNode }) {
+  return (
+    <LocLProvider translator={translator}>
+      <LocLHydrate state={state}>
+        {children}
+      </LocLHydrate>
+    </LocLProvider>
+  );
+}
+```
+
+---
+
 ## Lazy Loading & React `<Suspense>`
 
 Load translations dynamically on demand using bundler dynamic `import()` or browser `fetch()`. Supports both **monolithic bundles** (`de.json`) and **modular namespaces** (`de/dashboard.json`):
@@ -685,6 +837,70 @@ function Profile() {
   return <h1>{t("heading")}</h1>;
 }
 ```
+
+### 4. Over-The-Air (OTA) Remote Loader (`createRemoteLoader`)
+
+Deliver continuous translation updates from a CDN or translation management system without deploying new application releases. `createRemoteLoader` implements a battle-tested **Stale-While-Revalidate (SWR)** caching strategy:
+
+- **Instant Boot**: Immediately loads translations from client storage cache (`localStorage`, `sessionStorage`, or `memory`).
+- **Background Refresh**: Silently fetches updated dictionaries in the background when cached entries exceed `maxAge`.
+- **Offline Resilience**: Automatically falls back to stale cached dictionaries if network requests fail.
+
+```typescript
+import { initLocL, createRemoteLoader } from "locl-js";
+
+// Bundled fallback for instant first render
+import enFallback from "./locales/en.json";
+
+const loader = createRemoteLoader({
+  // URL template supporting {lang} and {ns} placeholders, or a custom resolver function
+  endpoint: "https://cdn.example.com/locales/{lang}/{ns}.json",
+
+  // Cache storage: "localStorage" (default in browser), "sessionStorage", "memory", or custom
+  storage: "localStorage",
+
+  // Cache TTL: 24 hours (default: 86,400,000 ms)
+  maxAge: 1000 * 60 * 60 * 24,
+
+  // Return cached content immediately while refreshing in background (default: true)
+  staleWhileRevalidate: true,
+
+  // Optional headers or authentication tokens
+  headers: () => ({
+    Authorization: `Bearer ${getAuthToken()}`
+  }),
+
+  onSuccess: (lang, ns, data) => {
+    console.log(`[OTA] Updated translations for ${lang} (${ns ?? "root"})`);
+  },
+  onError: (err, lang, ns) => {
+    console.warn(`[OTA] Failed to fetch translations for ${lang}:`, err.message);
+  }
+});
+
+export const translator = initLocL({
+  resources: { en: enFallback },
+  fallbackLanguage: "en",
+  loader
+});
+
+// Clear cache when user logs out or switches tenant
+await loader.clearCache();
+```
+
+#### `RemoteLoaderOptions` Configuration
+
+| Option | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `endpoint` | `string \| ((lang, ns?) => string)` | *Required* | Remote URL template (`{lang}`, `{ns}`) or resolver function. |
+| `storage` | `"localStorage" \| "sessionStorage" \| "memory" \| RemoteLoaderStorage` | `"localStorage"` | Storage layer used to persist cached translations. |
+| `maxAge` | `number` | `86400000` (24h) | Time in milliseconds before a cached entry is considered stale. |
+| `staleWhileRevalidate` | `boolean` | `true` | Returns stale cache instantly while fetching updates in the background. |
+| `storagePrefix` | `string` | `"locl_ota_"` | Prefix prepended to cache storage keys. |
+| `fetch` | `typeof fetch` | `globalThis.fetch` | Custom fetch polyfill or fetch wrapper. |
+| `headers` | `Record<string, string> \| (() => ...)` | `undefined` | Custom HTTP request headers or async resolver. |
+| `onSuccess` | `(lang, ns, data) => void` | `undefined` | Callback fired when fresh translations arrive. |
+| `onError` | `(err, lang, ns) => void` | `undefined` | Callback fired when remote fetch encounters an error. |
 
 ---
 
@@ -856,6 +1072,40 @@ t.format("100", "currency", ["USD"]);
 t.translator;     // Access to underlying LocL instance
 ```
 
+### 5. Server State Dehydration for Client Hydration (`dehydrate`)
+
+When building isomorphic applications (e.g. Next.js App Router with mixed Server and Client components), serialize server translator state using `dehydrate()` and pass it to client `<LocLHydrate />`:
+
+```tsx
+// app/[locale]/layout.tsx (Server Component Layout)
+import { getTranslator, dehydrate } from "@/i18n-server";
+import { ClientRoot } from "@/components/ClientRoot";
+
+export default async function RootLayout({
+  children,
+  params
+}: {
+  children: React.ReactNode;
+  params: { locale: string };
+}) {
+  const t = await getTranslator();
+  const dehydratedState = dehydrate(t); // { locale: "de", resources: { de: { ... } }, direction: "ltr" }
+
+  return (
+    <html lang={dehydratedState.locale} dir={dehydratedState.direction}>
+      <body>
+        {/* Pass dehydrated server state to client components */}
+        <ClientRoot state={dehydratedState}>
+          {children}
+        </ClientRoot>
+      </body>
+    </html>
+  );
+}
+```
+
+`dehydrate()` accepts a `LocL` translator instance, a `ServerTranslator` callable (`t`), a server suite, or automatically resolves from the default server instance.
+
 ---
 
 ## Pluralization (Categories & Exact Values)
@@ -896,6 +1146,39 @@ translator.t("item", { count: 0 }); // "No items remaining."
 translator.t("item", { count: 1 }); // "1 item remaining."
 translator.t("item", { count: 4 }); // "4 items remaining."
 ```
+
+### ICU Inline Plural Syntax & Offsets
+
+Define plurals directly inline inside string templates using standard ICU MessageFormat plural syntax. LocL compiles inline plurals into optimized chunks at runtime with zero overhead:
+
+```typescript
+const en = {
+  cart: "{count, plural, =0 {Your cart is empty} =1 {You have 1 item} other {You have # items}}",
+  liked: "{count, plural, offset:1 =0 {Nobody liked this} =1 {You liked this} one {You and # other person} other {You and # other people}}",
+  upload: "{count, plural, one {{user} uploaded # file} other {{user} uploaded # files}}"
+};
+
+// Exact and category matching with native '#' number formatting
+translator.t("cart", { count: 0 });  // "Your cart is empty"
+translator.t("cart", { count: 1 });  // "You have 1 item"
+translator.t("cart", { count: 1250 }); // "You have 1,250 items" (formatted via Intl.NumberFormat)
+
+// Offsets: subtracts offset before plural rule selection and '#' substitution
+translator.t("liked", { count: 0 }); // "Nobody liked this"
+translator.t("liked", { count: 1 }); // "You liked this"
+translator.t("liked", { count: 2 }); // "You and 1 other person" (2 - 1 = 1 -> 'one')
+translator.t("liked", { count: 6 }); // "You and 5 other people" (6 - 1 = 5 -> 'other')
+
+// Nested template variables ({user} AND {count}) are strictly typed!
+translator.t("upload", { user: "Alice", count: 3 }); // "Alice uploaded 3 files"
+```
+
+#### Key Capabilities of Inline Plurals
+
+- **`#` Number Formatting**: Replaced with the localized number formatted via `Intl.NumberFormat` for the active language. Literal `#` can be escaped as `\#`.
+- **`offset:N` Support**: Adjusts the count for category selection and `#` substitution (ideal for "You and N others" patterns).
+- **Nested Placeholders**: Embed variables and formatters (`{name | upper}`) inside any branch.
+- **Strict Compile-Time Safety**: Automatically infers `{ count: number }` plus any nested variables in TypeScript.
 
 > **Note**: Both single `{var}` and double `{{var}}` placeholders are supported across all templates.
 
@@ -1010,6 +1293,11 @@ translator.t("user", { name: "   alexander   " });
 | `boolean` | Returns "true" / "false" or custom labels | `{flag \| boolean:Active, Inactive}` |
 | `padStart` | Left pad string | `{code \| padStart:5, 0}` |
 | `padEnd` | Right pad string | `{code \| padEnd:5, _}` |
+| `list` | Formats arrays using native `Intl.ListFormat` | `{users \| list}`, `{users \| list:de,disjunction}` |
+| `languageName` | Localized language display name via `Intl.DisplayNames` | `{lang \| languageName:en}` ("German") |
+| `regionName` | Localized country/region display name via `Intl.DisplayNames` | `{country \| regionName:en}` ("United States") |
+| `currencyName` | Localized currency display name via `Intl.DisplayNames` | `{curr \| currencyName:en}` ("US Dollar") |
+| `displayName` | Generalized display name resolver via `Intl.DisplayNames` | `{code \| displayName:language,en}` |
 
 ### Custom Formatters
 
@@ -1043,10 +1331,89 @@ translator.changeLanguage("es");
 unsubscribe();
 ```
 
-- **Svelte**: Reference directly as an auto-subscribing readable store (`$translator.t("key")`).
-- **Vue**: Bind to a `shallowRef` inside `translator.subscribe()`.
-- **Solid**: Integrate with createSignal inside `translator.subscribe()`.
+- **Svelte**: Reference directly as an auto-subscribing readable store (`$t("key")`) via `locl-js/svelte`.
+- **Vue**: Bind to reactive refs via `locl-js/vue`.
+- **Solid**: Integrate with `createSignal` inside `translator.subscribe()`.
 - **Node.js**: Cleanly isolate translations per request or per session.
+
+### Svelte Store Integration (`locl-js/svelte`)
+
+`createLocLSvelte` wraps any `LocL` instance into a native Svelte readable store implementing the Svelte store contract. Compatible with both **Svelte 4** and **Svelte 5**:
+
+```svelte
+<!-- src/App.svelte -->
+<script lang="ts">
+  import { createLocLSvelte } from "locl-js/svelte";
+  import { translator } from "./i18n";
+
+  // Creates an auto-subscribing readable store
+  const t = createLocLSvelte(translator);
+</script>
+
+<!-- Use $t prefix for reactive updates on language change -->
+<main>
+  <h1>{$t("welcome", { name: "Svelte" })}</h1>
+  <button on:click={() => translator.changeLanguage("de")}>Deutsch</button>
+</main>
+```
+
+### Vue 3 Composable Integration (`locl-js/vue`)
+
+`createLocLVue` provides seamless Vue 3 Composition API bindings. Pass Vue's `shallowRef` to integrate directly into Vue's reactivity graph:
+
+```vue
+<!-- src/App.vue -->
+<script setup lang="ts">
+import { shallowRef } from "vue";
+import { createLocLVue } from "locl-js/vue";
+import { translator } from "./i18n";
+
+// Integrates directly with Vue's reactivity system
+const { t, language } = createLocLVue(translator, shallowRef);
+</script>
+
+<template>
+  <main>
+    <h1>{{ t("welcome", { name: "Vue" }) }}</h1>
+    <p>Active Locale: {{ language }}</p>
+    <button @click="translator.changeLanguage('es')">Español</button>
+  </main>
+</template>
+```
+
+### Vite Plugin & Hot Module Replacement (`locl-js/vite`)
+
+Enable instantaneous Hot Module Replacement (HMR) for translation dictionaries during development. When you edit any `.json` file in your `locales/` directory, updates are pushed via WebSocket and merged live without a full page reload:
+
+```typescript
+// vite.config.ts
+import { defineConfig } from "vite";
+import { loclVitePlugin } from "locl-js/vite";
+
+export default defineConfig({
+  plugins: [
+    loclVitePlugin({ localesDir: "locales" })
+  ]
+});
+```
+
+Connect the client-side translator to Vite's HMR bus:
+
+```typescript
+// src/i18n.ts
+import { initLocL } from "locl-js";
+import { setupLocLHmr } from "locl-js/vite";
+
+export const translator = initLocL({
+  resources: { /* initial translations */ },
+  fallbackLanguage: "en"
+});
+
+// Automatically hot-reloads translations in development
+if (import.meta.hot) {
+  setupLocLHmr(translator, import.meta.hot);
+}
+```
 
 ---
 
@@ -1201,6 +1568,7 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 ### Top-Level Exports (`locl-js`)
 
 - **`initLocL(config)`**: Creates and returns a new `LocL` translator instance. Supports `strictParams: false`, `onMissingKey`, and `pseudoLocalization`.
+- **`createRemoteLoader(options)`**: Creates an Over-The-Air (OTA) translation loader with Stale-While-Revalidate caching and offline storage fallback.
 - **`defineResources(resources)`**: Identity helper using `<const T>` to enforce compile-time literal types without `as const`.
 - **`defineStrictResources(resources)`**: Identity helper enforcing compile-time translation parity across all secondary languages against the fallback language.
 - **`defineFastResources(resources)`**: Identity helper for large dictionaries.
@@ -1212,6 +1580,7 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 
 - **`createI18nMiddleware(options)`** / **`handleI18nRouting(options)`**: Standard Web Response middleware for Next.js App Router, Astro, and edge runtimes.
 - **`resolveRouteLocale(request, options)`**: Resolves routing prefixes, redirects, rewrites, and detected locales.
+- **`getLocalizedPath(pathname, locale, defaultLocale, prefixStrategy?, locales?)`**: Helper generating localized URL paths based on prefix strategy.
 - **`getHreflangLinks(baseUrl, pathname, locales, defaultLocale, strategy)`**: Generates SEO alternate `hreflang` links.
 - **`detectBrowserLanguage(options)`**: Multi-source client-side locale detector.
 - **`detectAndMatch(supported, fallback, options)`**: Detects and negotiates the closest supported locale.
@@ -1224,15 +1593,22 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 ### CLI Exports (`locl-js/cli`)
 
 - **`extractKeys(options)`**: Scans codebases and extracts translation keys into JSON dictionaries.
-- **`checkTranslations(options)`**: Verifies translation parity, missing keys, and extraneous keys in CI.
+- **`checkTranslations(options)`**: Verifies translation parity, parameter/tag matching (`lintParams: true`), missing keys, and extraneous keys in CI.
+- **`translateTranslations(options)`**: Programmatically triggers automated AI and machine translation for missing keys (DeepL, OpenAI, Google, Ollama).
+- **`maskTokens(text)`**: Shields variable tokens (`{name}`) and XML/JSX tags (`<bold>`) as `__LOCL_TOK_N__` before sending to translation APIs.
+- **`unmaskTokens(text, tokens)`**: Restores shielded tokens into translated strings.
+- **`translateBatchWithProvider(texts, from, to, options)`**: Low-level batch translation dispatcher across supported providers.
 - **`getTranslationStatus(options)`**: Computes translation completion matrix and statistics.
 - **`compileTranslations(options)`**: Compiles JSON dictionaries into TS, ESM, CJS, or JSON bundles.
 - **`runCli(argv?)`**: Programmatic entrypoint for running the `locl` CLI.
 
 ### React Exports (`locl-js/react`)
 
-- **`createLocLReact(translator)`**: Returns a pre-bound, zero-declaration React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`, `LocLContext`).
+- **`createLocLReact(translator)`**: Returns a pre-bound, zero-declaration React suite (`LocLProvider`, `useTranslation`, `useLocL`, `Trans`, `Hydrate`, `Link`, `useLocalizedPath`, `LocLContext`).
 - **`LocLProvider`**: React Context Provider for managing the active translator.
+- **`LocLHydrate`**: Client hydration component embedding server JSON data script and synchronizing client translator resources without UI layout shift.
+- **`Link`**: Localization-aware anchor element automatically applying routing prefix strategies.
+- **`useLocalizedPath(prefixStrategy?)`**: Hook returning a path generator function `(pathname, localeOverride?) => string`.
 - **`useTranslation(scope?, options?, customTranslator?)`**: Translation hook with scope support, `<Suspense>` mode (`{ suspense: true }`), loader overrides, `ordinal()`, and `ready: boolean` status.
 - **`useLocL(customTranslator?)`**: Hook returning translator instance, active language, and bound translator APIs.
 - **`<Trans />`**: Rich JSX component interpolation supporting strict key/param validation, attributes in tags, paired/self-closing tags, nested elements, fallbacks, and scope narrowing.
@@ -1246,6 +1622,7 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 ### Server Exports (`locl-js/server`)
 
 - **`createLocLServer(translator, options?)`**: Factory returning an isolated request suite (`getTranslator`, `getTranslations`, `getSyncTranslator`, `runWithLocale`, `runWithTranslator`, `getLocale`, `setLocale`).
+- **`dehydrate(translatorOrSuite?)`**: Serializes server translator state, locale, resources, and direction into a `DehydratedLocLState` payload for client hydration.
 - **`getTranslator(scope?, options?)`**: Asynchronous request-scoped translator resolver for Server Components.
 - **`getTranslations(scope?, options?)`**: Alias of `getTranslator`.
 - **`getSyncTranslator(scope?, options?)`**: Synchronous request-scoped translator resolver.
@@ -1256,7 +1633,20 @@ console.log(multiT.t("dashboard.welcome", { name: "Alice" })); // "Welcome, Alic
 - **`setServerTranslator(translator)`**: Configures the global default server translator instance.
 - **`getServerTranslator()`**: Returns the global default server translator instance.
 - **`serverStorage`**: Direct access to the underlying `AsyncLocalStorage` instance.
-- Re-exports `resolveRouteLocale`, `createI18nMiddleware`, `handleI18nRouting`, `getHreflangLinks`.
+- Re-exports `resolveRouteLocale`, `createI18nMiddleware`, `handleI18nRouting`, `getHreflangLinks`, `getLocalizedPath`.
+
+### Svelte Exports (`locl-js/svelte`)
+
+- **`createLocLSvelte(translator)`**: Wraps any `LocL` translator into a native Svelte readable store adhering to the Svelte store contract (`$t()`).
+
+### Vue Exports (`locl-js/vue`)
+
+- **`createLocLVue(translator, shallowRefFn?)`**: Wraps any `LocL` translator into a Vue 3 reactive composable exposing `{ t, language, translator }`.
+
+### Vite Exports (`locl-js/vite`)
+
+- **`loclVitePlugin(options?)`**: Vite development plugin detecting JSON dictionary updates and dispatching `locl:update` HMR WebSocket events.
+- **`setupLocLHmr(translator, hot)`**: Client-side development helper binding Vite's `import.meta.hot` to hot-reload translations live without full page refresh.
 
 ### `LocL` Instance Methods
 

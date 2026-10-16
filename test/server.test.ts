@@ -1,5 +1,5 @@
 import { initLocL } from "../src/index.js";
-import { createLocLServer, getTranslator, getTranslations, getSyncTranslator, runWithLocale, runWithTranslator, getLocale, setLocale, setServerTranslator, getServerTranslator, resolveRouteLocale, createI18nMiddleware, handleI18nRouting, getHreflangLinks } from "../src/server/index.js";
+import { createLocLServer, getTranslator, getTranslations, getSyncTranslator, runWithLocale, runWithTranslator, getLocale, setLocale, setServerTranslator, getServerTranslator, resolveRouteLocale, createI18nMiddleware, handleI18nRouting, getHreflangLinks, dehydrate } from "../src/server/index.js";
 
 describe("Server Components & Async Request Isolation (locl-js/server)", () => {
   const resources = {
@@ -81,6 +81,24 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
     await expect(getTranslations()).rejects.toThrow(
       "[LocL/server] No server translator configured. Call `setServerTranslator(translator)` or use `createLocLServer(translator)`."
     );
+
+    // dehydrate when defaultServerInstance is null
+    const sEmpty = dehydrate();
+    expect(sEmpty.locale).toBe("en");
+    expect(sEmpty.resources).toEqual({});
+    expect(sEmpty.direction).toBe("ltr");
+
+    // dehydrate with plain object lacking translator (when defaultServerInstance is null)
+    // @ts-expect-error
+    const sPlain = dehydrate({});
+    expect(sPlain.locale).toBe("en");
+    expect(sPlain.resources).toEqual({});
+
+    // dehydrate with custom translator that has empty resources
+    const emptyTranslator = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    // @ts-expect-error
+    const sEmptyRes = dehydrate(emptyTranslator.withConfig({ language: "fr" }));
+    expect(sEmptyRes.resources.fr).toEqual({});
   });
 
   it("should isolate concurrent requests using runWithLocale", async () => {
@@ -380,5 +398,26 @@ describe("Server Components & Async Request Isolation (locl-js/server)", () => {
     const mw2 = handleI18nRouting({ locales: ["en"], defaultLocale: "en" });
     const response2 = mw2({ url: "https://example.com/" });
     expect(response2.status).toBe(200);
+  });
+
+  it("should dehydrate translator state for client hydration", async () => {
+    const translator = initLocL({ resources, fallbackLanguage: "en" });
+    const suite = createLocLServer(translator);
+    const t = await suite.getTranslator();
+
+    const s1 = dehydrate(translator);
+    expect(s1.locale).toBe("en");
+    expect(s1.resources.en).toBeDefined();
+
+    const s2 = dehydrate(suite);
+    expect(s2.locale).toBe("en");
+
+    // ServerTranslator wrapper (covers "translator" in translatorOrSuite)
+    const s3 = dehydrate(t);
+    expect(s3.locale).toBe("en");
+
+    // Default server instance
+    const s4 = dehydrate();
+    expect(s4.locale).toBe("en");
   });
 });

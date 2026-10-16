@@ -27,6 +27,7 @@ __export(detector_exports, {
   formatCookieHeader: () => formatCookieHeader,
   getAcceptedLanguages: () => getAcceptedLanguages,
   getHreflangLinks: () => getHreflangLinks,
+  getLocalizedPath: () => getLocalizedPath,
   handleI18nRouting: () => handleI18nRouting,
   matchLanguage: () => matchLanguage,
   negotiateLanguage: () => negotiateLanguage,
@@ -112,6 +113,23 @@ function getHreflangLinks(baseUrl, pathname, locales, defaultLocale, prefixStrat
     href: defaultHref
   });
   return links;
+}
+function getLocalizedPath(pathname, locale, defaultLocale, prefixStrategy = "as-needed", locales) {
+  const cleanPath = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const segments = cleanPath.split("/").filter(Boolean);
+  const first = segments[0]?.toLowerCase();
+  const isLocaleInPath = locales ? locales.some((l) => l.toLowerCase() === first) : first === locale.toLowerCase() || first === defaultLocale.toLowerCase() || first !== void 0 && /^[a-z]{2}(-[a-z0-9]+)*$/i.test(first);
+  const pathWithoutLocale = isLocaleInPath ? "/" + segments.slice(1).join("/") : cleanPath;
+  if (prefixStrategy === "as-needed") {
+    if (locale.toLowerCase() === defaultLocale.toLowerCase()) {
+      return pathWithoutLocale;
+    }
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  if (prefixStrategy === "always") {
+    return `/${locale}${pathWithoutLocale === "/" ? "" : pathWithoutLocale}`;
+  }
+  return pathWithoutLocale;
 }
 function formatCookieHeader(name, value, options) {
   const path = options?.path ?? "/";
@@ -536,6 +554,7 @@ function attachDetector(translator, options = {}) {
   formatCookieHeader,
   getAcceptedLanguages,
   getHreflangLinks,
+  getLocalizedPath,
   handleI18nRouting,
   matchLanguage,
   negotiateLanguage,

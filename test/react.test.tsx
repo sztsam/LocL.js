@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { initLocL, defineResources } from "../src/index.js";
-import { LocLProvider, useTranslation, useLocL, Trans, createLocLReact } from "../src/react/index.js";
+import { LocLProvider, useTranslation, useLocL, Trans, createLocLReact, LocLHydrate, Link, useLocalizedPath } from "../src/react/index.js";
 
 
 const resources = defineResources({
@@ -142,6 +142,37 @@ describe("React Integration", () => {
 
     expect(html).toContain('<span style="font-weight:bold">read</span>');
     expect(html).toContain('<a href="#terms">terms</a>');
+  });
+
+  it("should hydrate client state via LocLHydrate and render localized <Link>", () => {
+    const translator = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    const state = { locale: "de", resources: { de: { title: "Hallo Welt" } } };
+
+    const html = renderToStaticMarkup(
+      <LocLProvider translator={translator}>
+        <LocLHydrate state={state}>
+          <Link href="/dashboard" locale="de">Dashboard</Link>
+        </LocLHydrate>
+      </LocLProvider>
+    );
+
+    expect(html).toContain('<script id="__LOCL_DATA__"');
+    expect(html).toContain('href="/de/dashboard"');
+    expect(translator.getLanguage()).toBe("de");
+    expect(translator.tt("title")).toBe("Hallo Welt");
+
+    // suite Link and useLocalizedPath
+    const suite = createLocLReact(translator);
+    function SuiteLinkComp() {
+      const getPath = suite.useLocalizedPath();
+      return <a href={getPath("/terms")}>Terms</a>;
+    }
+    const htmlSuite = renderToStaticMarkup(
+      <suite.LocLProvider>
+        <SuiteLinkComp />
+      </suite.LocLProvider>
+    );
+    expect(htmlSuite).toContain('href="/de/terms"');
   });
 
   describe("useLocL and Trans edge cases", () => {
@@ -765,6 +796,117 @@ describe("React Integration", () => {
 
       (React.useEffect as any).mockRestore();
       errSpy.mockRestore();
+    });
+
+    it("should cover suite.Hydrate, suite.Link, and suite.useLocalizedPath inside and outside provider", () => {
+      const translator = initLocL({ resources, fallbackLanguage: "en" });
+      const suite = createLocLReact(translator);
+
+      // Inside BoundLocLProvider
+      function InProviderComponent() {
+        const getPath = suite.useLocalizedPath();
+        return (
+          <div>
+            <suite.Link href="/dashboard">Dashboard</suite.Link>
+            <suite.Link href="/settings" locale="de" prefixStrategy="always">Settings</suite.Link>
+            <p>{getPath("/profile")}</p>
+            <p>{getPath("/profile", "es")}</p>
+          </div>
+        );
+      }
+
+      const html1 = renderToStaticMarkup(
+        <suite.LocLProvider>
+          <suite.Hydrate state={{ locale: "en", resources: { en: {} } }}>
+            <InProviderComponent />
+          </suite.Hydrate>
+        </suite.LocLProvider>
+      );
+
+      expect(html1).toContain('href="/dashboard"');
+      expect(html1).toContain('href="/de/settings"');
+      expect(html1).toContain('<script id="__LOCL_DATA__"');
+
+      // Standalone outside BoundLocLProvider (verifies fallback to defaultTranslator)
+      function StandaloneComponent() {
+        const getPath = suite.useLocalizedPath("always");
+        return (
+          <div>
+            <suite.Link href="/about">About</suite.Link>
+            <p>{getPath("/contact")}</p>
+          </div>
+        );
+      }
+
+      const html2 = renderToStaticMarkup(
+        <suite.Hydrate state={{ locale: "en", resources: { en: {} } }}>
+          <StandaloneComponent />
+        </suite.Hydrate>
+      );
+
+      expect(html2).toContain('href="/about"');
+      expect(html2).toContain('/en/contact');
+    });
+
+    it("should cover LocLHydrate, Link, and useLocalizedPath standalone and edge cases", () => {
+      const translator = initLocL({ resources: { en: { title: "Title" } }, fallbackLanguage: "en" });
+
+      // LocLHydrate when language already matches (changeLanguage not called)
+      renderToStaticMarkup(
+        <LocLHydrate state={{ locale: "en", resources: { en: { title: "New Title" } } }} translator={translator} />
+      );
+
+      // LocLHydrate without state.resources[state.locale]
+      renderToStaticMarkup(
+        <LocLHydrate state={{ locale: "fr", resources: {} }} translator={translator} />
+      );
+
+      // LocLHydrate outside provider with no translator
+      const htmlNoTrans = renderToStaticMarkup(
+        <LocLHydrate state={{ locale: "es", resources: {} }}><p>child</p></LocLHydrate>
+      );
+      expect(htmlNoTrans).toContain("child");
+
+      // Standalone useLocalizedPath inside provider
+      function LocalizedPathComp() {
+        const getPath = useLocalizedPath();
+        const getPathAlways = useLocalizedPath("always");
+        return (
+          <div>
+            <span>{getPath("/about")}</span>
+            <span>{getPathAlways("/about")}</span>
+            <span>{getPathAlways("/about", "es")}</span>
+          </div>
+        );
+      }
+      const htmlPath = renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <LocalizedPathComp />
+        </LocLProvider>
+      );
+      expect(htmlPath).toContain("/about");
+      expect(htmlPath).toContain("/en/about");
+      expect(htmlPath).toContain("/es/about");
+
+      // Standalone useLocalizedPath outside provider
+      function OutsidePathComp() {
+        const getPath = useLocalizedPath();
+        return <span>{getPath("/home")}</span>;
+      }
+      expect(renderToStaticMarkup(<OutsidePathComp />)).toContain("/home");
+
+      // Standalone Link inside and outside provider
+      const htmlLink = renderToStaticMarkup(
+        <LocLProvider translator={translator}>
+          <Link href="/about">About</Link>
+          <Link href="/contact" prefixStrategy="always">Contact</Link>
+        </LocLProvider>
+      );
+      expect(htmlLink).toContain('href="/about"');
+      expect(htmlLink).toContain('href="/en/contact"');
+
+      // Link outside provider
+      expect(renderToStaticMarkup(<Link href="/faq">FAQ</Link>)).toContain('href="/faq"');
     });
   });
 

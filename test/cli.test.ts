@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { extractKeys, checkTranslations, compileTranslations, getTranslationStatus, runCli } from "../src/cli/index.js";
+import { extractKeys, checkTranslations, compileTranslations, getTranslationStatus, maskTokens, unmaskTokens, translateTranslations, translateBatchWithProvider, runCli } from "../src/cli/index.js";
 import { setNested } from "../src/cli/extract.js";
+import { initLocL } from "../src/index.js";
+import { loclVitePlugin, setupLocLHmr } from "../src/vite/index.js";
+
 
 describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
   let tempDir: string;
@@ -204,7 +207,8 @@ describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
 
       // Non-file, non-directory entry in readdirSync
       const readdirSpy = jest.spyOn(fs, "readdirSync").mockReturnValueOnce([
-        { name: "sock", isDirectory: () => false, isFile: () => false } as any
+        // @ts-expect-error
+        { name: "sock", isDirectory: () => false, isFile: () => false }
       ]);
       extractKeys({ src: srcDir, localesDir, dryRun: true });
       readdirSpy.mockRestore();
@@ -354,6 +358,46 @@ describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
       expect(fixedFr["auth.login"]).toBe("Log In");
       expect(fixedFr.auth).toBeUndefined();
     });
+
+    it("should lint parameters and XML tags with checkTranslations --lint-params", () => {
+      fs.writeFileSync(
+        path.join(localesDir, "en.json"),
+        JSON.stringify({ greeting: "Hello {name}", terms: "Read <link>terms</link>" }),
+        "utf8"
+      );
+      fs.writeFileSync(
+        path.join(localesDir, "de.json"),
+        JSON.stringify({ greeting: "Hallo {naem}", terms: "Lies <badtag>terms</badtag>" }),
+        "utf8"
+      );
+
+      const res = checkTranslations({ localesDir, baseLang: "en", lintParams: true });
+      expect(res.success).toBe(false);
+      expect(res.locales.de.paramMismatches?.length).toBe(1);
+      expect(res.locales.de.tagMismatches?.length).toBe(1);
+
+      // Tag mismatch without param mismatch (covers tagMismatches branch of ||)
+      fs.writeFileSync(
+        path.join(localesDir, "de.json"),
+        JSON.stringify({ greeting: "Hello {name}", terms: "Read <badtag>terms</badtag>" }),
+        "utf8"
+      );
+      const resTagOnly = checkTranslations({ localesDir, baseLang: "en", lintParams: true });
+      expect(resTagOnly.success).toBe(false);
+      expect(resTagOnly.locales.de.paramMismatches?.length).toBe(0);
+      expect(resTagOnly.locales.de.tagMismatches?.length).toBe(1);
+
+      // No mismatches with lintParams: true
+      fs.writeFileSync(
+        path.join(localesDir, "de.json"),
+        JSON.stringify({ greeting: "Hello {name}", terms: "Read <link>terms</link>" }),
+        "utf8"
+      );
+      const resClean = checkTranslations({ localesDir, baseLang: "en", lintParams: true });
+      expect(resClean.success).toBe(true);
+      expect(resClean.locales.de.paramMismatches?.length).toBe(0);
+      expect(resClean.locales.de.tagMismatches?.length).toBe(0);
+    });
   });
 
   describe("locl status", () => {
@@ -411,6 +455,51 @@ describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
     });
   });
 
+  describe("locl translate", () => {
+    it("should accurately mask and unmask variables, tags, and ICU expressions", () => {
+      const raw = "Welcome, {name}! Visit <link href=\"/terms\">here</link> or call {phone | number}.";
+      const { masked, tokens } = maskTokens(raw);
+
+      expect(masked).toContain("__LOCL_TOK_0__");
+      expect(masked).toContain("__LOCL_TOK_1__");
+      expect(masked).toContain("__LOCL_TOK_2__");
+      expect(tokens).toEqual(["{name}", '<link href="/terms">', "</link>", "{phone | number}"]);
+
+      const mockTranslated = "¡Bienvenido, __LOCL_TOK_0__! Visite __LOCL_TOK_1__aquí__LOCL_TOK_2__ o llame a __LOCL_TOK_3__.";
+      const restored = unmaskTokens(mockTranslated, tokens);
+
+      expect(restored).toBe("¡Bienvenido, {name}! Visite <link href=\"/terms\">aquí</link> o llame a {phone | number}.");
+    });
+
+    it("should translate missing keys with custom translator function", async () => {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "locl-trans-"));
+      const localesDir = path.join(tempDir, "locales");
+      fs.mkdirSync(localesDir, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(localesDir, "en.json"),
+        JSON.stringify({ greeting: "Hello {name}", farewell: "Goodbye" }, null, 2),
+        "utf8"
+      );
+
+      const result = await translateTranslations({
+        target: "es",
+        localesDir,
+        baseLang: "en",
+        customTranslator: async (texts) => texts.map((t) => t.replace("Hello", "Hola").replace("Goodbye", "Adiós"))
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.locales.es.translated).toBe(2);
+
+      const esJson = JSON.parse(fs.readFileSync(path.join(localesDir, "es.json"), "utf8"));
+      expect(esJson.greeting).toBe("Hola {name}");
+      expect(esJson.farewell).toBe("Adiós");
+
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    });
+  });
+
   describe("locl compile", () => {
     it("should compile JSON files to TypeScript and ESM bundle", () => {
       fs.writeFileSync(path.join(localesDir, "en.json"), JSON.stringify({ hello: "Hello" }), "utf8");
@@ -453,7 +542,8 @@ describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
       expect(cjsDef.outputFile).toContain(".js");
 
       const cExistsSpy = jest.spyOn(fs, "existsSync").mockReturnValue(true);
-      const cReaddirSpy = jest.spyOn(fs, "readdirSync").mockReturnValue(["en.json"] as any);
+      // @ts-expect-error
+      const cReaddirSpy = jest.spyOn(fs, "readdirSync").mockReturnValue(["en.json"]);
       const cReadSpy = jest.spyOn(fs, "readFileSync").mockReturnValue(JSON.stringify({ hello: "Hello" }));
       const cMkdirSpy = jest.spyOn(fs, "mkdirSync").mockImplementation();
       const cWriteSpy = jest.spyOn(fs, "writeFileSync").mockImplementation();
@@ -530,5 +620,426 @@ describe("LocL CLI & Developer Pipeline (locl-cli)", () => {
       expect(await runCli()).toBe(0);
       process.argv = origArgv;
     });
+  });
+
+
+  describe("translateBatchWithProvider & Providers", () => {
+    it("should return empty array when texts is empty", async () => {
+      // @ts-expect-error
+      expect(await translateBatchWithProvider([], "en", "es", {})).toEqual([]);
+    });
+
+    it("should support DeepL provider with free and paid endpoints, errors, and env vars", async () => {
+      const origEnv = process.env.DEEPL_API_KEY;
+      delete process.env.DEEPL_API_KEY;
+
+      // Missing API key error
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "deepl" })).rejects.toThrow(
+        "Missing DeepL API key"
+      );
+
+      // DeepL Free endpoint (:fx)
+      const origFetch = global.fetch;
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ translations: [{ text: "Hola" }] })
+      });
+      global.fetch = fetchMock;
+
+      // @ts-expect-error
+      const resFree = await translateBatchWithProvider(["Hello"], "en", "es", {
+        provider: "deepl",
+        apiKey: "test-key:fx"
+      });
+      expect(resFree).toEqual(["Hola"]);
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api-free.deepl.com/v2/translate",
+        expect.objectContaining({
+          headers: expect.objectContaining({ Authorization: "DeepL-Auth-Key test-key:fx" })
+        })
+      );
+
+      // DeepL Pro endpoint (without :fx) and DEEPL_API_KEY from environment
+      process.env.DEEPL_API_KEY = "env-pro-key";
+      // @ts-expect-error
+      const resPro = await translateBatchWithProvider(["Hello"], "en", "es", { provider: "deepl" });
+      expect(resPro).toEqual(["Hola"]);
+      expect(fetchMock).toHaveBeenCalledWith("https://api.deepl.com/v2/translate", expect.anything());
+
+      // DeepL API error (res.ok is false)
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 403,
+        statusText: "Forbidden"
+      });
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "deepl" })).rejects.toThrow(
+        "DeepL API error: 403 Forbidden"
+      );
+
+      global.fetch = origFetch;
+      process.env.DEEPL_API_KEY = origEnv;
+    });
+
+    it("should support OpenAI provider with custom model, default model, response formats, and errors", async () => {
+      const origEnv = process.env.OPENAI_API_KEY;
+      delete process.env.OPENAI_API_KEY;
+
+      // Missing API key error
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "openai" })).rejects.toThrow(
+        "Missing OpenAI API key"
+      );
+
+      const origFetch = global.fetch;
+
+      // Success with content.strings
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({ strings: ["Hola"] }) } }]
+        })
+      });
+
+      // @ts-expect-error
+      const resStrings = await translateBatchWithProvider(["Hello"], "en", "es", {
+        provider: "openai",
+        apiKey: "sk-test",
+        model: "gpt-4o"
+      });
+      expect(resStrings).toEqual(["Hola"]);
+
+      // Success with content.translations and env var
+      process.env.OPENAI_API_KEY = "sk-env";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({ translations: ["Hola Translations"] }) } }]
+        })
+      });
+      // @ts-expect-error
+      const resTranslations = await translateBatchWithProvider(["Hello"], "en", "es", { provider: "openai" });
+      expect(resTranslations).toEqual(["Hola Translations"]);
+
+      // Success with object fallback (Object.values(content)[0])
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify({ customKey: ["Hola Object"] }) } }]
+        })
+      });
+      // @ts-expect-error
+      const resObject = await translateBatchWithProvider(["Hello"], "en", "es", { provider: "openai" });
+      expect(resObject).toEqual(["Hola Object"]);
+
+      // HTTP Error
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error"
+      });
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "openai" })).rejects.toThrow(
+        "OpenAI API error: 500 Internal Server Error"
+      );
+
+      global.fetch = origFetch;
+      process.env.OPENAI_API_KEY = origEnv;
+    });
+
+    it("should support Google Translate provider with success, error, and missing key", async () => {
+      const origEnv = process.env.GOOGLE_TRANSLATE_API_KEY;
+      delete process.env.GOOGLE_TRANSLATE_API_KEY;
+
+      // Missing API key error
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "google" })).rejects.toThrow(
+        "Missing Google Translate API key"
+      );
+
+      const origFetch = global.fetch;
+
+      // Success with apiKey option
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: { translations: [{ translatedText: "Hola Google" }] }
+        })
+      });
+      // @ts-expect-error
+      const res = await translateBatchWithProvider(["Hello"], "en", "es", {
+        provider: "google",
+        apiKey: "g-key"
+      });
+      expect(res).toEqual(["Hola Google"]);
+
+      // Success with env var
+      process.env.GOOGLE_TRANSLATE_API_KEY = "g-env-key";
+      // @ts-expect-error
+      const resEnv = await translateBatchWithProvider(["Hello"], "en", "es", { provider: "google" });
+      expect(resEnv).toEqual(["Hola Google"]);
+
+      // HTTP Error
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        statusText: "Bad Request"
+      });
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "google" })).rejects.toThrow(
+        "Google API error: 400 Bad Request"
+      );
+
+      global.fetch = origFetch;
+      process.env.GOOGLE_TRANSLATE_API_KEY = origEnv;
+    });
+
+    it("should support Ollama provider with default host/model, custom options, array/object formats, and error", async () => {
+      const origHost = process.env.OLLAMA_HOST;
+      delete process.env.OLLAMA_HOST;
+
+      const origFetch = global.fetch;
+
+      // Default host and model
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ response: JSON.stringify(["Hola Ollama Def"]) })
+      });
+
+      // @ts-expect-error
+      const resDefault = await translateBatchWithProvider(["Hello"], "en", "es", {
+        provider: "ollama"
+      });
+      expect(resDefault).toEqual(["Hola Ollama Def"]);
+      expect(global.fetch).toHaveBeenCalledWith(
+        "http://localhost:11434/api/generate",
+        expect.objectContaining({
+          body: expect.stringContaining('"model":"llama3"')
+        })
+      );
+
+      // Custom host & model with array response
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ response: JSON.stringify(["Hola Ollama Custom"]) })
+      });
+
+      // @ts-expect-error
+      const resArray = await translateBatchWithProvider(["Hello"], "en", "es", {
+        provider: "ollama",
+        ollamaHost: "http://my-ollama:11434",
+        model: "llama3.1"
+      });
+      expect(resArray).toEqual(["Hola Ollama Custom"]);
+
+      // OLLAMA_HOST env var with object response
+      process.env.OLLAMA_HOST = "http://env-ollama:11434";
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ response: JSON.stringify({ result: ["Hola Object"] }) })
+      });
+
+      // @ts-expect-error
+      const resObj = await translateBatchWithProvider(["Hello"], "en", "es", { provider: "ollama" });
+      expect(resObj).toEqual(["Hola Object"]);
+
+      // HTTP Error
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: "Bad Gateway"
+      });
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "ollama" })).rejects.toThrow(
+        "Ollama error: 502 Bad Gateway"
+      );
+
+      global.fetch = origFetch;
+      process.env.OLLAMA_HOST = origHost;
+    });
+
+    it("should throw error for unsupported provider", async () => {
+      // @ts-expect-error
+      await expect(translateBatchWithProvider(["Hello"], "en", "es", { provider: "unsupported" })).rejects.toThrow(
+        'Unsupported provider "unsupported".'
+      );
+    });
+  });
+
+  describe("translateTranslations Pipeline & Edge Cases", () => {
+    it("should cover translateTranslations validation, skipping, file parsing, and batching", async () => {
+      // Missing base file with default options
+      await expect(
+        translateTranslations({
+          target: "es"
+        })
+      ).rejects.toThrow("Base language file not found");
+
+      // Empty target
+      fs.writeFileSync(path.join(localesDir, "en.json"), JSON.stringify({ a: "Hello" }), "utf8");
+      await expect(
+        translateTranslations({
+          target: "",
+          localesDir,
+          baseLang: "en"
+        })
+      ).rejects.toThrow("At least one target language must be specified");
+
+      // Target includes baseLang (targetLang === baseLang is skipped)
+      const resSkipBase = await translateTranslations({
+        target: ["en", "es"],
+        localesDir,
+        baseLang: "en",
+        customTranslator: async (texts) => texts.map(() => "Hola")
+      });
+      expect(resSkipBase.locales.en).toBeUndefined();
+      expect(resSkipBase.locales.es).toBeDefined();
+
+      // Target file exists with all keys translated (keysToTranslate.length === 0)
+      fs.writeFileSync(path.join(localesDir, "es.json"), JSON.stringify({ a: "Hola" }), "utf8");
+      const resAllTranslated = await translateTranslations({
+        target: "es",
+        localesDir,
+        baseLang: "en",
+        customTranslator: async (texts) => texts
+      });
+      expect(resAllTranslated.locales.es.translated).toBe(0);
+      expect(resAllTranslated.locales.es.skipped).toBe(1);
+
+      // Target file has corrupted/invalid JSON (triggers catch {} parsing error branch)
+      fs.writeFileSync(path.join(localesDir, "de.json"), "invalid-json-content", "utf8");
+      const resCorrupted = await translateTranslations({
+        target: "de",
+        localesDir,
+        baseLang: "en",
+        customTranslator: async (texts) => texts.map(() => "Hallo")
+      });
+      expect(resCorrupted.locales.de.translated).toBe(1);
+
+      // Target file originally flat with null, array, and string values
+      fs.writeFileSync(
+        path.join(localesDir, "fr.json"),
+        JSON.stringify({ "user.name": "Nom", nullable: null, list: [1, 2] }),
+        "utf8"
+      );
+      fs.writeFileSync(
+        path.join(localesDir, "en.json"),
+        JSON.stringify({ "user.name": "Name", "user.age": "Age" }),
+        "utf8"
+      );
+      const resFlat = await translateTranslations({
+        target: "fr",
+        localesDir,
+        baseLang: "en",
+        force: true,
+        batchSize: 1, // tests batch loop running multiple iterations
+        customTranslator: async (texts) => texts.map((t) => `FR_${t}`)
+      });
+      expect(resFlat.locales.fr.translated).toBe(2);
+      const frJson = JSON.parse(fs.readFileSync(path.join(localesDir, "fr.json"), "utf8"));
+      expect(frJson["user.name"]).toBe("FR_Name");
+      expect(frJson["user.age"]).toBe("FR_Age");
+
+      // dryRun: true does not write changes to disk
+      const resDry = await translateTranslations({
+        target: "it",
+        localesDir,
+        baseLang: "en",
+        dryRun: true,
+        customTranslator: async (texts) => texts.map(() => "Ciao")
+      });
+      expect(resDry.locales.it.translated).toBe(2);
+      expect(fs.existsSync(path.join(localesDir, "it.json"))).toBe(false);
+    });
+
+    it("should handle 'translate' command in runCli with validation and execution", async () => {
+      const errSpy = jest.spyOn(console, "error").mockImplementation();
+      const logSpy = jest.spyOn(console, "log").mockImplementation();
+
+      // Missing --target argument
+      expect(await runCli(["translate"])).toBe(1);
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Missing required argument: --target")
+      );
+
+      // Valid translate execution via runCli using DeepL mock
+      fs.writeFileSync(path.join(localesDir, "en.json"), JSON.stringify({ hello: "Hello" }), "utf8");
+
+      const origFetch = global.fetch;
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ translations: [{ text: "Hola" }] })
+      });
+
+      const exitCode = await runCli([
+        "translate",
+        "--target", "es",
+        "--locales", localesDir,
+        "--base", "en",
+        "--api-key", "test-key:fx"
+      ]);
+      expect(exitCode).toBe(0);
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Auto-translation complete."));
+
+      const esJson = JSON.parse(fs.readFileSync(path.join(localesDir, "es.json"), "utf8"));
+      expect(esJson.hello).toBe("Hola");
+
+      global.fetch = origFetch;
+      errSpy.mockRestore();
+      logSpy.mockRestore();
+    });
+  });
+
+  it("should handle Vite HMR plugin and setupLocLHmr", () => {
+    const plugin = loclVitePlugin({ localesDir: "locales" });
+    const wsSend = jest.fn();
+    const fakeServer = { ws: { send: wsSend } };
+
+    const filePath = path.join(localesDir, "en.json");
+    fs.writeFileSync(filePath, JSON.stringify({ hmr: "ok" }), "utf8");
+
+    plugin.handleHotUpdate({ file: filePath, server: fakeServer });
+    expect(wsSend).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "locl:update", data: { lang: "en", data: { hmr: "ok" } } })
+    );
+
+    // non-matching file and JSON parse error
+    expect(plugin.handleHotUpdate({ file: "src/App.tsx", server: fakeServer })).toBeUndefined();
+    fs.writeFileSync(filePath, "bad-json", "utf8");
+    plugin.handleHotUpdate({ file: filePath, server: fakeServer });
+
+    // setupLocLHmr
+    const translator = initLocL({ resources: { en: {} }, fallbackLanguage: "en" });
+    const listeners: Record<string, any> = {};
+    const fakeHot = {
+      on: (evt: string, cb: any) => { listeners[evt] = cb; },
+      off: jest.fn()
+    };
+
+    const cleanup = setupLocLHmr(translator, fakeHot);
+    listeners["locl:update"]({ lang: "en", data: { dynamic: "Dynamic" } });
+    expect(translator.tt("dynamic")).toBe("Dynamic");
+    cleanup();
+    expect(fakeHot.off).toHaveBeenCalled();
+    expect(setupLocLHmr(translator, undefined)()).toBeUndefined();
+
+    // Default options
+    const defaultPlugin = loclVitePlugin();
+    expect(defaultPlugin.name).toBe("locl-vite-plugin");
+
+    // setupLocLHmr edge cases
+    expect(setupLocLHmr(null, null)()).toBeUndefined();
+    expect(setupLocLHmr(null, {} as any)()).toBeUndefined();
+
+    // HMR update when translator is null or lacks addResources
+    const hotNoTrans = { on: (evt: string, cb: any) => cb({ lang: "en", data: {} }), off: jest.fn() };
+    setupLocLHmr(null, hotNoTrans);
+    setupLocLHmr({} as any, hotNoTrans);
+
+    // Cleanup when hot.off is undefined
+    const hotNoOff = { on: jest.fn(), off: undefined };
+    const cleanupNoOff = setupLocLHmr({ addResources: jest.fn() }, hotNoOff);
+    expect(cleanupNoOff()).toBeUndefined();
   });
 });

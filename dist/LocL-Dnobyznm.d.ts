@@ -127,6 +127,38 @@ declare const defaultFormatters: {
      * @returns The padded string.
      */
     padEnd: (val: any, args?: string[]) => string;
+    /**
+     * Formats a list of items using native `Intl.ListFormat`.
+     * @example
+     * `{users | list}` -> "Alice, Bob, and Charlie"
+     * `{users | list:de,disjunction}` -> "Alice, Bob oder Charlie"
+     */
+    list: (val: any, args?: string[]) => string;
+    /**
+     * Formats a language code into its localized display name using `Intl.DisplayNames`.
+     * @example
+     * `{lang | languageName:en}` -> "German"
+     * `{lang | languageName:de}` -> "Deutsch"
+     */
+    languageName: (val: any, args?: string[]) => string;
+    /**
+     * Formats a region/country code into its localized display name using `Intl.DisplayNames`.
+     * @example
+     * `{country | regionName:en}` -> "United States"
+     */
+    regionName: (val: any, args?: string[]) => string;
+    /**
+     * Formats a currency code into its localized display name using `Intl.DisplayNames`.
+     * @example
+     * `{curr | currencyName:en}` -> "US Dollar"
+     */
+    currencyName: (val: any, args?: string[]) => string;
+    /**
+     * Generalized display name resolver using `Intl.DisplayNames`.
+     * @example
+     * `{code | displayName:language,en}`
+     */
+    displayName: (val: any, args?: string[]) => string;
 };
 
 type NestedKeyOf<ObjectType extends object, Depth extends number = 8, UsedDepth extends any[] = []> = UsedDepth['length'] extends Depth ? never : {
@@ -161,7 +193,7 @@ type Param<Name extends string, V> = Trim<Name> extends infer N extends string ?
 } : {};
 type VariableParams<Raw extends string> = Param<ExtractVarName<Raw>, InterpolationValue>;
 type TokenParams<Inner extends string> = Inner extends `{${infer Unwrapped}}` ? TokenBody<Unwrapped> : TokenBody<Inner>;
-type TokenBody<Inner extends string> = Inner extends `${infer Field},${infer Rest}` ? TrimStart<Rest> extends `select${infer AfterKeyword}` ? TrimStart<AfterKeyword> extends `,${infer Cases}` ? Param<Field, string> & CaseParams<Cases> : VariableParams<Inner> : VariableParams<Inner> : VariableParams<Inner>;
+type TokenBody<Inner extends string> = Inner extends `${infer Field},${infer Rest}` ? TrimStart<Rest> extends `select${infer AfterKeyword}` ? TrimStart<AfterKeyword> extends `,${infer Cases}` ? Param<Field, string> & CaseParams<Cases> : VariableParams<Inner> : TrimStart<Rest> extends `plural${infer AfterKeyword}` ? TrimStart<AfterKeyword> extends `,${infer Cases}` ? Param<Field, number> & CaseParams<Cases> : VariableParams<Inner> : VariableParams<Inner> : VariableParams<Inner>;
 type CaseParams<Cases extends string, Acc = {}> = Cases extends `${string}{${infer Rest}` ? ReadBalanced<Rest> extends [infer Body extends string, infer After extends string] ? CaseParams<After, Acc & ScanParams<Body>> : Acc : Acc;
 type ScanParams<S extends string, Acc = {}> = S extends `${string}{${infer Rest}` ? ReadBalanced<Rest> extends [infer Inner extends string, infer After extends string] ? ScanParams<After, Acc & TokenParams<Inner>> : Acc : Acc;
 type StripEscapedBraces<S extends string> = S extends `${infer Before}\\{${infer Rest}` ? StripEscapedBraces<`${Before}${Rest}`> : S extends `${infer Before}\\}${infer Rest}` ? StripEscapedBraces<`${Before}${Rest}`> : S;
@@ -545,6 +577,7 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private compileTemplateIntoChunks;
     private evaluateVariableChunk;
     private evaluateSelectChunk;
+    private evaluateInlinePluralChunk;
     private parseSelectCases;
     private resolvePluralKey;
     private validateSupportedLanguage;
@@ -565,4 +598,4 @@ declare class LocL<T extends Record<string, any>, Fallback extends keyof T & str
     private isUnsafeObjectKey;
 }
 
-export { type Direction as D, type EnforceParity as E, type Formatter as F, type InterpolationOptions as I, type LocLConfig as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, LocL as a, type LangWithPlurals as b, type TArgs as c, type TResult as d, type Language as e, type LocaleMetadata as f, type IsEmptyParams as g, type PluralParamsFor as h, type ParamsFor as i, type PathValue as j, type Scope as k };
+export { type Direction as D, type EnforceParity as E, type FormatOptions as F, type InterpolationOptions as I, LocL as L, type NestedKeyOf as N, type PluralKeys as P, type ResourceLoader as R, type ScopeType as S, type TranslationObjectFor as T, type Unsubscribe as U, type TArgs as a, type TResult as b, type Language as c, type LocaleMetadata as d, type IsEmptyParams as e, type PluralParamsFor as f, type ParamsFor as g, type PathValue as h, type PluralKeyForms as i, type Formatter as j, type LocLConfig as k, type LangWithPlurals as l, type Scope as m };
