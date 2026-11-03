@@ -45,7 +45,7 @@ Options:
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("2.5.0");
+    console.log("2.5.1");
     return 0;
   }
 

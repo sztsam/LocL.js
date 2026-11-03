@@ -1,6 +1,6 @@
 # Framework Integrations (Svelte, Vue, Vite, Solid)
 
-While LocL.js provides official React bindings, it is designed from the core to be framework-agnostic. In v2.5.0, LocL introduces dedicated packages for **Svelte**, **Vue 3**, and **Vite**.
+While LocL.js provides official React bindings, it is designed from the core to be framework-agnostic. In v2.5.1, LocL introduces dedicated packages for **Svelte**, **Vue 3**, and **Vite**.
 
 ---
 

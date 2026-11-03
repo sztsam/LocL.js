@@ -1,6 +1,6 @@
 {
   "name": "locl-js",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Ultra-fast, lightweight TypeScript internationalization (i18n) library with React bindings, React Server Components (RSC) support, and drop-in i18next compatibility.",
   "license": "MIT",
   "author": "Sztrida Sámuel <sztsam@gmail.com>",
@@ -42,12 +42,12 @@
     },
     "./detector": {
       "import": {
-        "types": "./dist/detector/index.d.ts",
-        "default": "./dist/detector/index.js"
+        "types": "./dist/detector.d.ts",
+        "default": "./dist/detector.js"
       },
       "require": {
-        "types": "./dist/detector/index.d.cts",
-        "default": "./dist/detector/index.cjs"
+        "types": "./dist/detector.d.cts",
+        "default": "./dist/detector.cjs"
       }
     },
     "./compat": {
@@ -62,12 +62,12 @@
     },
     "./cli": {
       "import": {
-        "types": "./dist/cli/index.d.ts",
-        "default": "./dist/cli/index.js"
+        "types": "./dist/cli.d.ts",
+        "default": "./dist/cli.js"
       },
       "require": {
-        "types": "./dist/cli/index.d.cts",
-        "default": "./dist/cli/index.cjs"
+        "types": "./dist/cli.d.cts",
+        "default": "./dist/cli.cjs"
       }
     },
     "./vite": {

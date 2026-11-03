@@ -82,7 +82,7 @@ npx locl check --fix
 
 ### Parameter & Markup Tag Linting (`--lint-params` / `--lint`)
 
-In v2.5.0, `locl check` includes deep linting for interpolation tokens and XML/JSX markup tags:
+In v2.5.1, `locl check` includes deep linting for interpolation tokens and XML/JSX markup tags:
 
 ```bash
 npx locl check --lint-params
