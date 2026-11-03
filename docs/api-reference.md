@@ -1,6 +1,6 @@
 # Full API Reference
 
-Exhaustive TypeScript API reference for all packages and modules in **LocL.js v2.5.0**.
+Exhaustive TypeScript API reference for all packages and modules in **LocL.js v2.5.1**.
 
 ---
 

@@ -2,6 +2,12 @@
 
 All notable changes to **LocL.js** are documented here.
 
+## [2.5.1] — 2026-11-03
+
+### Fixed
+
+- Updated the package export paths for the ./detector and ./cli entry points.
+
 ## [2.5.0] — 2026-10-16
 
 ### Added

@@ -1,6 +1,6 @@
 # Getting Started with LocL.js
 
-Welcome to the comprehensive documentation for **LocL.js** (v2.5.0), the ultra-fast, zero-dependency internationalization (i18n) engine for modern TypeScript web applications, React Server Components (RSC), and full-stack frameworks.
+Welcome to the comprehensive documentation for **LocL.js** (v2.5.1), the ultra-fast, zero-dependency internationalization (i18n) engine for modern TypeScript web applications, React Server Components (RSC), and full-stack frameworks.
 
 ---
 
